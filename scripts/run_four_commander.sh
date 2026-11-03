@@ -74,7 +74,8 @@ echo "Game log: $LOG" | tee -a "$STATUS"
 # An exit code 0 or a winning message alone cannot prove four-player gameplay.
 # Forge emits these result lines for each winning/losing seat (quiet mode).
 wins="$(grep -Ec '^Game Outcome: Ai\([1-4]\)-.* has won because ' "$LOG" || true)"
-losses="$(grep -Ec '^Game Outcome: Ai\([1-4]\)-.* has lost because ' "$LOG" || true)"
+# Forge reports commander-damage elimination as "has lost due to", not "because".
+losses="$(grep -Ec '^Game Outcome: Ai\([1-4]\)-.* has lost (because |due to )' "$LOG" || true)"
 echo "Winner outcomes: $wins; eliminated opponents: $losses" | tee -a "$STATUS"
 
 if [ "$game_code" -eq 0 ] \

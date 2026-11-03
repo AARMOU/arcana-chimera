@@ -23,7 +23,7 @@ Can Forge provide more reliable Magic/Commander rules and AI than Argentum **wit
 - [ ] Start an unmodified Forge Commander match, human vs AI.
 - [ ] Observe ten consecutive AI turns without a hang.
 - [x] Complete one **two-AI** Commander game; winner and losing opponent confirmed in [public run #41662709183](https://github.com/AARMOU/arcana-chimera/actions/runs/41662709183) (seed 8073, 7,922 ms).
-- [ ] Run one **four-AI headless** Commander game with one winner and three eliminated opponents (separate manual test; not yet executed).
+- [x] **Four-AI headless game observed**, [run #41665373638](https://github.com/AARMOU/arcana-chimera/actions/runs/41665373638): all four seats started, game ended on turn 27 in 39,123 ms (seed 8074), Reap the Tide defeated three opponents (two life loss, one commander damage). GitHub status **red solely due to Chimera parser missing Forge wording `has lost due to`**; checker subsequently corrected and locally verified against the actual outcome text. A new green CI game is still pending.
 - [ ] Run one **four-player network/remote** Commander session; distinguish setup support from reliable remote play.
 - [ ] Verify ten named, representative rules interactions (commander tax, replacement effects, attack assignment across opponents, etc.).
 - [ ] Measure P50/P95 AI decision latency and peak memory on the target Android phone.
