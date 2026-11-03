@@ -38,7 +38,7 @@ if ! [[ "$expected" =~ ^[0-9a-fA-F]{64}$ ]] || [ "$actual" != "$expected" ]; the
   rm -f "$apk"
   exit 7
 fi
-if ! unzip -Z -1 "$apk" | grep -qx 'AndroidManifest.xml'; then
+if ! unzip -Z -1 "$apk" | grep -x 'AndroidManifest.xml' >/dev/null; then
   echo "NOT_AN_APK_ZIP" >&2
   rm -f "$apk"
   exit 8
