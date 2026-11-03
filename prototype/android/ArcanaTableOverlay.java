@@ -198,6 +198,8 @@ public final class ArcanaTableOverlay extends FrameLayout {
     }
 
     private static Snapshot fromRealForgeGame() {
+        // Never cover Forge's deck-selection/lobby screens with an old match.
+        if (!(forge.Forge.getCurrentScreen() instanceof MatchScreen)) return null;
         MatchController controller = MatchController.instance;
         if (controller == null) return null;
         GameView game = controller.getGameView();
