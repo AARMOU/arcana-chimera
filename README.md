@@ -23,6 +23,10 @@ The Chimera-owned `prototype/android/ArcanaTableOverlay.java` now draws a playab
 
 The build script `scripts/build_frankenarcana.sh` and manual-only `.github/workflows/frankenarcana-android.yml` prepare an **independent debug APK** from pinned Forge source with package `org.arcanachimera.frankenarcana`. **Not yet compiled or installed**; no APK or game turn should be claimed proven. Binaries are neither committed nor uploaded. Arcana–Argentum remains untouched. See [device trial status](docs/FRANKENARCANA_DEVICE_TRIAL.md).
 
+## Encrypted private APK handoff (one-time)
+
+Once the owner manually starts [FrankenArcana encrypted APK handoff](.github/workflows/frankenarcana-encrypted-handoff.yml), CI will build the signed debug APK using a standard free runner, **encrypt it on the runner**, then upload only ciphertext and a one-time RSA-wrapped password as a one-day GitHub Actions artifact. The **unencrypted APK is never uploaded** to GitHub or a public release. The corresponding private key remains outside the repository. The encrypted artifact can then be retrieved and decrypted into a private conversation download. This is a deliberate exception to the previous no-artifact rule for **encrypted ciphertext only**, not for APK binaries. No automatic runs, paid resources or Arcana writes. **Not yet run or delivered.**
+
 ## Start here
 1. Read [the experiment plan](docs/EVALUATION.md) and [licensing notes](docs/LICENSING_AND_IP.md).
 2. To reproduce a **Forge source build on your own computer** (optional), install Git, JDK 17+, Maven, and Python 3.
