@@ -1,0 +1,128 @@
+name: FrankenArcana encrypted APK handoff (manual, free runner)
+
+# Owner-initiated only. A public runner never publishes an unencrypted APK.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: chimera-free-manual-device-spike
+  cancel-in-progress: false
+
+jobs:
+  build-encrypt:
+    if: github.repository == 'AARMOU/arcana-chimera' && github.event.repository.visibility == 'public'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 55
+    steps:
+      - name: Check out Chimera without persistent write credentials
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Verify source and delivery key before building
+        run: |
+          set -euo pipefail
+          python3 -m py_compile scripts/prepare_frankenforge.py
+          bash -n scripts/build_frankenarcana.sh
+          openssl pkey -pubin -in scripts/delivery/frankenarcana-public.pem -noout
+          test -s prototype/android/ArcanaTableOverlay.java
+          test -s prototype/android/ChimeraLauncher.java
+          if grep -E 'mcp__GitHub__|AARMOU/arcana_table' scripts/build_frankenarcana.sh scripts/prepare_frankenforge.py; then
+            echo "Unexpected Arcana reference in the isolated build" >&2
+            exit 2
+          fi
+          echo "Public encryption key: $(sha256sum scripts/delivery/frankenarcana-public.pem | cut -d' ' -f1)"
+
+      - name: Install JDK 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK 35
+        run: |
+          set -euo pipefail
+          test -n "$ANDROID_SDK_ROOT"
+          yes | "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null || true
+          "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" \
+            --sdk_root="$ANDROID_SDK_ROOT" --install \
+            "build-tools;35.0.0" "platforms;android-35" "platform-tools"
+
+      - name: Install virtual framebuffer
+        run: |
+          if ! command -v Xvfb >/dev/null 2>&1; then
+            sudo apt-get update -qq
+            sudo apt-get install -y xvfb
+          fi
+
+      - name: Compile isolated Forge Android application
+        env:
+          DISPLAY: ':1'
+        run: |
+          Xvfb :1 -screen 0 800x600x8 >/dev/null 2>&1 &
+          timeout 3000s bash scripts/build_frankenarcana.sh
+
+      - name: Encrypt APK before any transfer
+        shell: bash
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          apks=("$GITHUB_WORKSPACE"/third_party/forge-device/forge-gui-android/target/*-aligned-debugSigned.apk)
+          if [ "${#apks[@]}" -ne 1 ]; then
+            echo "Expected exactly one verified and signed debug APK" >&2
+            exit 8
+          fi
+          apk="${apks[0]}"
+          # Ensure the shipped binary cannot overwrite the Arcana app.
+          "$ANDROID_SDK_ROOT/build-tools/35.0.0/aapt" dump badging "$apk" |
+            grep -q "package: name='org.arcanachimera.frankenarcana'"
+          out="$RUNNER_TEMP/chimera-ciphertext-only"
+          mkdir -p "$out"
+          chmod 700 "$out"
+          password="$RUNNER_TEMP/chimera-one-time-password"
+          trap 'rm -f "$password"' EXIT
+          umask 077
+          openssl rand -hex 32 > "$password"
+          openssl enc -aes-256-cbc -salt -pbkdf2 -iter 250000 \
+            -pass file:"$password" -in "$apk" -out "$out/FrankenArcana.apk.enc"
+          openssl pkeyutl -encrypt -pubin \
+            -inkey scripts/delivery/frankenarcana-public.pem \
+            -pkeyopt rsa_padding_mode:oaep \
+            -pkeyopt rsa_oaep_md:sha256 \
+            -pkeyopt rsa_mgf1_md:sha256 \
+            -in "$password" -out "$out/password.rsa"
+          sha256sum "$apk" | cut -d' ' -f1 > "$out/APK.sha256"
+          cat > "$out/README.txt" <<'EOF'
+          FrankenArcana — encrypted one-time private delivery, not public APK
+          The GitHub artifact contains only AES-256 encrypted APK data and a
+          password encrypted with a temporary RSA public key.
+          The RSA private key was not provided to GitHub or committed to code.
+          This bundle is not installable without decryption.
+          Sources: https://github.com/Card-Forge/forge
+          Chimera patch source: https://github.com/AARMOU/arcana-chimera
+          Forge is GPL-3.0. External card artwork/content rights are separate.
+          EOF
+          test -s "$out/FrankenArcana.apk.enc"
+          test -s "$out/password.rsa"
+          test "$(stat -c %s "$out/password.rsa")" -eq 384
+          echo "ENCRYPTED_ONLY: $(stat -c %s "$out/FrankenArcana.apk.enc") ciphertext bytes"
+          echo "NO_PLAINTEXT_APK_UPLOAD"
+
+      - name: Upload encrypted one-day handoff only
+        uses: actions/upload-artifact@v4
+        with:
+          name: frankenarcana-ciphertext-only
+          path: ${{ runner.temp }}/chimera-ciphertext-only/*
+          retention-days: 1
+          if-no-files-found: error
+          compression-level: 0
+
+      - name: Confirm scope
+        if: always()
+        run: |
+          echo "No unencrypted APK or public release was uploaded."
+          echo "No writes to Arcana–Argentum; only the Chimera run artifact."
+          echo "The encrypted temporary handoff expires after one day."
