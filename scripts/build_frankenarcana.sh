@@ -60,9 +60,11 @@ echo "Building Android APK using upstream android-test-build profile."
 )
 
 shopt -s nullglob
-apks=("$FORGE"/forge-gui-android/target/*signed-aligned.apk)
+# The pinned Forge uber-apk-signer outputs *-aligned-debugSigned.apk (v2/v3 signed).
+apks=("$FORGE"/forge-gui-android/target/*-aligned-debugSigned.apk)
 if [ "${#apks[@]}" -ne 1 ]; then
   echo "EXPECTED_ONE_DEBUG_SIGNED_APK_FOUND_${#apks[@]}" >&2
+  find "$FORGE/forge-gui-android/target" -maxdepth 1 -type f -name "*.apk" -printf "%f\n" >&2
   exit 5
 fi
 apk="${apks[0]}"
