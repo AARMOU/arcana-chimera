@@ -8,7 +8,7 @@ FORGE="$ROOT/third_party/forge"
 REPORTS="$ROOT/reports"
 RUN_ID="$(date -u +%Y%m%dT%H%M%SZ)"
 LOG="$REPORTS/four-commander-${RUN_ID}.log"
-STATUS="$REPORTS/commander-${RUN_ID}.status.txt"
+STATUS="$REPORTS/four-commander-${RUN_ID}.status.txt"
 
 for binary in git java mvn timeout tee grep; do
   command -v "$binary" >/dev/null || { echo "MISSING: $binary" >&2; exit 2; }
@@ -48,7 +48,7 @@ build_code=$?
 set -e
 if [ "$build_code" -ne 0 ]; then
   echo "BUILD_FAILED exit=$build_code" | tee -a "$STATUS"
-  echo "Evidence: $REPORTS/commander-build-${RUN_ID}.log"
+  echo "Evidence: $REPORTS/four-commander-build-${RUN_ID}.log"
   exit "$build_code"
 fi
 
