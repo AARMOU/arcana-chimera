@@ -41,3 +41,9 @@ These prove headless gameplay only, not APK integration. **Do not schedule anoth
 ## Owner visual-correction override — November 3, 2026
 
 The owner explicitly rejected a stock Forge launcher/game screen as the target: **“It's arcana with forge. I want the same ui as it currently is. ... as close as you can get for this trial run.”** The earlier donor-launcher-only spike is abandoned as insufficient and must not be merged as a successful FrankenArcana prototype. The relevant UI source is staged read-only from Arcana, while the Forge adapter and every experimental patch remain in Chimera. A PASS cannot be declared just because Forge's unmodified Android screen opens.
+
+## Implemented device-spike candidate (not yet build-verified)
+
+To move toward the owner's requested quick proof, Chimera now has original source files for an **Arcana-style Android overlay on top of Forge's real mobile game**. The overlay follows Arcana's dark green/Mint/Gold palette and common table flow (seats, field, commander, hand, phases, pass controls), but **is not the actual Compose layout**. It obtains all displayed game state from Forge's real `MatchController.getGameView()` on the LibGDX thread, masks hidden opponent hands, and sends inputs to Forge's own game controller. The full native Forge controls remain available for complex decisions. See [implementation and build details](FRANKENARCANA_DEVICE_TRIAL.md).
+
+**No compiled APK and no verified on-device action/AI turn yet.** A manual build and device test remain essential. This shortcut prioritizes a real match on the user's phone over immediate pixel-perfect UI parity. Do not claim it replaces Arcana or has been validated until proven.
