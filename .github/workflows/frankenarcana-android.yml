@@ -22,6 +22,17 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Check Chimera source syntax before expensive build
+        run: |
+          python3 -m py_compile scripts/prepare_frankenforge.py
+          bash -n scripts/build_frankenarcana.sh
+          test -s prototype/android/ArcanaTableOverlay.java
+          test -s prototype/android/ChimeraLauncher.java
+          if grep -E 'mcp__GitHub__|AARMOU/arcana_table' scripts/build_frankenarcana.sh scripts/prepare_frankenforge.py; then
+            echo "Unexpected source reference or connector command in Android builder"
+            exit 2
+          fi
+
       - name: Install JDK 17
         uses: actions/setup-java@v5
         with:
