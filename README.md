@@ -1,6 +1,6 @@
 # Project Chimera 🧪
 
-**Private, independent Forge-versus-Argentum experiment.** This is an evaluation harness, **not** an Android app or a working Forge port.
+**Independent Forge-versus-Argentum research experiment.** This is an evaluation harness, **not** an Android app or a working Forge port.
 
 ## Objective
 Find out whether Forge's existing Magic rules engine and AI can outperform Argentum for an Arcana-style, phone-first Commander game, using measured evidence rather than assumptions.
@@ -11,13 +11,13 @@ Find out whether Forge's existing Magic rules engine and AI can outperform Argen
 - Do not commit Wizards artwork, copied card databases, or unreviewed third-party code.
 - Forge is **GPL-3.0**, Argentum is **MIT**; this starter contains **no Forge source code**.
 - Private hosting does not erase third-party copyright or licensing requirements.
-- **No GitHub Actions workflows are enabled in this repository.** The owner explicitly prohibits any runner usage that could incur charges. Do not start, rerun, or create cloud/paid jobs without explicit approval.
+- **Public-only manual test authorized November 3:** standard GitHub-hosted Ubuntu runner only, after the owner changes repo visibility to public. No automatic runs, premium runners, public game binaries, paid workers, or artifact uploads. The workflow skips execution if repository visibility isn't public. See [decisions](docs/DECISIONS.md).
 
 ## Start here
 1. Read [the experiment plan](docs/EVALUATION.md) and [licensing notes](docs/LICENSING_AND_IP.md).
 2. To reproduce a **Forge source build on your own computer** (optional), install Git, JDK 17+, Maven, and Python 3.
 3. On Windows PowerShell run `./scripts/probe_forge.ps1`; on Linux/macOS run `bash scripts/probe_forge.sh`.
-4. For **one AI Commander game**, run `bash scripts/run_one_commander.sh` in a network-enabled Linux workspace, using your own machine without GitHub Actions. See [the execution notes](docs/RUN_ONE_GAME.md). No cloud job is available.
+4. For **one AI Commander game**, run `bash scripts/run_one_commander.sh` on your Linux machine, or use the **manual-only** workflow from GitHub's Actions tab after the repository is public and this change is merged. See [the execution notes](docs/RUN_ONE_GAME.md).
 5. Review the ignored `reports/` output. A successful Maven build is **not** proof that Commander gameplay, multiplayer, Android performance, or Forge-to-Arcana integration works.
 6. Record gameplay findings in [the acceptance matrix](scenarios/acceptance-matrix.csv). Mark items passed **only with evidence**.
 
