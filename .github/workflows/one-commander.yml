@@ -1,0 +1,55 @@
+name: Chimera — one Commander game (public, manual only)
+
+# No push/PR/schedule triggers. Paid runners and private-repo minutes prohibited.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: chimera-public-manual-commander
+  cancel-in-progress: false
+
+jobs:
+  one-game:
+    if: github.event.repository.visibility == 'public' && github.repository == 'AARMOU/arcana-chimera'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - name: Check out Chimera
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Install Java 17 (no Maven cache)
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Check environment
+        run: |
+          java -version
+          mvn -version
+          df -h .
+
+      - name: One real AI vs AI Commander game
+        run: bash scripts/run_one_commander.sh
+
+      - name: Print bounded diagnostics (no artifact uploads)
+        if: always()
+        run: |
+          shopt -s nullglob
+          for file in reports/commander-*.status.txt; do
+            echo "=== $file ==="
+            cat "$file"
+          done
+          for file in reports/commander-build-*.log; do
+            echo "=== Build log tail: $file ==="
+            tail -n 50 "$file"
+          done
+          for file in reports/commander-*.log; do
+            echo "=== Game log tail: $file ==="
+            tail -n 50 "$file"
+          done
