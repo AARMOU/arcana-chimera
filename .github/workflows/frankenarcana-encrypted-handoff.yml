@@ -77,8 +77,8 @@ jobs:
           fi
           apk="${apks[0]}"
           # Ensure the shipped binary cannot overwrite the Arcana app.
-          "$ANDROID_SDK_ROOT/build-tools/35.0.0/aapt" dump badging "$apk" |
-            grep -q "package: name='org.arcanachimera.frankenarcana'"
+          package_badging="$("$ANDROID_SDK_ROOT/build-tools/35.0.0/aapt" dump badging "$apk")"
+          grep -q "package: name='org.arcanachimera.frankenarcana'" <<< "$package_badging"
           out="$RUNNER_TEMP/chimera-ciphertext-only"
           mkdir -p "$out"
           chmod 700 "$out"
