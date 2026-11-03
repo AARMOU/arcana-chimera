@@ -27,6 +27,7 @@ jobs:
           set -euo pipefail
           python3 -m py_compile scripts/prepare_frankenforge.py
           bash -n scripts/build_frankenarcana.sh
+          bash -n scripts/delivery/recover_apk.sh
           openssl pkey -pubin -in scripts/delivery/frankenarcana-public.pem -noout
           test -s prototype/android/ArcanaTableOverlay.java
           test -s prototype/android/ChimeraLauncher.java
@@ -77,8 +78,8 @@ jobs:
           fi
           apk="${apks[0]}"
           # Ensure the shipped binary cannot overwrite the Arcana app.
-          "$ANDROID_SDK_ROOT/build-tools/35.0.0/aapt" dump badging "$apk" |
-            grep -q "package: name='org.arcanachimera.frankenarcana'"
+          package_badging="$("$ANDROID_SDK_ROOT/build-tools/35.0.0/aapt" dump badging "$apk")"
+          grep -q "package: name='org.arcanachimera.frankenarcana'" <<< "$package_badging"
           out="$RUNNER_TEMP/chimera-ciphertext-only"
           mkdir -p "$out"
           chmod 700 "$out"
