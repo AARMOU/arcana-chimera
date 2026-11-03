@@ -17,8 +17,9 @@ Find out whether Forge's existing Magic rules engine and AI can outperform Argen
 1. Read [the experiment plan](docs/EVALUATION.md) and [licensing notes](docs/LICENSING_AND_IP.md).
 2. To reproduce a **Forge source build on your own computer** (optional), install Git, JDK 17+, Maven, and Python 3.
 3. On Windows PowerShell run `./scripts/probe_forge.ps1`; on Linux/macOS run `bash scripts/probe_forge.sh`.
-4. For **one AI Commander game**, run `bash scripts/run_one_commander.sh` in a network-enabled Linux workspace, or manually launch [the single-game workflow](.github/workflows/one-commander.yml) if you accept its possible GitHub Actions minutes usage. See [the execution notes](docs/RUN_ONE_GAME.md). The one-game runner is not an automatic job.\n5. Review the ignored `reports/` output. A successful Maven build is **not** proof that Commander gameplay, multiplayer, Android performance, or Forge-to-Arcana integration works.
-5. Record gameplay findings in [the acceptance matrix](scenarios/acceptance-matrix.csv). Mark items passed **only with evidence**.
+4. For **one AI Commander game**, run `bash scripts/run_one_commander.sh` in a network-enabled Linux workspace, or manually launch [the single-game workflow](.github/workflows/one-commander.yml) if you accept its possible GitHub Actions minutes usage. See [the execution notes](docs/RUN_ONE_GAME.md). The one-game runner is not an automatic job.
+5. Review the ignored `reports/` output. A successful Maven build is **not** proof that Commander gameplay, multiplayer, Android performance, or Forge-to-Arcana integration works.
+6. Record gameplay findings in [the acceptance matrix](scenarios/acceptance-matrix.csv). Mark items passed **only with evidence**.
 
 ## Forge baseline
 Pinned upstream Forge commit: `7c34365c749ca46ab71336c5f267340d6088e600` (source inspected November 2, 2026, Mountain time).
