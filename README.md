@@ -15,7 +15,7 @@ Find out whether Forge's existing Magic rules engine and AI can outperform Argen
 
 ## FrankenArcana — current one-shot objective
 
-**Owner's next goal:** one disposable Forge-powered, Arcana-style Android interaction. This is **not** a replacement for the running Arcana app. Arcana's source is strictly read-only; all code belongs in Chimera. No more Commander benchmark campaigns. See [the binding isolation/one-turn contract](docs/FRANKENARCANA.md).
+**Owner's next goal:** one disposable Android build using **Arcana's actual current Compose table UI (or as close as possible)** with **Forge as the live rules engine and AI**. A renamed Forge launcher is **not** sufficient. Clone Arcana only into ignored temporary space via `bash scripts/stage_arcana_ui.sh`; every change stays in Chimera. No changes or contributions to Arcana–Argentum, no more benchmark campaigns. See [the one-turn integration contract](docs/FRANKENARCANA.md).
 
 ## Start here
 1. Read [the experiment plan](docs/EVALUATION.md) and [licensing notes](docs/LICENSING_AND_IP.md).
