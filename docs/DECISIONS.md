@@ -14,6 +14,10 @@ After successful two-AI Commander run #41662709183, owner said **"Go"** to the n
 
 Owner confirmed a disposable Forge-powered Android proof-of-concept, completely separate from Arcana–Argentum. **Chimera may read Arcana's GitHub source but must contribute absolutely nothing to the Arcana repository or any Arcana service.** Any implementation/code/docs must stay inside Chimera. No more simulation-test marathon; focus on one human action and one AI response using Forge on a phone. See [FrankenArcana scope and hard write boundary](FRANKENARCANA.md). Previous prohibitions on public binary distribution, paid resources and Arcana writes remain in force.
 
+## Owner's latest prototype scope — November 3, 2026
+
+Owner instructed **“It's arcana with forge. I want the same ui as it currently is… as close as you can get for this trial run”**, followed by the instruction to **build it**. For the trial only, an original Arcana-style native Android overlay over Forge's real state/actions is permitted as a quick approximation, **not** a claim that the exact Compose UI has been ported. The minimal live-match bridge must be functional, and no Arcana write-back is allowed. Do not fabricate a game state to simulate success.
+
 ## Original November 2 direction (superseded only as noted above)
 
 **Owner direction: November 2, 2026 (Mountain time).** Explore Forge in a dedicated private repository named `AARMOU/arcana-chimera`.
