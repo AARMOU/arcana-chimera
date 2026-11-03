@@ -1,6 +1,6 @@
 # FrankenArcana — one-phone live table trial
 
-**Status: the experimental Forge Android APK compiled and was signed successfully in [run #41690582004](https://github.com/AARMOU/arcana-chimera/actions/runs/41690582004), but it was discarded by the runner after the old filename checker failed. The checker is now fixed. No APK is retained, installed or device-tested yet.**
+**Status: APK compiled and signed in [run #41710340893](https://github.com/AARMOU/arcana-chimera/actions/runs/41710340893), delivered privately to the owner's Google Drive, installed, and played on a Fold 6 Android 17. Forge menus and rules/AI ran; Arcana-style table appeared when the match began, but its card/action buttons were not reliably playable. A candidate native-input bridge repair is pending compilation and phone test.**
 
 This is a Chimera-only, disposable Android attempt. It does not change Arcana–Argentum.
 
@@ -66,3 +66,13 @@ An encrypted, short-lived delivery path now exists: `.github/workflows/frankenar
 A narrow repair now gives the second Maven invocation **one** retry after 15 seconds **only** for an explicitly logged Maven network transfer failure. Compilation, code and Android errors are not retried. Separately, the workflow's public RSA delivery key has been replaced with one whose matching private key was generated and tested outside GitHub; the public key alone is committed. `scripts/delivery/recover_apk.sh` can decrypt a future encrypted bundle and refuses an invalid APK or mismatched SHA-256.
 
 **Owner's delivery requirement remains:** retrieve and verify the actual `.apk`, then upload the **normal APK** privately to their connected Google Drive (My Drive root), verify the returned file/link, and only then announce successful delivery. Do not post the decrypted binary in the public GitHub repo. The code/temporary run artifact is not a Google Drive delivery; **nothing has been uploaded to Drive yet**. No rerun has been triggered by this change.
+
+## Fold 6 hands-on verdict — November 3, 2026
+
+Owner directly observed that FrankenArcana first displayed native Forge menus, then automatically switched to the Arcana-style battlefield upon starting a match. **The overlay largely displayed but its gameplay buttons did not work reliably; owner had to press FORGE CONTROLS to return to Forge and play cards.** This establishes actual UI presentation but **not** a working gameplay-input bridge.
+
+The phone logs (`forge-logs-20261103-133015.zip`) showed real turn progression, card plays and combat, without a fatal crash. They do not individually attribute those actions to overlay taps; the owner explicitly confirms they were made using the fallback Forge UI.
+
+Root-cause candidate from upstream code review: Chimera was dispatching `IGameController.selectCard()` directly on LibGDX's **render thread**, but native Forge's `VCardDisplayArea.CardAreaPanel.tap()` invokes `ThreadUtil.invokeInGameThread()` and then `CardAreaPanel.selectCard(false)` for real card actions. This repair uses Forge's actual `CardAreaPanel` selection, correctly dispatched to the game-thread pool. Our OK/Cancel buttons now invoke the actual Forge `FButton.trigger()`, preserving Undo/End Turn semantics; rejection produces brief visible feedback instead of silent nothing.
+
+**Not yet compiled, delivered, or phone-tested:** the patched bridge. Controls for complex interactions (targets, mana, attacks, blocks) may still require FORGE CONTROLS. Do not count Phase Tracker labels as interactive phase-change buttons. Do not report success without the owner confirming a card played using the Arcana-style UI itself. Only Chimera changed; Arcana–Argentum remains untouched.

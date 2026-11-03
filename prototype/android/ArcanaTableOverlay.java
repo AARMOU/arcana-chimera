@@ -15,6 +15,7 @@ import android.widget.HorizontalScrollView;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
+import android.widget.Toast;
 
 import com.badlogic.gdx.Gdx;
 
@@ -23,7 +24,9 @@ import forge.game.card.CardView;
 import forge.game.player.PlayerView;
 import forge.screens.match.MatchController;
 import forge.screens.match.MatchScreen;
+import forge.screens.match.views.VCardDisplayArea.CardAreaPanel;
 import forge.screens.match.views.VPrompt;
+import forge.util.ThreadUtil;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -349,8 +352,13 @@ public final class ArcanaTableOverlay extends FrameLayout {
     }
 
     private void selectCard(int id) {
+        // Native Forge card taps cross from LibGDX's render thread into
+        // ThreadUtil's game pool. Calling selectCard directly on the render
+        // thread (as the original Chimera overlay did) silently fails for
+        // decisions that wait for the game-thread input.
         onForgeThread(() -> {
             MatchController controller = MatchController.instance;
+            if (controller == null) return;
             GameView game = controller.getGameView();
             if (game == null || game.isGameOver()) return;
             PlayerView viewer = null;
@@ -358,40 +366,76 @@ public final class ArcanaTableOverlay extends FrameLayout {
                 if (!player.isAI()) { viewer = player; break; }
             }
             if (viewer == null) return;
-            // Own hand / command zone: cast and activate through Forge's input system.
+
+            CardView selected = null;
             for (CardView card : viewer.getHand()) {
                 if (card.getId() == id && card.canBeShownTo(viewer)) {
-                    controller.getGameController().selectCard(
-                            card, Collections.emptyList(), null);
-                    return;
+                    selected = card;
+                    break;
                 }
             }
-            for (CardView card : viewer.getCommand()) {
+            if (selected == null) for (CardView card : viewer.getCommand()) {
                 if (card.getId() == id) {
-                    controller.getGameController().selectCard(
-                            card, Collections.emptyList(), null);
-                    return;
+                    selected = card;
+                    break;
                 }
             }
-            // All public battlefields: card selection also works for enemy targets.
-            for (PlayerView player : game.getPlayers()) {
-                for (CardView card : player.getBattlefield()) {
-                    if (card.getId() == id) {
-                        controller.getGameController().selectCard(
-                                card, Collections.emptyList(), null);
-                        return;
+            if (selected == null) {
+                for (PlayerView player : game.getPlayers()) {
+                    for (CardView card : player.getBattlefield()) {
+                        if (card.getId() == id) {
+                            selected = card;
+                            break;
+                        }
                     }
+                    if (selected != null) break;
                 }
             }
+            if (selected == null) return;
+
+            // Use the same card selection and stacked/attached-card handling
+            // as Forge's VCardDisplayArea.CardAreaPanel.tap().
+            final CardAreaPanel nativePanel = CardAreaPanel.get(selected);
+            ThreadUtil.invokeInGameThread(() -> {
+                try {
+                    if (!nativePanel.selectCard(false)) {
+                        android.util.Log.i("FrankenArcana",
+                                "Card tap did not produce a legal action: " + id);
+                        main.post(() -> Toast.makeText(activity,
+                                "No action for that card right now. Use FORGE CONTROLS for more choices.",
+                                Toast.LENGTH_SHORT).show());
+                    }
+                } catch (Throwable t) {
+                    android.util.Log.e("FrankenArcana",
+                            "Native Forge card selection failed", t);
+                    main.post(() -> Toast.makeText(activity,
+                            "Card action failed. Try FORGE CONTROLS.",
+                            Toast.LENGTH_SHORT).show());
+                }
+            });
         });
     }
 
     private void realPrompt(boolean ok) {
+        // Trigger the *actual* FButton rather than bypassing it: Forge's
+        // Cancel button can mean Undo or End Turn, depending on the prompt.
         onForgeThread(() -> {
-            MatchController c = MatchController.instance;
-            if (c.getGameView() == null || c.getGameView().isGameOver()) return;
-            if (ok) c.getGameController().selectButtonOk();
-            else c.getGameController().selectButtonCancel();
+            MatchController controller = MatchController.instance;
+            if (controller == null) return;
+            GameView game = controller.getGameView();
+            if (game == null || game.isGameOver()) return;
+            MatchScreen screen = MatchController.getView();
+            if (screen == null) return;
+            VPrompt prompt = screen.getActivePrompt();
+            if (prompt == null) return;
+            boolean handled = ok
+                    ? prompt.getBtnOk() != null && prompt.getBtnOk().trigger()
+                    : prompt.getBtnCancel() != null && prompt.getBtnCancel().trigger();
+            if (!handled) {
+                main.post(() -> Toast.makeText(activity,
+                        "That action is not available yet.",
+                        Toast.LENGTH_SHORT).show());
+            }
         });
     }
 
