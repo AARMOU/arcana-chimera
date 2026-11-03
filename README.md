@@ -18,8 +18,8 @@ Find out whether Forge's existing Magic rules engine and AI can outperform Argen
 2. To reproduce a **Forge source build on your own computer** (optional), install Git, JDK 17+, Maven, and Python 3.
 3. On Windows PowerShell run `./scripts/probe_forge.ps1`; on Linux/macOS run `bash scripts/probe_forge.sh`.
 4. For **one AI Commander game**, run `bash scripts/run_one_commander.sh` on your Linux machine, or use the **manual-only** workflow from GitHub's Actions tab after the repository is public and this change is merged. See [the execution notes](docs/RUN_ONE_GAME.md).
-5. Review the ignored `reports/` output. A successful Maven build is **not** proof that Commander gameplay, multiplayer, Android performance, or Forge-to-Arcana integration works.
-6. Record gameplay findings in [the acceptance matrix](scenarios/acceptance-matrix.csv). Mark items passed **only with evidence**.
+5. For the **next four-AI Commander experiment**, run `bash scripts/run_four_commander.sh` locally or manually dispatch the separate [four-seat workflow](.github/workflows/four-commander.yml) on the free public standard runner. Its pass criteria require one winner and three eliminated opponents; this is not a network or Android test.
+6. Review ignored `reports/` output and record findings in [the acceptance matrix](scenarios/acceptance-matrix.csv). A Maven build by itself is **not** gameplay evidence.
 
 ## Forge baseline
 Pinned upstream Forge commit: `7c34365c749ca46ab71336c5f267340d6088e600` (source inspected November 2, 2026, Mountain time).
@@ -29,6 +29,6 @@ Pinned upstream Forge commit: `7c34365c749ca46ab71336c5f267340d6088e600` (source
 - [Arcana baseline](https://github.com/AARMOU/arcana_table)
 
 ## Status
-**Phase 0 — setup.** This project does not yet have a compiled Forge engine, **completed AI Commander game**, Android integration, or validated performance comparison. A manual match runner has been prepared, **not executed**. Do not claim an engine winner on repository inspection alone.
+**Phase 1 — headless gameplay baseline.** [Experiment 002 / GitHub run #41662709183](https://github.com/AARMOU/arcana-chimera/actions/runs/41662709183) on November 3, 2026 **passed**: pinned Forge compiled, and `Buckle Up` defeated `Counterpunch` in a two-AI Commander game (7,922 ms game time; seed 8073). **Next:** one isolated four-AI game, not yet executed. No four-player remote-network validation, Android integration, device performance, or evidence that Forge outperforms Argentum yet.
 
 Unofficial experiment, not affiliated with or endorsed by Wizards of the Coast.

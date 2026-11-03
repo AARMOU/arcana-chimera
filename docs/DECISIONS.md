@@ -6,6 +6,10 @@ The owner expressly authorized making this research-only repository **public** t
 
 The other boundaries remain in force: do not touch production Arcana, build APKs, deploy, distribute protected artwork or databases, spend AI/API credits, or merge unrelated work. Public visibility exposes repository history and old Actions logs.
 
+## Owner follow-up — November 3, 2026
+
+After successful two-AI Commander run #41662709183, owner said **"Go"** to the next Chimera experiments. Scope this step to preparing and attempting **one four-AI headless Commander match**, on a standard free public runner, manually dispatched and bounded. No automatic run, premium compute, API usage, artifact upload, or production integration is authorized. Four-AI simulation does not prove four-player remote/network/Android behavior.
+
 ## Original November 2 direction (superseded only as noted above)
 
 **Owner direction: November 2, 2026 (Mountain time).** Explore Forge in a dedicated private repository named `AARMOU/arcana-chimera`.
