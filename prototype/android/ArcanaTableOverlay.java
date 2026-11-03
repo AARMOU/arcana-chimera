@@ -251,7 +251,7 @@ public final class ArcanaTableOverlay extends FrameLayout {
     }
 
     public static void install(Activity activity) {
-        if (activity.findViewWithTag("chimera-live-table") != null) return;
+        if (activity.getWindow().getDecorView().findViewWithTag("chimera-live-table") != null) return;
         ArcanaTableOverlay overlay = new ArcanaTableOverlay(activity);
         overlay.setTag("chimera-live-table");
         activity.addContentView(overlay, new ViewGroup.LayoutParams(
