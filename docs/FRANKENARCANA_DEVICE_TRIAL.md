@@ -43,3 +43,7 @@ Only a completed on-phone interaction passes. There is no claim of a working ins
 ## Unproven risks
 
 The APK may fail to compile due to SDK/Maven/plugin compatibility. Forge may require first-run game assets or storage permissions. The Android overlay may need layout adjustments on the Fold. Some interactive decisions require the Forge Controls fallback. These are genuine unknowns, not passed tests.
+
+## Delivery revision (2026-11-03)
+
+An encrypted, short-lived delivery path now exists: `.github/workflows/frankenarcana-encrypted-handoff.yml`. This is manual-only, standard public runner, same local signed APK build. The runner uploads an artifact with **only** `FrankenArcana.apk.enc` (AES-256-CBC/PBKDF2), `password.rsa` (RSA-OAEP wrapped unique one-run password), `APK.sha256`, and source/licensing notes. Retention: **one day**. It NEVER uploads a plaintext APK. The private RSA key is held outside GitHub, so the public artifact is not an installable APK. After securely retrieving it, decrypt and verify its SHA-256, then provide a private APK directly to the owner. Until download and decryption are verified, do not claim successful APK delivery. No Arcana–Argentum writes or paid compute.
