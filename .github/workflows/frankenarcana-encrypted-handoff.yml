@@ -27,6 +27,7 @@ jobs:
           set -euo pipefail
           python3 -m py_compile scripts/prepare_frankenforge.py
           bash -n scripts/build_frankenarcana.sh
+          bash -n scripts/delivery/recover_apk.sh
           openssl pkey -pubin -in scripts/delivery/frankenarcana-public.pem -noout
           test -s prototype/android/ArcanaTableOverlay.java
           test -s prototype/android/ChimeraLauncher.java
