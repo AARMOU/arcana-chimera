@@ -11,13 +11,13 @@ Find out whether Forge's existing Magic rules engine and AI can outperform Argen
 - Do not commit Wizards artwork, copied card databases, or unreviewed third-party code.
 - Forge is **GPL-3.0**, Argentum is **MIT**; this starter contains **no Forge source code**.
 - Private hosting does not erase third-party copyright or licensing requirements.
-- The Forge match can be launched using a **manual-only** GitHub Actions workflow. There are no push, PR or scheduled triggers; launching a private-repo runner can consume included GitHub Actions minutes and potentially incur charges if the allowance is exhausted.
+- **No GitHub Actions workflows are enabled in this repository.** The owner explicitly prohibits any runner usage that could incur charges. Do not start, rerun, or create cloud/paid jobs without explicit approval.
 
 ## Start here
 1. Read [the experiment plan](docs/EVALUATION.md) and [licensing notes](docs/LICENSING_AND_IP.md).
 2. To reproduce a **Forge source build on your own computer** (optional), install Git, JDK 17+, Maven, and Python 3.
 3. On Windows PowerShell run `./scripts/probe_forge.ps1`; on Linux/macOS run `bash scripts/probe_forge.sh`.
-4. For **one AI Commander game**, run `bash scripts/run_one_commander.sh` in a network-enabled Linux workspace, or manually launch [the single-game workflow](.github/workflows/one-commander.yml) if you accept its possible GitHub Actions minutes usage. See [the execution notes](docs/RUN_ONE_GAME.md). The one-game runner is not an automatic job.
+4. For **one AI Commander game**, run `bash scripts/run_one_commander.sh` in a network-enabled Linux workspace, using your own machine without GitHub Actions. See [the execution notes](docs/RUN_ONE_GAME.md). No cloud job is available.
 5. Review the ignored `reports/` output. A successful Maven build is **not** proof that Commander gameplay, multiplayer, Android performance, or Forge-to-Arcana integration works.
 6. Record gameplay findings in [the acceptance matrix](scenarios/acceptance-matrix.csv). Mark items passed **only with evidence**.
 
