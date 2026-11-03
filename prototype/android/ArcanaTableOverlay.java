@@ -75,7 +75,9 @@ public final class ArcanaTableOverlay extends FrameLayout {
                 try {
                     snapshot = fromRealForgeGame();
                 } catch (Throwable t) {
-                    snapshot = null; // do not invent a game or hide a game exception
+                    // Never fabricate state if Forge rejects a snapshot; keep its native UI usable.
+                    android.util.Log.e("FrankenArcana", "Live Forge state read failed", t);
+                    snapshot = null;
                 }
                 final Snapshot result = snapshot;
                 main.post(() -> {
@@ -351,15 +353,28 @@ public final class ArcanaTableOverlay extends FrameLayout {
             MatchController controller = MatchController.instance;
             GameView game = controller.getGameView();
             if (game == null || game.isGameOver()) return;
+            PlayerView viewer = null;
             for (PlayerView player : game.getPlayers()) {
-                if (player.isAI()) continue;
-                for (CardView card : player.getHand()) {
-                    if (card.getId() == id && card.canBeShownTo(player)) {
-                        controller.getGameController().selectCard(
-                                card, Collections.emptyList(), null);
-                        return;
-                    }
+                if (!player.isAI()) { viewer = player; break; }
+            }
+            if (viewer == null) return;
+            // Own hand / command zone: cast and activate through Forge's input system.
+            for (CardView card : viewer.getHand()) {
+                if (card.getId() == id && card.canBeShownTo(viewer)) {
+                    controller.getGameController().selectCard(
+                            card, Collections.emptyList(), null);
+                    return;
                 }
+            }
+            for (CardView card : viewer.getCommand()) {
+                if (card.getId() == id) {
+                    controller.getGameController().selectCard(
+                            card, Collections.emptyList(), null);
+                    return;
+                }
+            }
+            // All public battlefields: card selection also works for enemy targets.
+            for (PlayerView player : game.getPlayers()) {
                 for (CardView card : player.getBattlefield()) {
                     if (card.getId() == id) {
                         controller.getGameController().selectCard(
