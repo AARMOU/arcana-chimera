@@ -21,7 +21,7 @@ Find out whether Forge's existing Magic rules engine and AI can outperform Argen
 
 The Chimera-owned `prototype/android/ArcanaTableOverlay.java` now draws a playable **Arcana-colored table from Forge's live Android `GameView`**, without scripted/fake cards. It includes multiple seats, life, turn/phase, opponent and own battlefields, command zones, a tappable hand, real Forge OK/pass choices, and a switch back to native Forge controls for difficult prompts. The prototype still uses Forge's own setup menu and deliberately **approximates** Arcana's Compose layout rather than compiling a literal copy of it.
 
-The build script `scripts/build_frankenarcana.sh` and manual-only `.github/workflows/frankenarcana-android.yml` prepare an **independent debug APK** from pinned Forge source with package `org.arcanachimera.frankenarcana`. **Not yet compiled or installed**; no APK or game turn should be claimed proven. Binaries are neither committed nor uploaded. Arcana–Argentum remains untouched. See [device trial status](docs/FRANKENARCANA_DEVICE_TRIAL.md).
+The build script `scripts/build_frankenarcana.sh` and manual-only `.github/workflows/frankenarcana-android.yml` prepare an **independent debug APK** from pinned Forge source with package `org.arcanachimera.frankenarcana`. **Compiled and signed successfully in [run #41690582004](https://github.com/AARMOU/arcana-chimera/actions/runs/41690582004)** (the run still showed red because an APK filename check failed after packaging, repaired in PR #10). That APK was discarded; no install or game turn has been verified. Binaries are neither committed nor uploaded. Arcana–Argentum remains untouched. See [device trial status](docs/FRANKENARCANA_DEVICE_TRIAL.md).
 
 ## Encrypted private APK handoff (one-time)
 
