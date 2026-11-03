@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Chimera Experiment 001 — ONE headless Forge AI-vs-AI Commander match.
-# Manual command. No Arcana access, deployments, GitHub Actions or paid tools.
+# Manual command. No Arcana access, deployments, automatic jobs or paid tools.
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 FORGE_SHA="7c34365c749ca46ab71336c5f267340d6088e600"
@@ -22,6 +22,12 @@ git -C "$FORGE" checkout --quiet --detach "$FORGE_SHA"
 test "$(git -C "$FORGE" rev-parse HEAD)" = "$FORGE_SHA" || { echo 'PIN_MISMATCH' >&2; exit 3; }
 
 DECK_DIR="$FORGE/forge-gui/res/quest/precons"
+# Forge desktop resolves res/ relative to its working directory in snapshot builds.
+# Fail before the Maven build if the required English resources are missing.
+if [ ! -f "$FORGE/forge-gui/res/languages/en-US.properties" ]; then
+  echo 'MISSING_ENGLISH_RESOURCES: forge-gui/res/languages/en-US.properties' >&2
+  exit 4
+fi
 for deck in 'Buckle Up.dck' 'Counterpunch.dck'; do
   test -f "$DECK_DIR/$deck" || { echo "MISSING_DECK: $deck" >&2; exit 4; }
 done
@@ -55,7 +61,9 @@ fi
 
 echo "Running a real Forge Commander match; winner required for PASS."
 set +e
-(cd "$FORGE/forge-gui-desktop" && timeout 420s java -Xmx4g -Djava.awt.headless=true -jar "${jars[0]}" \
+# Release/snapshot builds use cwd for assets (GuiDesktop.getAssetsDir() == "").
+# Starting in forge-gui also works for versions that use ../forge-gui/.
+(cd "$FORGE/forge-gui" && timeout 420s java -Xmx4g -Djava.awt.headless=true -jar "${jars[0]}" \
   sim -d 'Buckle Up.dck' 'Counterpunch.dck' -D "$DECK_DIR" -n 1 -f commander -s 8073 -c 300 -q) > "$LOG" 2>&1
 game_code=$?
 set -e
