@@ -10,6 +10,10 @@ The other boundaries remain in force: do not touch production Arcana, build APKs
 
 After successful two-AI Commander run #41662709183, owner said **"Go"** to the next Chimera experiments. Scope this step to preparing and attempting **one four-AI headless Commander match**, on a standard free public runner, manually dispatched and bounded. No automatic run, premium compute, API usage, artifact upload, or production integration is authorized. Four-AI simulation does not prove four-player remote/network/Android behavior.
 
+## Owner isolation instruction — November 3, 2026
+
+Owner confirmed a disposable Forge-powered Android proof-of-concept, completely separate from Arcana–Argentum. **Chimera may read Arcana's GitHub source but must contribute absolutely nothing to the Arcana repository or any Arcana service.** Any implementation/code/docs must stay inside Chimera. No more simulation-test marathon; focus on one human action and one AI response using Forge on a phone. See [FrankenArcana scope and hard write boundary](FRANKENARCANA.md). Previous prohibitions on public binary distribution, paid resources and Arcana writes remain in force.
+
 ## Original November 2 direction (superseded only as noted above)
 
 **Owner direction: November 2, 2026 (Mountain time).** Explore Forge in a dedicated private repository named `AARMOU/arcana-chimera`.
