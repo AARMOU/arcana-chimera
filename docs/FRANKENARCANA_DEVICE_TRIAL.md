@@ -1,6 +1,6 @@
 # FrankenArcana — one-phone live table trial
 
-**Status: source code prepared. APK has not yet compiled, installed or been tested.**
+**Status: the experimental Forge Android APK compiled and was signed successfully in [run #41690582004](https://github.com/AARMOU/arcana-chimera/actions/runs/41690582004), but it was discarded by the runner after the old filename checker failed. The checker is now fixed. No APK is retained, installed or device-tested yet.**
 
 This is a Chimera-only, disposable Android attempt. It does not change Arcana–Argentum.
 
@@ -42,7 +42,7 @@ Only a completed on-phone interaction passes. There is no claim of a working ins
 
 ## Unproven risks
 
-The APK may fail to compile due to SDK/Maven/plugin compatibility. Forge may require first-run game assets or storage permissions. The Android overlay may need layout adjustments on the Fold. Some interactive decisions require the Forge Controls fallback. These are genuine unknowns, not passed tests.
+The previous Forge Android compilation and signing passed, but the encrypted-delivery workflow is untested. Forge may require first-run game assets or storage permissions. The Android overlay may need layout adjustments on the Fold. Some interactive decisions require the Forge Controls fallback. These are genuine unknowns, not passed tests.
 
 ## Delivery revision (2026-11-03)
 
