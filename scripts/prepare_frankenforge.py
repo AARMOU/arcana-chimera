@@ -104,12 +104,41 @@ def prepare(forge: Path, chimera: Path) -> None:
         + '        if (contentView == forgeView) { ArcanaTableOverlay.install(this); }',
         1
     )
+
+    # The app-specific OBB/Forge folder is created by Forge's Main activity.
+    # On a fresh install the nested preferences directory may not exist when
+    # Forge.create() saves settings, producing an ENOENT stack trace.
+    prefs_anchor = "        //ensure .nomedia file exists in Forge directory so its images"
+    if main_modified.count(prefs_anchor) != 1:
+        raise RuntimeError("Upstream storage layout changed; prefs patch refused")
+    main_modified = main_modified.replace(
+        prefs_anchor,
+        '        // Chimera: create first-run preferences directory.\n'
+        + '        FileUtil.ensureDirectoryExists(ASSETS_DIR + "data/preferences/");\n'
+        + prefs_anchor,
+        1,
+    )
+
+    # Upstream detects its private Android storage by the original package name.
+    # Chimera has a different, isolated package ID, but still uses getObbDir().
+    core_src = forge / "forge-gui-mobile" / "src" / "forge" / "Forge.java"
+    core_original = core_src.read_text(encoding="utf-8")
+    app_dir_anchor = 'GuiBase.setUsingAppDirectory(assetDir0.contains("forge.app"));'
+    if core_original.count(app_dir_anchor) != 1:
+        raise RuntimeError("Upstream app-specific path detection changed")
+    core_modified = core_original.replace(
+        app_dir_anchor,
+        'GuiBase.setUsingAppDirectory(assetDir0.contains("forge.app") '
+        + '|| assetDir0.contains("org.arcanachimera.frankenarcana"));',
+        1,
+    )
     overlay = chimera / "prototype" / "android" / "ArcanaTableOverlay.java"
     if not overlay.read_text(encoding="utf-8").startswith("package forge.app;"):
         raise RuntimeError("Missing Chimera's live table source")
     # Write only after manifest, activity and overlay preflight checks pass.
     manifest.write_text(modified, encoding="utf-8")
     main_java.write_text(main_modified, encoding="utf-8")
+    core_src.write_text(core_modified, encoding="utf-8")
     target = android / "src" / "forge" / "app" / "ChimeraLauncher.java"
     shutil.copyfile(src, target)
     shutil.copyfile(overlay, android / "src" / "forge" / "app" / "ArcanaTableOverlay.java")
