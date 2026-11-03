@@ -47,3 +47,14 @@ The previous Forge Android compilation and signing passed, but the encrypted-del
 ## Delivery revision (2026-11-03)
 
 An encrypted, short-lived delivery path now exists: `.github/workflows/frankenarcana-encrypted-handoff.yml`. This is manual-only, standard public runner, same local signed APK build. The runner uploads an artifact with **only** `FrankenArcana.apk.enc` (AES-256-CBC/PBKDF2), `password.rsa` (RSA-OAEP wrapped unique one-run password), `APK.sha256`, and source/licensing notes. Retention: **one day**. It NEVER uploads a plaintext APK. The private RSA key is held outside GitHub, so the public artifact is not an installable APK. After securely retrieving it, decrypt and verify its SHA-256, then provide a private APK directly to the owner. Until download and decryption are verified, do not claim successful APK delivery. No Arcana–Argentum writes or paid compute.
+
+
+## Owner delivery directive — November 3, 2026
+
+**If the current encrypted handoff run does not produce an installable, recoverable APK, then fix the concrete problem and retry with delivery to the owner's connected private Google Drive.** The owner specifically wants the **normal installable `.apk` uploaded to their Google Drive**, not merely an encrypted archive, GitHub status badge, code repository, or a build that deletes the APK at the end.
+
+- Destination: owner's **My Drive** (root, unless a folder is explicitly specified later); keep sharing private. Do not publish a release, unencrypted APK, or public download in Chimera's public repository.
+- After a corrected build, retrieve the *actual APK* through a supported private transfer, verify it has package `org.arcanachimera.frankenarcana`, and upload the APK through the connected Google Drive integration. Verify the returned Drive file and link before reporting delivery.
+- If the transfer tool only provides an encrypted ZIP or an artifact whose matching private key is unavailable, **do not upload it and call it an APK**. Report the blocker and use a different lawful, private delivery route.
+- No writes to Arcana–Argentum, no paid services, and no automatic build retry loops. Do not assert on-device success without an observed game turn.
+- Current encrypted workflow remains in progress at the time of this instruction; do not interrupt it solely to change delivery preference.
