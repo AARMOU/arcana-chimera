@@ -51,13 +51,30 @@ echo "Building pinned Forge libraries before the Android APK."
   timeout 1800s mvn -B -Dmaven.test.skip=true install
 )
 echo "Building Android APK using upstream android-test-build profile."
-(
-  cd "$FORGE"
-  timeout 2400s mvn -U -B -P android-test-build verify \
-    -Dandroid.sdk.path="$ANDROID_SDK_ROOT" \
-    -Dandroid.buildToolsVersion=35.0.0 \
-    -Dmaven.test.skip=true
-)
+build_android_once() {
+  (
+    cd "$FORGE"
+    timeout 2400s mvn -U -B -P android-test-build verify \
+      -Dandroid.sdk.path="$ANDROID_SDK_ROOT" \
+      -Dandroid.buildToolsVersion=35.0.0 \
+      -Dmaven.test.skip=true
+  )
+}
+# Maven Central occasionally resets a dependency transfer. Retry just that
+# transient network error once; never repeat compilation or source errors.
+android_log="$(mktemp "$ROOT/third_party/android-maven.XXXXXXXX.log")"
+trap 'rm -f "$android_log"' EXIT
+if build_android_once 2>&1 | tee "$android_log"; then
+  echo "ANDROID_MAVEN_SUCCESS_FIRST_ATTEMPT"
+elif grep -Eiq 'Could not transfer artifact.*(Connection reset|Read timed out|Connection timed out|502 Bad Gateway|503 Service Unavailable|Temporary failure in name resolution)' "$android_log"; then
+  echo "TRANSIENT_MAVEN_NETWORK_ERROR: one retry after 15 seconds; no loop"
+  sleep 15
+  build_android_once
+  echo "ANDROID_MAVEN_SUCCESS_AFTER_SINGLE_NETWORK_RETRY"
+else
+  echo "ANDROID_MAVEN_NON_NETWORK_FAILURE: not retrying" >&2
+  exit 10
+fi
 
 shopt -s nullglob
 # The pinned Forge uber-apk-signer outputs *-aligned-debugSigned.apk (v2/v3 signed).
