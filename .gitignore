@@ -1,0 +1,15 @@
+# Never commit downloaded engines, card assets, logs, generated reports or local secrets.
+third_party/
+reports/
+.venv/
+__pycache__/
+*.pyc
+*.log
+*.tmp
+.DS_Store
+.idea/
+.vscode/
+.env
+.env.*
+*.keystore
+*.jks
