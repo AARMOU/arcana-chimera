@@ -6,7 +6,7 @@
 - It runs Forge's documented headless `sim` command: 2 AI players, 1 Commander game, 2 complete precon decks already present in Forge's resource tree (`Buckle Up.dck` and `Counterpunch.dck`), seed 8073, game timeout 300 seconds.
 - It saves the Maven build log and AI-game log under ignored `reports/`, and only prints PASS when Forge's own simulator reports a winner with no process error or detected timeout.
 
-## How to execute in a network-enabled Linux / Codex cloud workspace
+## How to execute locally on an owner-controlled Linux computer (no GitHub Actions)
 
 ```bash
 # In AARMOU/arcana-chimera
@@ -34,4 +34,4 @@ A headless game with a winner demonstrates a bounded baseline game. It does not 
 
 On November 2, 2026 (Mountain time), the assistant's isolated local environment had Java and Git but **no Maven** and **no DNS/network access to github.com**, so it could not clone or compile Forge or run the match locally. This is an execution blocker, not a confirmed Forge source defect.
 
-No workflow or paid GitHub Actions runner was started. The repository remains private.
+The first manually triggered GitHub Actions run failed before compilation because Maven cache was configured before Forge was cloned. The owner has since prohibited any workflow that could incur charges. The GitHub Actions workflow was removed from the repository; **do not rerun the historical failed job**. Run only on owner-controlled local hardware with no paid compute services. The repository remains private.
