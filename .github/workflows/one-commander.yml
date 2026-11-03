@@ -21,11 +21,10 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Set up Java 17 and Maven
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '17'
-          cache: maven
 
       - name: Run Forge Commander simulation
         run: bash scripts/run_one_commander.sh
