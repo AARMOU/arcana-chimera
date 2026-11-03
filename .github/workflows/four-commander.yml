@@ -1,0 +1,55 @@
+name: Chimera — four AI Commander seats (public, manual only)
+
+# No push, PR, schedule or automatic retry triggers.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: chimera-public-manual-commander
+  cancel-in-progress: false
+
+jobs:
+  four-seat-match:
+    if: github.event.repository.visibility == 'public' && github.repository == 'AARMOU/arcana-chimera'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - name: Check out Chimera
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Install Java 17 (without Maven cache)
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Print runner environment
+        run: |
+          java -version
+          mvn -version
+          df -h .
+
+      - name: Run one four-player Commander game
+        run: bash scripts/run_four_commander.sh
+
+      - name: Show bounded diagnostics (no artifacts uploaded)
+        if: always()
+        run: |
+          shopt -s nullglob
+          for file in reports/four-commander-*.status.txt; do
+            echo "=== $file ==="
+            cat "$file"
+          done
+          for file in reports/four-commander-build-*.log; do
+            echo "=== Build tail: $file ==="
+            tail -n 50 "$file"
+          done
+          for file in reports/four-commander-*.log; do
+            echo "=== Game tail: $file ==="
+            tail -n 60 "$file"
+          done
