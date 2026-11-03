@@ -46,7 +46,7 @@ The owner explicitly rejected a stock Forge launcher/game screen as the target: 
 
 To move toward the owner's requested quick proof, Chimera now has original source files for an **Arcana-style Android overlay on top of Forge's real mobile game**. The overlay follows Arcana's dark green/Mint/Gold palette and common table flow (seats, field, commander, hand, phases, pass controls), but **is not the actual Compose layout**. It obtains all displayed game state from Forge's real `MatchController.getGameView()` on the LibGDX thread, masks hidden opponent hands, and sends inputs to Forge's own game controller. The full native Forge controls remain available for complex decisions. See [implementation and build details](FRANKENARCANA_DEVICE_TRIAL.md).
 
-**No compiled APK and no verified on-device action/AI turn yet.** A manual build and device test remain essential. This shortcut prioritizes a real match on the user's phone over immediate pixel-perfect UI parity. Do not claim it replaces Arcana or has been validated until proven.
+**Forge Android compiled and signed an APK in run #41690582004, but the temporary APK was not retained or delivered. No verified on-device action/AI turn yet.** A manual build and device test remain essential. This shortcut prioritizes a real match on the user's phone over immediate pixel-perfect UI parity. Do not claim it replaces Arcana or has been validated until proven.
 
 ## Owner directive: do the private delivery without publicly publishing the APK
 
