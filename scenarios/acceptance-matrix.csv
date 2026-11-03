@@ -1,0 +1,13 @@
+id,area,scenario,pass_criteria,forge_status,argentum_status,evidence
+C01,engine,Turn progression,Legal steps and priority occur in order,not_run,not_run,
+C02,ai,AI turn completion,10 consecutive AI turns without freezing,not_run,not_run,
+C03,ai,AI decision latency,P50 P95 and max measured over 100 decisions,not_run,not_run,
+C04,commander,Command zone interactions,Correct commander placement recast and tax,not_run,not_run,
+C05,combat,Multi-opponent combat,Attackers assigned to independent defenders correctly,not_run,not_run,
+C06,rules,Replacement and trigger ordering,Expected outcomes in fixed scenarios,not_run,not_run,
+C07,card,Deck compatibility,Same 100-card precons load and play legally,not_run,not_run,
+C08,multiplayer,Four seats,Four-player session completes known sequence,not_run,not_run,
+C09,privacy,Hidden information,Private hands remain hidden from other seats,not_run,not_run,
+C10,android,Device performance,Cold start and memory measured on target phone,not_run,not_run,
+C11,reliability,Disconnect recovery,Defined reconnect case tested and recorded,not_run,not_run,
+C12,license,GPL and assets compliance,Review documented before any distribution,not_run,not_run,
