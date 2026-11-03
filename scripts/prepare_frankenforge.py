@@ -115,7 +115,8 @@ def prepare(forge: Path, chimera: Path) -> None:
     shutil.copyfile(overlay, android / "src" / "forge" / "app" / "ArcanaTableOverlay.java")
     print(f"CHIMERA_PREPARED: app={APP_ID}; Forge={head[:12]}")
     print("SOURCE_BOUNDARY: upstream temporary clone only; Arcana untouched")
-    print("TELEMETRY: upstream Sentry DSN cleared; PII disabled")\n    print("LIVE_GAME_TABLE: Arcana colors and real Forge match data; no mock state")
+    print("TELEMETRY: upstream Sentry DSN cleared; PII disabled")
+    print("LIVE_GAME_TABLE: Arcana colors and real Forge match data; no mock state")
 
 
 if __name__ == "__main__":
