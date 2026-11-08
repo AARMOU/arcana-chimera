@@ -128,7 +128,8 @@ public final class ArcanaForgeHost {
         if (type.equals("PassPriority")) { you.selectButtonOk(); return; }
         SpellAbility sa = offered.get(key(type, action.optString("cardId", action.optString("sourceId")), action.optString("abilityId")));
         if (sa == null) { error("That action is no longer available."); scheduleEmit(); return; }
-        you.selectAbility(sa.getView());
+        Input input = you.getInputQueue().getActualInput(you);
+        if (input == null || !input.selectAbility(sa)) { error("Forge did not accept " + sa); scheduleEmit(); }
     }
 
     // ---------------------------------------------------------------- state out to the UI

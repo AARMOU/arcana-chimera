@@ -46,7 +46,11 @@ public final class OneTurnProof {
                 if (!aiTurnSeen) System.out.println("PROOF AI turn " + turn + " observed, AI battlefield " + battlefield(s, ArcanaForgeHost.AI_ID));
                 aiTurnSeen = true;
             }
-            if (!m.optBoolean("interactive")) continue;
+            if (!m.optBoolean("interactive")) {
+                System.out.println("PROOF   (update v" + m.optInt("stateVersion") + " turn " + turn + " " + step + " active=" + active
+                        + " input=" + m.optString("forgeInput") + " you=" + battlefield(s, ArcanaForgeHost.HUMAN_ID) + ")");
+                continue;
+            }
             if (active.equals(ArcanaForgeHost.HUMAN_ID) && myFirstTurn < 0) myFirstTurn = turn;
             if (aiTurnSeen && active.equals(ArcanaForgeHost.HUMAN_ID) && landPlayed && turn > landTurn) {
                 result = "PASS: played a land on turn " + landTurn + (creatureCast ? ", cast Grizzly Bears on turn " + castTurn : "")
@@ -65,7 +69,7 @@ public final class OneTurnProof {
                     choice = spell; creatureCast = true; castTurn = turn;
                 }
             }
-            System.out.println("PROOF turn " + turn + " " + step + " active=" + active + " -> " + choice.getString("actionType")
+            System.out.println("PROOF turn " + turn + " " + step + " active=" + active + " you=" + battlefield(s, ArcanaForgeHost.HUMAN_ID) + " -> " + choice.getString("actionType")
                     + " (" + legal.length() + " legal, input " + m.optString("forgeInput") + ")");
             host.handle(new JSONObject().put("type", "submitAction").put("action", choice.getJSONObject("action")));
         }
