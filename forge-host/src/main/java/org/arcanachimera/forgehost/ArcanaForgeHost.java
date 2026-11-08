@@ -372,6 +372,7 @@ public final class ArcanaForgeHost {
                 case "getGameView": return gameView[0];
                 case "showPromptMessage": case "updateButtons": case "finishGame": case "afterGameEnd": scheduleEmit(); return null;
                 case "isUiSetToSkipPhase": return skipPhase((PhaseType) args[1]);
+                case "awaitInput": ((CountDownLatch) args[0]).await(); return null; // Forge's "wait for the player
                 case "isNetGame": case "isGamePaused": case "isSelecting": case "isLibgdxPort": return false;
                 case "equals": return proxy == args[0];
                 case "hashCode": return System.identityHashCode(proxy);
