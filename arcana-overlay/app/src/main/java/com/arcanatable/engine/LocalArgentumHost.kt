@@ -39,6 +39,13 @@ class LocalArgentumHost(
 
     fun shutdown() = forge.shutdown()
 
+    /** Wi-Fi two-person games aren't on Forge yet (later milestone): tell both sides plainly. */
+    fun setGuest(seat: LocalSeat, guest: (JSONObject) -> Unit) {
+        val note = JSONObject().put("type", "error").put("code", "WIFI").put("message", "Wi-Fi games aren't available in the Forge build yet.")
+        guest(note)
+        emit(JSONObject(note.toString()))
+    }
+
     companion object {
         val HUMAN_ID = EntityId("offline-you")
         val AI_ID = EntityId("offline-ai")
