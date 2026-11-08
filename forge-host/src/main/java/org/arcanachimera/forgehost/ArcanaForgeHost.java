@@ -274,9 +274,21 @@ public final class ArcanaForgeHost {
         if (you == null) return;
         switch (message.optString("type")) {
             case "submitAction" -> submit(you, message.getJSONObject("action"));
-            case "keepHand" -> ok(you);
-            case "mulligan" -> { mulligans++; cancel(you); }
-            case "chooseBottomCards" -> bottom(you, message.optJSONArray("cardIds"));
+            // Forge's London mulligan deals the new 7 and asks for the bottom cards first, then keep/mulligan.
+            // Arcana's order is: new hand → keep or mulligan → bottom cards. The host translates (tuckOffered).
+            case "keepHand" -> {
+                if (tuckOffered) sink.accept(handMessage("chooseBottomCards", you.getPlayer()).put("cardsToPutOnBottom", tuckCount));
+                else ok(you);
+            }
+            case "mulligan" -> {
+                mulligans++;
+                if (tuckOffered) { tuckOffered = false; autoMulligan = true; bottom(you, firstHandIds(you, tuckCount)); } // shuffled back anyway
+                else cancel(you);
+            }
+            case "chooseBottomCards" -> {
+                if (tuckOffered) { tuckOffered = false; autoKeep = true; }
+                bottom(you, message.optJSONArray("cardIds"));
+            }
             case "concede" -> you.concede();
             case "requestResync" -> scheduleEmit();
             default -> { }
@@ -292,6 +304,15 @@ public final class ArcanaForgeHost {
     private static void cancel(PlayerControllerHuman you) {
         Input input = you.getInputQueue().getActualInput(you);
         if (input != null) input.selectButtonCancel();
+    }
+
+    private volatile boolean tuckOffered, autoKeep, autoMulligan;
+    private volatile int tuckCount;
+
+    private JSONArray firstHandIds(PlayerControllerHuman you, int n) {
+        JSONArray ids = new JSONArray();
+        for (Card c : you.getPlayer().getCardsIn(ZoneType.Hand)) { if (ids.length() >= n) break; ids.put(cardId(c)); }
+        return ids;
     }
 
     private void bottom(PlayerControllerHuman you, JSONArray ids) throws Exception {
@@ -413,15 +434,22 @@ public final class ArcanaForgeHost {
             if (kind.equals("InputConfirm") && game.getPhaseHandler().getTurn() == 0) { // play or draw: Arcana's offline host doesn't ask; take the play
                 lastPrompted = input; defaultedPrompts.add("play or draw: play"); ok(you); return;
             }
+            if (kind.equals("InputConfirmMulligan") && (autoKeep || autoMulligan)) { // already answered on Arcana's screen
+                lastPrompted = input;
+                boolean keep = autoKeep; autoKeep = false; autoMulligan = false;
+                if (keep) ok(you); else cancel(you);
+                return;
+            }
             if (kind.equals("InputConfirmMulligan")) {
                 lastPrompted = input; mulligans = mulligans < 0 ? 0 : mulligans; inMulligan = true;
                 sink.accept(handMessage("mulliganDecision", you.getPlayer()).put("mulliganCount", mulligans)
                         .put("cardsToPutOnBottom", 0).put("isOnThePlay", true));
                 return;
             }
-            if (kind.equals("InputLondonMulligan")) {
-                lastPrompted = input; inMulligan = true;
-                sink.accept(handMessage("chooseBottomCards", you.getPlayer()).put("cardsToPutOnBottom", intField(input, "toReturn")));
+            if (kind.equals("InputLondonMulligan")) { // the new hand first, as Arcana expects; bottom cards after "keep"
+                lastPrompted = input; inMulligan = true; tuckOffered = true; tuckCount = intField(input, "toReturn");
+                sink.accept(handMessage("mulliganDecision", you.getPlayer()).put("mulliganCount", Math.max(mulligans, 1))
+                        .put("cardsToPutOnBottom", tuckCount).put("isOnThePlay", true));
                 return;
             }
         }

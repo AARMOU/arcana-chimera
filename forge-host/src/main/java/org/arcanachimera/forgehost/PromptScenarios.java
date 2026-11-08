@@ -54,6 +54,7 @@ public final class PromptScenarios {
         final List<Integer> mulliganOffers = new ArrayList<>();
         int bottomAsked = -1;
         boolean awaitingReoffer;
+        String lastOfferHand;
         final List<String> leakedDuringMulligan = new ArrayList<>();
 
         Session(String board, String marker) throws Exception { this(board, marker, 0); }
@@ -68,6 +69,7 @@ public final class PromptScenarios {
                 if (m.optString("type").equals("mulliganDecision")) {
                     int count = m.optInt("mulliganCount");
                     mulliganOffers.add(count);
+                    lastOfferHand = m.getJSONArray("hand").toList().toString();
                     awaitingReoffer = count < mulligansWanted;
                     host.handle(new JSONObject().put("type", count < mulligansWanted ? "mulligan" : "keepHand")); continue;
                 }
@@ -76,6 +78,8 @@ public final class PromptScenarios {
                 if (m.optString("type").equals("chooseBottomCards")) {
                     bottomAsked = m.optInt("cardsToPutOnBottom");
                     JSONArray hand = m.getJSONArray("hand"), pick = new JSONArray();
+                    // Arcana draws the bottom-card screen from the last offered hand: it must be the same cards
+                    if (!hand.toList().toString().equals(lastOfferHand)) leakedDuringMulligan.add("chooseBottomCards for a hand that wasn't shown");
                     for (int i = 0; i < bottomAsked && i < hand.length(); i++) pick.put(hand.get(i));
                     host.handle(new JSONObject().put("type", "chooseBottomCards").put("cardIds", pick)); continue;
                 }
@@ -271,7 +275,7 @@ public final class PromptScenarios {
     // ------------------------------------------------------------------ C. London mulligan (phone, Nov 8 11:31)
 
     private static String mulligan() throws Exception {
-        Session s = new Session(null, "Forest", 1);
+        Session s = new Session(null, "Forest", 2); // mulligan twice: covers "mulligan again" and "keep, then bottom"
         try {
             JSONObject m = s.next(5);
             int hand = -1;
@@ -280,10 +284,10 @@ public final class PromptScenarios {
                 if (p.optString("playerId").equals(ArcanaForgeHost.HUMAN_ID)) hand = p.optInt("handSize");
             }
             if (!s.leakedDuringMulligan.isEmpty()) return "FAIL: sent " + s.leakedDuringMulligan + " between the mulligan and the new hand (Arcana would hide the new hand)";
-            if (s.mulliganOffers.size() < 2 || s.mulliganOffers.get(1) != 1) return "FAIL: mulligan offers " + s.mulliganOffers + " (expected a second offer with count 1)";
-            if (s.bottomAsked != 1) return "FAIL: asked to put " + s.bottomAsked + " card(s) on the bottom (expected 1)";
-            if (hand != 6 && hand != 7) return "FAIL: hand " + hand + " after one mulligan";
-            return "PASS: mulliganed once (offers " + s.mulliganOffers + "), put 1 on the bottom, playing with " + hand + " cards in hand at v" + m.optInt("stateVersion");
+            if (!s.mulliganOffers.equals(List.of(0, 1, 2))) return "FAIL: mulligan offers " + s.mulliganOffers + " (expected [0, 1, 2]: each new hand shown before keep)";
+            if (s.bottomAsked != 2) return "FAIL: asked to put " + s.bottomAsked + " card(s) on the bottom (expected 2, after keeping)";
+            if (hand != 5 && hand != 6) return "FAIL: hand " + hand + " after two mulligans";
+            return "PASS: mulliganed twice (offers " + s.mulliganOffers + ", each new hand shown first), kept, put 2 on the bottom, playing with " + hand + " cards at v" + m.optInt("stateVersion");
         } finally { s.close(); }
     }
 
