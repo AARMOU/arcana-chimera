@@ -112,6 +112,7 @@ public final class ArcanaForgeHost {
                 lobby.put(new JSONObject().put("playerId", seatId(i)).put("name", seat.name()));
                 started.put(new JSONObject().put("playerId", seatId(i)).put("isYou", i == 0));
             }
+            if (!unknownCards.isEmpty()) error("Forge doesn't have " + unknownCards.size() + " card(s), left out: " + String.join(", ", unknownCards));
             match = GuiBase.getInterface().hostMatch();
             sink.accept(new JSONObject().put("type", "quickGameLobbyState").put("lobbyId", "offline").put("youPlayerId", HUMAN_ID)
                     .put("vsAi", true).put("players", lobby));
@@ -156,11 +157,15 @@ public final class ArcanaForgeHost {
         return pc;
     }
 
-    private static Deck deck(String name, Map<String, Integer> cards) {
+    /** Cards Forge doesn't know, left out of the last game's decks (reported to the player). */
+    public final List<String> unknownCards = new ArrayList<>();
+
+    private Deck deck(String name, Map<String, Integer> cards) {
         Deck d = new Deck(name);
         cards.forEach((card, n) -> {
             PaperCard pc = FModel.getMagicDb().getCommonCards().getCard(card);
-            if (pc == null) throw new IllegalArgumentException("Forge has no card named " + card);
+            if (pc == null && card.contains(" // ")) pc = FModel.getMagicDb().getCommonCards().getCard(card.substring(0, card.indexOf(" // ")));
+            if (pc == null) { unknownCards.add(card); return; }
             d.getMain().add(pc, n);
         });
         return d;
