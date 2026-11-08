@@ -534,15 +534,18 @@ public final class ArcanaForgeHost {
             for (ZoneType z : new ZoneType[]{ZoneType.Hand, ZoneType.Battlefield, ZoneType.Command, ZoneType.Graveyard, ZoneType.Exile}) {
                 for (Card c : me.getCardsIn(z)) {
                     for (SpellAbility sa : c.getAllPossibleAbilities(me, true)) {
-                        if (sa.isManaAbility()) continue;
+                        // Mana abilities are offered too, so you can choose which lands/sources to tap and float mana;
+                        // Forge's automatic payment then uses the floating mana first.
                         String type = sa.isLandAbility() ? "PlayLand" : sa.isSpell() ? "CastSpell" : "ActivateAbility";
                         String cardId = cardId(c);
                         String abilityId = type.equals("ActivateAbility") ? "sa" + sa.getId() : "";
                         JSONObject a = new JSONObject().put("type", type).put("playerId", HUMAN_ID);
                         if (type.equals("ActivateAbility")) a.put("sourceId", cardId).put("abilityId", abilityId); else a.put("cardId", cardId);
-                        boolean affordable = sa.isLandAbility() || forge.ai.ComputerUtilMana.canPayManaCost(sa, me, 0, false);
+                        boolean affordable = sa.isLandAbility() || sa.isManaAbility() || forge.ai.ComputerUtilMana.canPayManaCost(sa, me, 0, false);
                         if (affordable) offered.put(key(type, cardId, abilityId), sa);
-                        legal.put(action(type, sa.toString(), a).put("isAffordable", affordable));
+                        JSONObject offer = action(type, sa.isManaAbility() ? "Tap for mana: " + sa : sa.toString(), a).put("isAffordable", affordable);
+                        if (sa.isManaAbility()) offer.put("isManaAbility", true);
+                        legal.put(offer);
                     }
                 }
             }
@@ -1201,6 +1204,22 @@ public final class ArcanaForgeHost {
                     else if (o instanceof Player p) input.selectPlayer(p, null);
                 }
                 input.selectButtonOK(); // same input; ignored by Forge if picking already finished it
+            });
+            return true;
+        }
+        if (kind.equals("InputSelectCardsForConvokeOrImprovise")) {
+            Object choices = field(input, "availableCards");
+            Integer cap = field(input, "maxSelectable") instanceof Integer n ? n : null;
+            Map<String, Object> objects = new LinkedHashMap<>();
+            JSONArray options = new JSONArray(); JSONObject info = new JSONObject();
+            if (choices instanceof Iterable<?> it) for (Object o : it) if (o instanceof Card c) { String id = cardId(c); objects.put(id, c); options.put(id); info.put(id, cardInfo(c)); }
+            String what = field(input, "description") instanceof String w && !w.isBlank() ? w : "Convoke";
+            JSONObject d = decisionBase("SelectCardsDecision", what + ": choose what to tap to help pay (none: pay with mana)").put("options", options)
+                    .put("minSelections", 0).put("maxSelections", cap == null ? options.length() : Math.min(cap, options.length())).put("cardInfo", info);
+            openForInput(d, objects, r -> {
+                JSONArray ids = r.optJSONArray("selectedCards");
+                if (ids != null) for (int i = 0; i < ids.length(); i++) if (objects.get(ids.optString(i)) instanceof Card c) input.selectCard(c, null, null);
+                input.selectButtonOK();
             });
             return true;
         }

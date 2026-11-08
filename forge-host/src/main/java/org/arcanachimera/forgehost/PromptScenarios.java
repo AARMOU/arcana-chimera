@@ -33,9 +33,9 @@ public final class PromptScenarios {
     public static void main(String[] args) throws Exception {
         forgeDir = args.length > 0 ? args[0] : "../forge-gui/";
         List<String> failures = new ArrayList<>();
-        for (String name : List.of("A-ghalta-order", "B-combat-damage", "C-mulligan", "D-trample-short", "E-stack")) {
+        for (String name : List.of("A-ghalta-order", "B-combat-damage", "C-mulligan", "D-trample-short", "E-stack", "F-mana-convoke")) {
             String r;
-            try { r = name.startsWith("A") ? ghalta() : name.startsWith("B") ? combatDamage() : name.startsWith("C") ? mulligan() : name.startsWith("D") ? trampleShort() : stack(); }
+            try { r = name.startsWith("A") ? ghalta() : name.startsWith("B") ? combatDamage() : name.startsWith("C") ? mulligan() : name.startsWith("D") ? trampleShort() : name.startsWith("E") ? stack() : manaAndConvoke(); }
             catch (Throwable t) { t.printStackTrace(); r = "FAIL: " + t; }
             System.out.println("SCENARIO " + name + " " + r);
             if (!r.startsWith("PASS")) failures.add(name);
@@ -498,6 +498,79 @@ public final class PromptScenarios {
                 }
                 if (life(state, ArcanaForgeHost.AI_ID) == 17)
                     return "PASS: ability shown on the stack with its source and target (AI), resolved for 1; own Shock resolved without a stop (AI at 17)";
+            }
+        } finally { s.close(); }
+    }
+
+    // ------------------------------------------------------------------ F. choosing mana sources, Convoke (Nov 8)
+
+    private static List<String> untapped(JSONObject state, String name) {
+        List<String> out = new ArrayList<>();
+        for (String id : battlefield(state, ArcanaForgeHost.HUMAN_ID, name))
+            if (!state.getJSONObject("cards").getJSONObject(id).optBoolean("isTapped")) out.add(id);
+        return out;
+    }
+
+    /**
+     * Part 1: tap the Island for mana yourself, then cast Grizzly Bears ({1}{G}): the floating blue pays the {1},
+     * so only one Forest is tapped. Part 2: Stoke the Flames ({2}{R}{R}, Convoke) at the AI, tapping both Bears for
+     * the {2}: the Convoke choice reaches you, both Bears and both Mountains end tapped, the AI takes 4.
+     */
+    private static String manaAndConvoke() throws Exception {
+        Session s = new Session(String.join("\n",
+                "activeplayer=human", "activephase=MAIN1", "removesummoningsickness=true",
+                "humanlife=20", "ailife=20", "humanlibrary=" + LIBRARY, "ailibrary=" + LIBRARY,
+                "humanbattlefield=Forest;Forest;Island;Mountain;Mountain;Grizzly Bears", "humanhand=Grizzly Bears;Stoke the Flames",
+                "aibattlefield=", "aihand="), "Island");
+        try {
+            int stage = 0; boolean convokeAsked = false;
+            while (true) {
+                JSONObject m = s.next(60);
+                if (!interactive(m)) continue;
+                JSONObject d = m.optJSONObject("pendingDecision");
+                if (d != null && !s.fresh(d)) continue;
+                if (d != null) {
+                    String t = d.optString("type");
+                    if (t.equals("ChooseTargetsDecision")) {
+                        s.answer(d, new JSONObject().put("type", "TargetsResponse").put("selectedTargets", new JSONObject().put("0", new JSONArray().put(ArcanaForgeHost.AI_ID))));
+                    } else if (t.equals("SelectCardsDecision") && d.optString("prompt").contains("tap to help pay")) {
+                        convokeAsked = true;
+                        JSONArray opts = d.getJSONArray("options"), pick = new JSONArray();
+                        for (int i = 0; i < opts.length(); i++) if (d.getJSONObject("cardInfo").getJSONObject(opts.getString(i)).optString("name").equals("Grizzly Bears")) pick.put(opts.getString(i));
+                        s.answer(d, new JSONObject().put("type", "CardsSelectedResponse").put("selectedCards", pick));
+                    } else return "FAIL: unexpected decision " + t + " (" + d.optString("prompt") + ")";
+                    continue;
+                }
+                JSONObject state = m.getJSONObject("state");
+                JSONArray legal = m.getJSONArray("legalActions");
+                if (stage == 0) { // tap the Island yourself
+                    String island = battlefield(state, ArcanaForgeHost.HUMAN_ID, "Island").get(0);
+                    JSONObject tap = null;
+                    for (int i = 0; i < legal.length(); i++) { JSONObject a = legal.getJSONObject(i); if (a.optBoolean("isManaAbility") && a.getJSONObject("action").optString("sourceId").equals(island)) tap = a.getJSONObject("action"); }
+                    if (tap == null) return "FAIL: the Island's mana ability wasn't offered";
+                    stage = 1; s.send(tap); continue;
+                }
+                if (stage == 1) {
+                    JSONObject pool = null;
+                    for (Object o : state.getJSONArray("players")) { JSONObject p = (JSONObject) o; if (p.optString("playerId").equals(ArcanaForgeHost.HUMAN_ID)) pool = p.optJSONObject("manaPool"); }
+                    if (pool == null || pool.optInt("blue") != 1) return "FAIL: floating mana not shown after tapping the Island: " + pool;
+                    JSONObject bears = castAction(m, "Grizzly Bears");
+                    if (bears == null) return "FAIL: Grizzly Bears not castable";
+                    stage = 2; s.send(bears); continue;
+                }
+                if (stage == 2) {
+                    if (battlefield(state, ArcanaForgeHost.HUMAN_ID, "Grizzly Bears").size() < 2) { s.send(new JSONObject().put("type", "PassPriority").put("playerId", ArcanaForgeHost.HUMAN_ID)); continue; }
+                    if (untapped(state, "Forest").size() != 1) return "FAIL: expected one Forest left untapped (floating blue should pay {1}), untapped Forests " + untapped(state, "Forest").size();
+                    JSONObject stoke = castAction(m, "Stoke the Flames");
+                    if (stoke == null) return "FAIL: Stoke the Flames not castable (Convoke with 2 Mountains + 2 Bears)";
+                    stage = 3; s.send(stoke); continue;
+                }
+                if (life(state, ArcanaForgeHost.AI_ID) == 16) {
+                    if (!convokeAsked) return "FAIL: Convoke choice was never shown";
+                    if (!untapped(state, "Grizzly Bears").isEmpty() || !untapped(state, "Mountain").isEmpty()) return "FAIL: expected both Bears and both Mountains tapped";
+                    return "PASS: tapped the Island yourself (blue floating), Bears paid with it + one Forest; Stoke the Flames convoked with both Bears + 2 Mountains, AI at 16";
+                }
+                s.send(new JSONObject().put("type", "PassPriority").put("playerId", ArcanaForgeHost.HUMAN_ID));
             }
         } finally { s.close(); }
     }
