@@ -8,11 +8,12 @@ if [ ! -d "$FORGE/.git" ]; then
   git clone --quiet --filter=blob:none --no-checkout https://github.com/Card-Forge/forge.git "$FORGE"
 fi
 git -C "$FORGE" checkout --quiet --detach "$FORGE_SHA"
-(cd "$FORGE" && mvn -B -q -pl forge-gui -am install -DskipTests)
-V="$(cd "$FORGE" && mvn -B -q -N help:evaluate -Dexpression=project.version -DforceStdout)"
-echo "Forge $FORGE_SHA version $V"
-(cd "$ROOT/forge-host" && mvn -B -q package -Dforge.version="$V")
+(cd "$FORGE" && mvn -B -q -pl forge-gui-desktop -am package -DskipTests)
+FAT="$(ls "$FORGE"/forge-gui-desktop/target/*jar-with-dependencies.jar | head -1)"
+OUT="$ROOT/forge-host/target"; rm -rf "$OUT"; mkdir -p "$OUT/classes"
+mvn -B -q dependency:copy -Dartifact=org.json:json:20240303 -DoutputDirectory="$OUT"
+CP="$FAT:$OUT/json-20240303.jar"
+javac --release 17 -encoding UTF-8 -d "$OUT/classes" -cp "$CP" $(find "$ROOT/forge-host/src/main/java" -name '*.java')
 cd "$FORGE/forge-gui"
-timeout 600s java -Xmx4g -Djava.awt.headless=true \
-  -cp "$ROOT/forge-host/target/forge-host-0.1.0.jar:$ROOT/forge-host/target/lib/*" \
+timeout 600s java -Xmx4g -Djava.awt.headless=true -cp "$OUT/classes:$CP" \
   org.arcanachimera.forgehost.OneTurnProof "$FORGE/forge-gui/"
