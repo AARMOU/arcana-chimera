@@ -18,7 +18,9 @@ public final class OneTurnProof {
     private static final String CREATURE = "Gray Ogre";
     public static void main(String[] args) throws Exception {
         LinkedBlockingQueue<JSONObject> inbox = new LinkedBlockingQueue<>();
-        ArcanaForgeHost host = new ArcanaForgeHost(inbox::add);
+        ProtocolGuard protocol = new ProtocolGuard();
+        BughuntTrace trace = new BughuntTrace("one-turn");
+        ArcanaForgeHost host = new ArcanaForgeHost(m -> { protocol.observe(m); trace.observe(m); inbox.add(m); });
         long t0 = System.currentTimeMillis();
         ArcanaForgeHost.initForge(args.length > 0 ? args[0] : "../forge-gui/", host);
         System.out.println("PROOF forge loaded in " + (System.currentTimeMillis() - t0) + " ms");
@@ -33,13 +35,13 @@ public final class OneTurnProof {
         String result = "FAIL: timed out";
         while (System.currentTimeMillis() < deadline) {
             JSONObject m = inbox.poll(5, TimeUnit.SECONDS);
-            if (m == null) continue;
+            if (m == null) { trace.tick(); continue; }
             String type = m.optString("type");
             if (type.equals("error")) { System.out.println("PROOF host error: " + m.optString("message")); continue; }
             if (type.equals("gameOver")) { result = "FAIL: game ended early " + m; break; }
             if (type.equals("mulliganDecision")) {
                 System.out.println("PROOF mulligan offer: " + m.getJSONArray("hand").length() + " cards (zone " + m.optInt("forgeHandZone") + ", library " + m.optInt("forgeLibrary") + ") -> keep");
-                host.handle(new JSONObject().put("type", "keepHand")); continue;
+                send(host, trace, new JSONObject().put("type", "keepHand")); continue;
             }
             if (!type.equals("stateUpdate")) { System.out.println("PROOF message " + type); continue; }
             updates++;
@@ -55,7 +57,7 @@ public final class OneTurnProof {
             JSONObject decision = m.optJSONObject("pendingDecision");
             if (decision != null && m.optBoolean("interactive")) {
                 System.out.println("PROOF decision " + decision.optString("type") + ": " + decision.optString("prompt"));
-                host.handle(new JSONObject().put("type", "submitAction").put("action", new JSONObject().put("type", "SubmitDecision")
+                send(host, trace, new JSONObject().put("type", "submitAction").put("action", new JSONObject().put("type", "SubmitDecision")
                         .put("playerId", ArcanaForgeHost.HUMAN_ID).put("response", answer(decision))));
                 decisions++;
                 continue;
@@ -87,7 +89,7 @@ public final class OneTurnProof {
                     if (chosen.length() > 0) attacks++;
                 }
                 System.out.println("PROOF turn " + turn + " " + act.getString("type") + " " + act.opt(attack != null ? "attackers" : "blockers"));
-                host.handle(new JSONObject().put("type", "submitAction").put("action", act));
+                send(host, trace, new JSONObject().put("type", "submitAction").put("action", act));
                 continue;
             }
             JSONObject choice = find(legal, "PassPriority");
@@ -104,12 +106,13 @@ public final class OneTurnProof {
             }
             System.out.println("PROOF turn " + turn + " " + step + " active=" + active + " you=" + battlefield(s, ArcanaForgeHost.HUMAN_ID) + " -> " + choice.getString("actionType")
                     + " (" + legal.length() + " legal, input " + m.optString("forgeInput") + ")");
-            host.handle(new JSONObject().put("type", "submitAction").put("action", choice.getJSONObject("action")));
+            send(host, trace, new JSONObject().put("type", "submitAction").put("action", choice.getJSONObject("action")));
         }
         if (result.startsWith("PASS")) { // a second game in the same app session (phone crash, Nov 7 23:05)
             host.shutdown();
             LinkedBlockingQueue<JSONObject> inbox2 = new LinkedBlockingQueue<>();
-            ArcanaForgeHost host2 = new ArcanaForgeHost(inbox2::add);
+            ProtocolGuard protocol2 = new ProtocolGuard();
+            ArcanaForgeHost host2 = new ArcanaForgeHost(m -> { protocol2.observe(m); inbox2.add(m); });
             ArcanaForgeHost.initForge(args.length > 0 ? args[0] : "../forge-gui/", host2);
             new Thread(() -> { try { host2.startGame(you, ai); } catch (Exception e) { e.printStackTrace(); } }, "proof-start-2").start();
             boolean offered = false;
@@ -120,12 +123,21 @@ public final class OneTurnProof {
             }
             System.out.println("PROOF second game in the same session: " + (offered ? "started (opening hand offered)" : "DID NOT START"));
             if (!offered) result = "FAIL: second game did not start";
+            if (!protocol2.clean()) result = "FAIL: second-game protocol " + protocol2.failures();
             host2.shutdown();
         }
+        if (!protocol.clean() || protocol.updates() == 0) result = "FAIL: protocol guard " + protocol.failures() + " (updates " + protocol.updates() + ")";
+        System.out.println("PROOF protocol guard updates: " + protocol.updates());
+        System.out.println("PROOF bughunt events (sanitized): " + trace.snapshot().size() + " dropped: " + trace.dropped());
         System.out.println("PROOF updates received: " + updates);
         System.out.println("PROOF prompts answered by default (to become player decisions): " + new java.util.LinkedHashSet<>(host.defaultedPrompts));
         System.out.println("PROOF RESULT " + result);
         System.exit(result.startsWith("PASS") ? 0 : 1);
+    }
+
+    private static void send(ArcanaForgeHost host, BughuntTrace trace, JSONObject message) {
+        trace.action(message);
+        host.handle(message);
     }
 
     private static JSONObject find(JSONArray legal, String actionType) {

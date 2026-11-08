@@ -1,0 +1,61 @@
+name: Chimera bug-hunt static and trace regressions
+# No schedule, paid workers, Arcana repo writes, or artifacts.
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'scripts/chimera_bughunt.py'
+      - 'scripts/run_four_commander.sh'
+      - '.github/workflows/four-commander.yml'
+      - 'tests/test_chimera_bughunt.py'
+      - 'bughunt/**'
+      - 'docs/BUG-HUNTING.md'
+      - '.github/workflows/chimera-bughunt.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: chimera-bughunt-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  audit-and-trace:
+    if: github.repository == 'AARMOU/arcana-chimera'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 6
+    steps:
+      - name: Check out Chimera read-only
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Syntax-check manual game runner
+        run: bash -n scripts/run_four_commander.sh
+      - name: Verify synthetic tests and existing parser tests
+        run: python3 -m unittest discover -s tests -p 'test_*.py' -v
+      - name: Detect newly introduced source hazards
+        run: python3 scripts/chimera_bughunt.py audit
+      - name: Verify healthy combat trace
+        run: python3 scripts/chimera_bughunt.py trace bughunt/fixtures/progress-combat.jsonl --stall-ms 3000
+      - name: Verify deliberately stalled combat is caught
+        run: |
+          set +e
+          python3 scripts/chimera_bughunt.py trace bughunt/fixtures/stalled-blockers.jsonl --stall-ms 3000
+          code=$?
+          set -e
+          if [ "$code" -ne 1 ]; then
+            echo "ERROR: expected stall detection exit 1, got $code"
+            exit 1
+          fi
+          echo 'Expected synthetic deadlock was detected'
+      - name: Ensure repeated decision rejections trigger the bug hunter
+        run: |
+          set +e
+          python3 scripts/chimera_bughunt.py trace bughunt/fixtures/rejected-damage-loop.jsonl --stall-ms 3000
+          code=$?
+          set -e
+          if [ "$code" -ne 1 ]; then
+            echo "Expected repeat-rejection detection status 1, got $code"
+            exit 1
+          fi
+          echo "Expected repeated rejection detected"

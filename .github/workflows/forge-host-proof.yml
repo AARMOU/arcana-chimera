@@ -9,6 +9,12 @@ on:
       - '.github/workflows/forge-host-proof.yml'
 permissions:
   contents: read
+
+# A new PR revision supersedes older expensive Forge proof runs.
+# This only affects this Chimera workflow; it does not cancel unrelated jobs.
+concurrency:
+  group: chimera-forge-host-proof-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 jobs:
   proof:
     runs-on: ubuntu-24.04

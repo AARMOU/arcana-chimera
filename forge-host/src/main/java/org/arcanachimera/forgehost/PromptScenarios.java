@@ -29,6 +29,8 @@ public final class PromptScenarios {
     private static final String LIBRARY = String.join(";", java.util.Collections.nCopies(20, "Forest"));
 
     private static String forgeDir;
+    private static final java.util.concurrent.atomic.AtomicInteger scenarioCounter =
+            new java.util.concurrent.atomic.AtomicInteger();
 
     public static void main(String[] args) throws Exception {
         forgeDir = args.length > 0 ? args[0] : "../forge-gui/";
@@ -47,10 +49,11 @@ public final class PromptScenarios {
     /** One game against an all-Forest AI, advanced to your first main phase. */
     private static final class Session {
         final LinkedBlockingQueue<JSONObject> inbox = new LinkedBlockingQueue<>();
-        final ArcanaForgeHost host = new ArcanaForgeHost(inbox::add);
+        final ProtocolGuard protocol = new ProtocolGuard();
+        final BughuntTrace trace = new BughuntTrace("scenario-" + scenarioCounter.incrementAndGet());
+        final ArcanaForgeHost host = new ArcanaForgeHost(m -> { protocol.observe(m); trace.observe(m); inbox.add(m); });
         JSONObject last;
         final List<String> notices = new ArrayList<>();
-
         final List<Integer> mulliganOffers = new ArrayList<>();
         int bottomAsked = -1;
         boolean awaitingReoffer;
@@ -69,15 +72,18 @@ public final class PromptScenarios {
                     int count = m.optInt("mulliganCount");
                     mulliganOffers.add(count);
                     awaitingReoffer = count < mulligansWanted;
-                    host.handle(new JSONObject().put("type", count < mulligansWanted ? "mulligan" : "keepHand")); continue;
+                    JSONObject choice = new JSONObject().put("type", count < mulligansWanted ? "mulligan" : "keepHand");
+                    trace.action(choice); host.handle(choice); continue;
                 }
-                // Arcana hides the opening hand once a state arrives: nothing may come between a mulligan and the next offer
-                if (awaitingReoffer && !m.optString("type").equals("mulliganDecision")) leakedDuringMulligan.add(m.optString("type"));
+                // A mulligan reoffer must not be interrupted by state updates.
+                if (awaitingReoffer && !m.optString("type").equals("mulliganDecision"))
+                    leakedDuringMulligan.add(m.optString("type"));
                 if (m.optString("type").equals("chooseBottomCards")) {
                     bottomAsked = m.optInt("cardsToPutOnBottom");
                     JSONArray hand = m.getJSONArray("hand"), pick = new JSONArray();
                     for (int i = 0; i < bottomAsked && i < hand.length(); i++) pick.put(hand.get(i));
-                    host.handle(new JSONObject().put("type", "chooseBottomCards").put("cardIds", pick)); continue;
+                    JSONObject choice = new JSONObject().put("type", "chooseBottomCards").put("cardIds", pick);
+                    trace.action(choice); host.handle(choice); continue;
                 }
                 if (interactive(m) && hasCard(m, marker)) { pushBack = m; return; } // the scenario board is in place
                 if (interactive(m) && m.optJSONObject("pendingDecision") == null) send(new JSONObject().put("type", "PassPriority").put("playerId", ArcanaForgeHost.HUMAN_ID));
@@ -90,7 +96,10 @@ public final class PromptScenarios {
             if (pushBack != null) { JSONObject m = pushBack; pushBack = null; return m; }
             while (true) {
                 JSONObject m = inbox.poll(seconds, TimeUnit.SECONDS);
-                if (m == null) throw new IllegalStateException("timed out after " + seconds + " s waiting for Forge (last state v" + (last == null ? "-" : last.optInt("stateVersion")) + ")");
+                if (m == null) {
+                    trace.tick();
+                    throw new IllegalStateException("timed out after " + seconds + " s waiting for Forge (last state v" + (last == null ? "-" : last.optInt("stateVersion")) + ")");
+                }
                 if (m.optString("type").equals("error")) {
                     notices.add(m.optString("message"));
                     System.out.println("  notice: " + m.optString("message"));
@@ -102,7 +111,10 @@ public final class PromptScenarios {
             }
         }
 
-        void send(JSONObject action) throws Exception { host.handle(new JSONObject().put("type", "submitAction").put("action", action)); }
+        void send(JSONObject action) throws Exception {
+            JSONObject message = new JSONObject().put("type", "submitAction").put("action", action);
+            trace.action(message); host.handle(message);
+        }
 
         /** Decisions already answered: the host re-sends an open decision, so a queued copy can arrive after the answer. */
         final java.util.Set<String> answered = new java.util.HashSet<>();
@@ -116,7 +128,7 @@ public final class PromptScenarios {
                     .put("response", response.put("decisionId", decision.getString("id"))));
         }
 
-        void close() { host.shutdown(); }
+        void close() { host.shutdown(); protocol.assertClean(); }
     }
 
     private static boolean interactive(JSONObject m) { return m.optString("type").equals("stateUpdate") && m.optBoolean("interactive"); }

@@ -4,6 +4,14 @@
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 FORGE_SHA="7c34365c749ca46ab71336c5f267340d6088e600"
+# Deterministic replay: override only via explicit manual CHIMERA_SEED.
+SEED="${CHIMERA_SEED:-8074}"
+if ! [[ "$SEED" =~ ^(0|[1-9][0-9]{0,9})$ ]] || (( SEED > 2147483647 )); then
+  echo "INVALID_SEED: use a decimal integer from 0 to 2147483647" >&2
+  exit 2
+fi
+if [[ "${1:-}" == "--check-seed" ]]; then printf '%s\n' "$SEED"; exit 0; fi
+if [[ "$#" -ne 0 ]]; then echo "UNKNOWN_ARGUMENT: $1" >&2; exit 2; fi
 FORGE="$ROOT/third_party/forge"
 REPORTS="$ROOT/reports"
 RUN_ID="$(date -u +%Y%m%dT%H%M%SZ)"
@@ -34,7 +42,7 @@ done
 
 {
   echo "Forge SHA: $FORGE_SHA"
-  echo "One game; FOUR AI Commander seats; seed 8074; 300s internal timeout"
+  echo "One game; FOUR AI Commander seats; seed $SEED; 300s internal timeout"
   echo "Decks: Buckle Up / Counterpunch / Undead Unleashed / Reap the Tides"
   echo "Started UTC: $(date -u +%FT%TZ)"
   java -version 2>&1 | head -3
@@ -64,7 +72,7 @@ set +e
 # Release/snapshot builds use cwd for assets (GuiDesktop.getAssetsDir() == "").
 # Starting in forge-gui also works for versions that use ../forge-gui/.
 (cd "$FORGE/forge-gui" && timeout 420s java -Xmx4g -Djava.awt.headless=true -jar "${jars[0]}" \
-  sim -d 'Buckle Up.dck' 'Counterpunch.dck' 'Undead Unleashed.dck' 'Reap the Tides.dck' -D "$DECK_DIR" -n 1 -f commander -s 8074 -c 300 -q) > "$LOG" 2>&1
+  sim -d 'Buckle Up.dck' 'Counterpunch.dck' 'Undead Unleashed.dck' 'Reap the Tides.dck' -D "$DECK_DIR" -n 1 -f commander -s "$SEED" -c 300 -q) > "$LOG" 2>&1
 game_code=$?
 set -e
 
@@ -79,7 +87,7 @@ losses="$(grep -Ec '^Game Outcome: Ai\([1-4]\)-.* has lost (because |due to )' "
 echo "Winner outcomes: $wins; eliminated opponents: $losses" | tee -a "$STATUS"
 
 if [ "$game_code" -eq 0 ] \
-  && grep -Eq '^Ai\(1\)-.* vs Ai\(2\)-.* vs Ai\(3\)-.* vs Ai\(4\)-.* - one game of Commander seed 8074$' "$LOG" \
+  && grep -Eq "^Ai\(1\)-.* vs Ai\(2\)-.* vs Ai\(3\)-.* vs Ai\(4\)-.* - one game of Commander seed ${SEED}$" "$LOG" \
   && [ "$wins" -eq 1 ] \
   && [ "$losses" -eq 3 ] \
   && grep -Eq '^Game Result: Game 1 ended in [0-9]+ ms\. .+ has won!' "$LOG" \

@@ -15,10 +15,20 @@ mvn -B -q dependency:copy -Dartifact=org.json:json:20240303 -DoutputDirectory="$
 CP="$FAT:$OUT/json-20240303.jar"
 javac --release 17 -encoding UTF-8 -d "$OUT/classes" -cp "$CP" $(find "$ROOT/forge-host/src/main/java" -name '*.java')
 cd "$FORGE/forge-gui"
-timeout 600s java -Xmx4g -Djava.awt.headless=true -cp "$OUT/classes:$CP" \
+timeout 60s java -Djava.awt.headless=true -cp "$OUT/classes:$CP" \
+  org.arcanachimera.forgehost.ProtocolGuardSelfTest
+timeout 60s java -Djava.awt.headless=true -cp "$OUT/classes:$CP" \
+  org.arcanachimera.forgehost.BughuntTraceSelfTest
+# Opt in locally with CHIMERA_TRACE=1. Public CI defaults to no per-action log emission.
+TRACE_ARG=()
+if [[ "${CHIMERA_TRACE:-0}" == "1" ]]; then TRACE_ARG=(-Dchimera.bughunt.trace=true); fi
+timeout 600s java "${TRACE_ARG[@]}" -Xmx4g -Djava.awt.headless=true -cp "$OUT/classes:$CP" \
   org.arcanachimera.forgehost.OneTurnProof "$FORGE/forge-gui/"
-timeout 900s java -Xmx4g -Djava.awt.headless=true -cp "$OUT/classes:$CP" \
+timeout 900s java "${TRACE_ARG[@]}" -Xmx4g -Djava.awt.headless=true -cp "$OUT/classes:$CP" \
   org.arcanachimera.forgehost.PromptScenarios "$FORGE/forge-gui/"
+# 4-player Commander startup and priority/handoff through the actual Arcana adapter.
+timeout 300s java "${TRACE_ARG[@]}" -Xmx4g -Djava.awt.headless=true -cp "$OUT/classes:$CP" \
+  org.arcanachimera.forgehost.FourSeatProof "$FORGE/forge-gui/"
 # Owner priority 1: every card Forge ships must build into a game object; plus the cards Arcana used to drop
 # from the owner's deck (Nov 8 09:45). Report-only for now: printed as ALLCARDS lines, doesn't fail the job.
 # Every card in Arcana's bundled decks (precons + AI Commander decks), read at build time from the pinned

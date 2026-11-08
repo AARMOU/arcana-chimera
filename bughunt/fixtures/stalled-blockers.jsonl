@@ -1,0 +1,4 @@
+{"at_ms":0,"kind":"state","version":46,"turn":10,"phase":"DECLARE_BLOCKERS","active":"offline-ai","priority":"offline-you","legal":1,"board_revision":18}
+{"at_ms":100,"kind":"action","name":"DeclareBlockers"}
+{"at_ms":130,"kind":"state","version":47,"turn":10,"phase":"DECLARE_BLOCKERS","active":"offline-ai","priority":"offline-you","legal":1,"board_revision":18}
+{"at_ms":10130,"kind":"tick"}

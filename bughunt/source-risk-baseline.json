@@ -1,0 +1,77 @@
+{
+  "schema": 1,
+  "base_commit": "0c7f1f08c382fb8bd468631d5f39736cef93ac56",
+  "owner": "Chimera-only review baseline; known risks are NOT accepted behavior",
+  "checks": [
+    {
+      "id": "gui_silent_default",
+      "severity": "P0",
+      "pattern": "return defaultAnswer\\(m, args\\);",
+      "allowed": 1,
+      "why": "Unknown Forge GUI request can silently choose a gameplay outcome"
+    },
+    {
+      "id": "input_auto_select",
+      "severity": "P0",
+      "pattern": "autoSelectMinimum\\(input\\);",
+      "allowed": 1,
+      "why": "Unhandled human input can be auto-answered"
+    },
+    {
+      "id": "priority_phase_skip",
+      "severity": "P0",
+      "pattern": "return phase != PhaseType\\.MAIN1",
+      "allowed": 1,
+      "why": "Skip policy may conceal valid response windows"
+    },
+    {
+      "id": "empty_mana_pool",
+      "severity": "P0",
+      "pattern": "\\.put\\(\"manaPool\", new JSONObject\\(\\)",
+      "allowed": 1,
+      "why": "Serialized player mana can be incorrectly zero"
+    },
+    {
+      "id": "empty_commander_damage",
+      "severity": "P0",
+      "pattern": "\\.put\\(\"commanderDamage\", new JSONArray\\(\\)\\)",
+      "allowed": 1,
+      "why": "Commander damage is not reflected in state"
+    },
+    {
+      "id": "hidden_card_visibility",
+      "severity": "P0",
+      "pattern": "boolean visible = z != ZoneType\\.Library",
+      "allowed": 1,
+      "why": "Face-down and other hidden battlefield/exile information may leak"
+    },
+    {
+      "id": "host_teardown_only_emitter",
+      "severity": "P1",
+      "pattern": "emitter\\.shutdownNow\\(\\)",
+      "allowed": 1,
+      "why": "Emitter shutdown alone does not dispose match and game threads"
+    },
+    {
+      "id": "global_current_host",
+      "severity": "P1",
+      "pattern": "private static volatile ArcanaForgeHost current;",
+      "allowed": 1,
+      "why": "Global host routing and lifecycle races"
+    },
+    {
+      "id": "mana_only_legality_check",
+      "severity": "P1",
+      "pattern": "ComputerUtilMana\\.canPayManaCost",
+      "allowed": 1,
+      "why": "Mana affordability is not complete action legality"
+    },
+    {
+      "id": "unbounded_decision_response_queue",
+      "severity": "P1",
+      "pattern": "new java\\.util\\.concurrent\\.LinkedBlockingQueue<>\\(\\)",
+      "allowed": 1,
+      "why": "Unbounded queue and late answers need lifecycle and backpressure testing"
+    }
+  ]
+}
