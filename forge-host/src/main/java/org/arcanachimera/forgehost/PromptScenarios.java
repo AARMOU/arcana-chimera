@@ -53,6 +53,8 @@ public final class PromptScenarios {
 
         final List<Integer> mulliganOffers = new ArrayList<>();
         int bottomAsked = -1;
+        boolean awaitingReoffer;
+        final List<String> leakedDuringMulligan = new ArrayList<>();
 
         Session(String board, String marker) throws Exception { this(board, marker, 0); }
 
@@ -66,8 +68,11 @@ public final class PromptScenarios {
                 if (m.optString("type").equals("mulliganDecision")) {
                     int count = m.optInt("mulliganCount");
                     mulliganOffers.add(count);
+                    awaitingReoffer = count < mulligansWanted;
                     host.handle(new JSONObject().put("type", count < mulligansWanted ? "mulligan" : "keepHand")); continue;
                 }
+                // Arcana hides the opening hand once a state arrives: nothing may come between a mulligan and the next offer
+                if (awaitingReoffer && !m.optString("type").equals("mulliganDecision")) leakedDuringMulligan.add(m.optString("type"));
                 if (m.optString("type").equals("chooseBottomCards")) {
                     bottomAsked = m.optInt("cardsToPutOnBottom");
                     JSONArray hand = m.getJSONArray("hand"), pick = new JSONArray();
@@ -274,6 +279,7 @@ public final class PromptScenarios {
                 JSONObject p = (JSONObject) o;
                 if (p.optString("playerId").equals(ArcanaForgeHost.HUMAN_ID)) hand = p.optInt("handSize");
             }
+            if (!s.leakedDuringMulligan.isEmpty()) return "FAIL: sent " + s.leakedDuringMulligan + " between the mulligan and the new hand (Arcana would hide the new hand)";
             if (s.mulliganOffers.size() < 2 || s.mulliganOffers.get(1) != 1) return "FAIL: mulligan offers " + s.mulliganOffers + " (expected a second offer with count 1)";
             if (s.bottomAsked != 1) return "FAIL: asked to put " + s.bottomAsked + " card(s) on the bottom (expected 1)";
             if (hand != 6 && hand != 7) return "FAIL: hand " + hand + " after one mulligan";

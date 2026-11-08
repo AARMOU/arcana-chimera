@@ -426,6 +426,10 @@ public final class ArcanaForgeHost {
             }
         }
         if (you == null) return; // no human seat (yet): nothing to show
+        // Forge shuffles and deals between mulligan prompts (and the AI mulligans too): that's still the mulligan.
+        // Arcana shows the opening-hand screen only until the first game state, so send nothing until turn 1
+        // (phone, Nov 8 11:31: after "Mulligan" the new hand never appeared).
+        if (inMulligan && game.getPhaseHandler().getTurn() == 0) return;
         if (inMulligan) { // Argentum's order: mulliganComplete, then the first game state
             inMulligan = false;
             sink.accept(new JSONObject().put("type", "mulliganComplete").put("finalHandSize", you.getPlayer().getCardsIn(ZoneType.Hand).size()));
