@@ -41,6 +41,7 @@ mkdir -p "$APP/src/main/java/org/arcanachimera/forgehost" "$APP/libs/forge" "$AP
 cp "$ROOT/forge-host/src/main/java/org/arcanachimera/forgehost/ArcanaForgeHost.java" "$APP/src/main/java/org/arcanachimera/forgehost/"
 cp "$LIBS"/*.jar "$APP/libs/forge/"
 cp "$WORK/forge-res.zip" "$APP/src/main/assets/forge-res.zip"
+python3 "$ROOT/scripts/patch_arcana_for_forge.py" "$APP" # owner: no Argentum card check; Forge decides
 cp "$ROOT/arcana-overlay/app/src/main/java/com/arcanatable/engine/ForgeGameService.kt" "$APP/src/main/java/com/arcanatable/engine/"
 # Foreground service: keeps the Forge game alive while the player is in another app.
 python3 - "$APP/src/main/AndroidManifest.xml" <<'PY'

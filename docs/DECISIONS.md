@@ -52,3 +52,8 @@ Owner instructed **“It's arcana with forge. I want the same ui as it currently
 ## 2026-11-08 — Arcana build 142 + Studio
 Owner: build the Forge APK on the current Arcana build 142 including the latest Arcana Studio, with no changes to the Arcana repo.
 Staged read-only at `63edcb77` (head of AARMOU/arcana_table#1013, `claude/arcana-studio-ux-20261106`, versionCode 142). Debug build: Studio on, label "Arcana Forge B142 Studio", package `org.arcanachimera.arcanaforge.b142studio` (installs beside earlier Forge builds).
+
+## 2026-11-08 — No Argentum card check (priority 1: every card on Forge)
+Owner: "I want the argentum card check gone. Verifying being able to utilize all cards in the forge engine is priority 1."
+- `scripts/patch_arcana_for_forge.py` patches the staged Arcana at build time (nothing committed to arcana_table): offline decks keep every card (no Argentum filter, no basic-land fill for Argentum-missing cards), AI decks are not filtered by Argentum, and import no longer reports "not in Argentum". Forge reports any card it doesn't have when the game starts.
+- `AllCardsCheck` (proof workflow) builds every unique card in Forge's database into a game object and looks up named cards.

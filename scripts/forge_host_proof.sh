@@ -19,3 +19,8 @@ timeout 600s java -Xmx4g -Djava.awt.headless=true -cp "$OUT/classes:$CP" \
   org.arcanachimera.forgehost.OneTurnProof "$FORGE/forge-gui/"
 timeout 900s java -Xmx4g -Djava.awt.headless=true -cp "$OUT/classes:$CP" \
   org.arcanachimera.forgehost.PromptScenarios "$FORGE/forge-gui/"
+# Owner priority 1: every card Forge ships must build into a game object; plus the cards Arcana used to drop
+# from the owner's deck (Nov 8 09:45). Report-only for now: printed as ALLCARDS lines, doesn't fail the job.
+timeout 1500s java -Xmx6g -Djava.awt.headless=true -cp "$OUT/classes:$CP" \
+  org.arcanachimera.forgehost.AllCardsCheck "$FORGE/forge-gui/" "Middle School" "Voter's Dilemma" \
+  || echo "ALLCARDS gate: see the ALLCARDS lines above"

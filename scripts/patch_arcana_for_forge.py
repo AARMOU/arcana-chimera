@@ -1,0 +1,59 @@
+#!/usr/bin/env python3
+"""Build-time patch of the staged Arcana checkout (never committed, never pushed to arcana_table).
+
+Owner, 2026-11-08: "I want the argentum card check gone." Forge is the engine, so Arcana no longer drops
+cards Argentum lacks. Every card goes to Forge; Forge reports the ones it doesn't have (ArcanaForgeHost.deck).
+Each replacement is anchored and must match exactly once, so a changed Arcana source fails the build loudly.
+"""
+import sys
+from pathlib import Path
+
+app = Path(sys.argv[1]) / "src/main/java/com/arcanatable"
+
+
+def patch(rel, pairs):
+    path = app / rel
+    text = path.read_text()
+    for old, new in pairs:
+        n = text.count(old)
+        if n != 1:
+            sys.exit(f"patch_arcana_for_forge: {rel}: expected 1 match, found {n}: {old[:90]!r}")
+        text = text.replace(old, new)
+    path.write_text(text)
+    print(f"patched {rel} ({len(pairs)} edits)")
+
+
+KEEP = "{ library.canonical(it) ?: it }"  # Argentum's spelling when it knows the card, else the deck's own name
+
+patch("engine/OfflineGame.kt", [
+    ("val yourCommander = commander?.let(library::canonical)",
+     "val yourCommander = commander?.let " + KEEP),
+    (".filter { deck -> library.canonical(deck.commander) != null }",
+     ""),
+    ("val supported = yourList.mapNotNull(library::canonical)\n        val missing = yourList.filter { library.canonical(it) == null }.distinct()",
+     "val supported = yourList.map " + KEEP + "\n        val missing = emptyList<String>() // Forge decides; it reports cards it lacks"),
+    ("val aiList = argentumLibraryList(premade.cards, premade.commander).mapNotNull(library::canonical)",
+     "val aiList = argentumLibraryList(premade.cards, premade.commander).map " + KEEP),
+    ("val otherLists = others.map { d -> d to argentumLibraryList(d.cards, d.commander).mapNotNull(library::canonical) }",
+     "val otherLists = others.map { d -> d to argentumLibraryList(d.cards, d.commander).map " + KEEP + " }"),
+    # Arcana's card registry still loads what Argentum knows (card display); the rest is Forge-only.
+    ("val cards = library.load((supported + aiList + yourCommander + premade.commander + otherLists.flatMap { (d, l) -> l + d.commander }).toSet())",
+     "val cards = library.load((supported + aiList + yourCommander + premade.commander + otherLists.flatMap { (d, l) -> l + d.commander }).filter { library.canonical(it) != null }.toSet())"),
+    ("val ai = LocalSeat(aiName(premade.commander), filled(aiList, library.canonical(premade.commander)!!), library.canonical(premade.commander))",
+     "val ai = LocalSeat(aiName(premade.commander), filled(aiList, library.canonical(premade.commander) ?: premade.commander), library.canonical(premade.commander) ?: premade.commander)"),
+    ("val extras = otherLists.mapNotNull { (d, list) -> library.canonical(d.commander)?.let { cmd -> LocalSeat(aiName(cmd), filled(list, cmd), cmd) } }",
+     "val extras = otherLists.map { (d, list) -> (library.canonical(d.commander) ?: d.commander).let { cmd -> LocalSeat(aiName(cmd), filled(list, cmd), cmd) } }"),
+])
+
+# Import-time "not in Argentum" messages: Argentum no longer runs the game, so don't report against it.
+patch("DeckSupport.kt", [
+    ('''        append("Argentum check: $argentumCopies in Argentum")
+        if (customCopies > 0) append(" · $customCopies Arcana custom")
+        append(" · $unsupportedCopies not in Argentum")
+        append(" (indexed, not gameplay-verified)")''',
+     '''        append("Forge engine: all $totalCopies card(s) go to Forge, which reports any it doesn't have when the game starts")'''),
+])
+patch("TableController.kt", [
+    ("if (supportReport != null && supportReport.unsupportedCopies > 0) {\n                    val names = supportReport.unsupportedNames",
+     "if (false && supportReport != null && supportReport.unsupportedCopies > 0) { // Forge build: no Argentum card check\n                    val names = supportReport.unsupportedNames"),
+])
