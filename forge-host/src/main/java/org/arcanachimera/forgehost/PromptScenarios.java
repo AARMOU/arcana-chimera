@@ -125,6 +125,7 @@ public final class PromptScenarios {
         Session s = new Session();
         try {
             s.host.applyStateForTest(String.join("\n",
+                    "activeplayer=human", "activephase=MAIN1",
                     "humanbattlefield=Forest;Forest;Forest;Forest;Forest;Forest;Forest;Forest",
                     "humanhand=Ghalta, Stampede Tyrant;Grizzly Bears;Llanowar Elves",
                     "aibattlefield=", "aihand="), "Ghalta, Stampede Tyrant");
@@ -214,6 +215,7 @@ public final class PromptScenarios {
         Session s = new Session();
         try {
             s.host.applyStateForTest(String.join("\n",
+                    "activeplayer=human", "activephase=MAIN1",
                     "humanbattlefield=Prized Unicorn",
                     "humanhand=Llanowar Elves",
                     "aibattlefield=Grizzly Bears;Grizzly Bears", "aihand="), "Llanowar Elves");
