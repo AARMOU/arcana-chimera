@@ -31,13 +31,14 @@ class LocalArgentumHost(
         val seats = (listOf(human, opponent) + extraOpponents.take(2)).map { ArcanaForgeHost.Seat(it.name, it.deck, it.commander) }
         ArcanaForgeHost.lazyCards = true
         forge.prepare(seats) { forgeAssetsDir() } // unpacked on Forge's start thread, not the UI thread
+        ForgeGameService.start(app())
     }
 
     fun receive(message: JSONObject, from: EntityId = HUMAN_ID) {
         if (from == HUMAN_ID) forge.handle(message)
     }
 
-    fun shutdown() = forge.shutdown()
+    fun shutdown() { ForgeGameService.stop(app()); forge.shutdown() }
 
     /** Wi-Fi two-person games aren't on Forge yet (later milestone): tell both sides plainly. */
     fun setGuest(seat: LocalSeat, guest: (JSONObject) -> Unit) {
@@ -53,9 +54,11 @@ class LocalArgentumHost(
         val GUEST_ID: EntityId get() = AI_ID
 
         /** Unpacks the bundled Forge data (assets/forge-res.zip) once per APK build; returns the folder holding res/. */
+        private fun app() = Class.forName("android.app.ActivityThread").getMethod("currentApplication").invoke(null) as android.app.Application
+
         @Synchronized
         fun forgeAssetsDir(): String {
-            val app = Class.forName("android.app.ActivityThread").getMethod("currentApplication").invoke(null) as android.app.Application
+            val app = app()
             val dir = File(app.filesDir, "forge")
             val marker = File(dir, ".unpacked")
             val stamp = app.packageManager.getPackageInfo(app.packageName, 0).lastUpdateTime.toString()

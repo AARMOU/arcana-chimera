@@ -41,6 +41,15 @@ mkdir -p "$APP/src/main/java/org/arcanachimera/forgehost" "$APP/libs/forge" "$AP
 cp "$ROOT/forge-host/src/main/java/org/arcanachimera/forgehost/ArcanaForgeHost.java" "$APP/src/main/java/org/arcanachimera/forgehost/"
 cp "$LIBS"/*.jar "$APP/libs/forge/"
 cp "$WORK/forge-res.zip" "$APP/src/main/assets/forge-res.zip"
+cp "$ROOT/arcana-overlay/app/src/main/java/com/arcanatable/engine/ForgeGameService.kt" "$APP/src/main/java/com/arcanatable/engine/"
+# Foreground service: keeps the Forge game alive while the player is in another app.
+python3 - "$APP/src/main/AndroidManifest.xml" <<'PY'
+import sys; p = sys.argv[1]; s = open(p).read()
+if 'ForgeGameService' not in s:
+    s = s.replace('<application', '<uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />\n    <application', 1)
+    s = s.replace('</application>', '    <service android:name=".engine.ForgeGameService" android:exported="false" android:foregroundServiceType="specialUse">\n            <property android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE" android:value="Keeps an offline card game running while the app is in the background" />\n        </service>\n    </application>', 1)
+    open(p, 'w').write(s)
+PY
 grep -q 'android:largeHeap' "$APP/src/main/AndroidManifest.xml" || sed -i 's/<application/<application android:largeHeap="true"/' "$APP/src/main/AndroidManifest.xml"
 cat >> "$APP/build.gradle.kts" <<'GRADLE'
 
