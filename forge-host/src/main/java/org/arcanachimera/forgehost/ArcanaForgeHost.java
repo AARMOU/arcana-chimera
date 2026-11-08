@@ -621,6 +621,10 @@ public final class ArcanaForgeHost {
             String host = v.getHostCard() == null ? "" : v.getHostCard().getName();
             return new JSONObject().put("name", host.isEmpty() ? v.toString() : host).put("typeLine", "Ability").put("manaCost", "").put("text", v.toString());
         }
+        if (o instanceof forge.game.replacement.ReplacementEffectView r) {
+            String host = r.getHostCard() == null ? "" : r.getHostCard().getName();
+            return new JSONObject().put("name", host.isEmpty() ? r.getDescription() : host).put("typeLine", "Replacement effect").put("manaCost", "").put("text", r.getDescription());
+        }
         String name = o instanceof Card c ? c.getName() : o instanceof forge.game.card.CardView cv ? cv.getName() : label(o);
         String type = o instanceof Card c ? c.getType().toString() : "";
         String cost = o instanceof Card c && c.getManaCost() != null ? c.getManaCost().getShortString() : "";
@@ -661,7 +665,10 @@ public final class ArcanaForgeHost {
 
     /** Forge's dual-list prompt: pure ordering (OrderObjectsDecision) or "move some of these" (SelectCardsDecision). */
     private List<?> order(String prompt, List<?> source, List<?> dest, int remMin, int remMax) throws Exception {
-        if (remMin == 0 && remMax == 0) { // everything ends up in the result: only the order is the player's
+        boolean cardItems = source != null && source.stream().allMatch(o -> o instanceof Card || o instanceof forge.game.card.CardView);
+        // Everything ends up in the result (remMin == remMax == 0), or non-card items (replacement effects, abilities)
+        // where moving all of them is always allowed (remMin == 0): only the order is the player's.
+        if (remMin == 0 && (remMax == 0 || !cardItems)) {
             List<Object> items = new ArrayList<>();
             if (dest != null) items.addAll(dest); // already placed (e.g. Forge's "reorder" form passes them here)
             if (source != null) items.addAll(source);
@@ -799,6 +806,7 @@ public final class ArcanaForgeHost {
 
     /** Test-only: Forge's in-game GUI for this game, to call prompt shapes directly. */
     public IGuiGame guiForTest() { return guiGame(); }
+    public List<Object> playerViewsForTest() { List<Object> l = new ArrayList<>(); for (Player p : match.getGame().getPlayers()) l.add(p.getView()); return l; }
 
     /** Test-only: Forge view of a battlefield card by Arcana id. */
     public forge.game.card.CardView viewForTest(String cardId) {

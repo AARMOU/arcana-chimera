@@ -215,6 +215,29 @@ public final class PromptScenarios {
                 return argc + "-arg order returned " + r + " (expected the two cards reversed" + (argc == 9 ? " in an OrderResult" : "") + ")";
             out.append(", ").append(argc).append("-arg order ok");
         }
+        // Replacement-effect shape (phone, Nov 8 08:46): non-card items, remMin 0, remMax size-1, empty dest.
+        List<Object> items = s.host.playerViewsForTest();
+        AtomicReference<Object> result = new AtomicReference<>();
+        Thread t = new Thread(() -> {
+            try { result.set(gui.order("Select order for replacement effects", "Apply first", 0, items.size() - 1, new ArrayList<>(items), new ArrayList<>(), null, false, true)); }
+            catch (Throwable e) { result.set(e); }
+        }, "order-shape-replacement");
+        t.start();
+        while (true) {
+            JSONObject m = s.next(30);
+            JSONObject d = m.optJSONObject("pendingDecision");
+            if (d != null && d.optString("type").equals("OrderObjectsDecision")) {
+                JSONArray objs = d.getJSONArray("objects"), rev = new JSONArray();
+                for (int i = objs.length() - 1; i >= 0; i--) rev.put(objs.get(i));
+                s.answer(d, new JSONObject().put("type", "OrderedResponse").put("orderedObjects", rev));
+                break;
+            }
+        }
+        t.join(30_000);
+        Object r = result.get();
+        if (!(r instanceof IGuiGame.OrderResult<?> or) || or.ordered().size() != items.size() || or.ordered().get(0) != items.get(items.size() - 1))
+            return "replacement-order shape returned " + r + " (expected all items reversed in an OrderResult)";
+        out.append(", replacement-order shape ok");
         return out.toString();
     }
 
