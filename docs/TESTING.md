@@ -30,6 +30,7 @@ A bot plays seat 0; Forge AIs play the others. A game **fails** on:
 | `HOST_ERROR` | An exception inside the bridge ("Forge host problem") |
 | `PROTOCOL` | A `ProtocolGuard` finding |
 | `NO_GAMEOVER` | The player lost but Arcana was never told |
+| `BOT_ERROR` | The soak bot itself failed (fix `SoakTest`, not the bridge) |
 
 A game that reaches the turn limit is fine. The summary line counts finished, turn-limited and failed games.
 

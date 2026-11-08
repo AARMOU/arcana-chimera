@@ -88,7 +88,7 @@ public final class SoakTest {
         final ProtocolGuard guard = new ProtocolGuard();
         final Set<String> answered = new HashSet<>();
         final Map<String, Integer> decisionTypes = new LinkedHashMap<>();
-        int turn, actions, decisions, actionsThisStep;
+        int turn, actions, decisions, actionsThisStep, unboundedNumbers;
         String stepKey = "";
         boolean youLost;
 
@@ -137,7 +137,10 @@ public final class SoakTest {
                                 String extra = verdict(host);
                                 return extra != null ? extra : "TURN LIMIT";
                             }
-                            if (m.optBoolean("interactive")) act(host, m, st);
+                            if (m.optBoolean("interactive")) {
+                                try { act(host, m, st); }
+                                catch (RuntimeException bot) { bot.printStackTrace(); return "FAIL BOT_ERROR (the soak bot, not the bridge) " + bot; }
+                            }
                         }
                         default -> { }
                     }
@@ -234,7 +237,9 @@ public final class SoakTest {
                 }
                 case "ChooseNumberDecision": {
                     int min = d.optInt("minValue"), max = Math.max(min, d.optInt("maxValue", min));
-                    return new JSONObject().put("type", "NumberChosenResponse").put("number", min + rng.nextInt(max - min + 1));
+                    long span = Math.min((long) max - min, 20); // Forge's "choose X" can be unbounded (Integer.MAX_VALUE)
+                    if (max == Integer.MAX_VALUE) unboundedNumbers++;
+                    return new JSONObject().put("type", "NumberChosenResponse").put("number", min + rng.nextInt((int) span + 1));
                 }
                 case "SelectCardsDecision": {
                     JSONArray opts = d.optJSONArray("options");
