@@ -331,6 +331,20 @@ public final class ArcanaForgeHost {
         return null;
     }
 
+    /**
+     * Forge creates anonymous subclasses for human inputs such as the
+     * cleanup-discard prompt. getSimpleName() is empty on those classes;
+     * classify through the nearest named superclass instead.
+     */
+    private static String inputClassName(Input input) {
+        if (input == null) return "";
+        for (Class<?> c = input.getClass(); c != null && c != Object.class; c = c.getSuperclass()) {
+            String name = c.getSimpleName();
+            if (!name.isEmpty()) return name;
+        }
+        return "UnknownInput";
+    }
+
     /** JSONObject keys on both desktop org.json and Android (Android's JSONObject has only keys()). */
     private static List<String> keys(JSONObject o) {
         List<String> out = new ArrayList<>();
@@ -381,7 +395,7 @@ public final class ArcanaForgeHost {
         if (pending != null) return true;
         PlayerControllerHuman you = humanController();
         Input input = you == null ? null : you.getInputQueue().getActualInput(you);
-        return input != null && !input.getClass().getSimpleName().equals("InputLockUI");
+        return input != null && !"InputLockUI".equals(inputClassName(input));
     }
 
     private void emitSafely() {
@@ -409,7 +423,7 @@ public final class ArcanaForgeHost {
             return;
         }
         if (input != null && input != lastPrompted) {
-            String kind = input.getClass().getSimpleName();
+            String kind = inputClassName(input);
             if (kind.equals("InputConfirm") && game.getPhaseHandler().getTurn() == 0) { // play or draw: Arcana's offline host doesn't ask; take the play
                 lastPrompted = input; defaultedPrompts.add("play or draw: play"); ok(you); return;
             }
@@ -436,7 +450,7 @@ public final class ArcanaForgeHost {
         }
         if (pending != null) { emitDecision(); return; } // an open question stays on screen until answered
         boolean priority = input instanceof InputPassPriority;
-        String inputKind = input == null ? "" : input.getClass().getSimpleName();
+        String inputKind = inputClassName(input);
         boolean combatInput = inputKind.equals("InputAttack") || inputKind.equals("InputBlock");
         // InputLockUI is Forge's "waiting for actions" lock while its game thread works: not a decision. Show state only.
         if (inputKind.equals("InputLockUI")) input = null;
@@ -446,7 +460,7 @@ public final class ArcanaForgeHost {
             // Milestone 1 stand-in until combat/targets reach Arcana's screens: Forge's default (no attack,
             // no block, its suggested target) so the game never waits on a prompt the UI can't show yet.
             lastPrompted = input;
-            defaultedPrompts.add("auto-answered " + input.getClass().getSimpleName());
+            defaultedPrompts.add("auto-answered " + inputKind);
             autoSelectMinimum(input);
             ok(you);
             return;
@@ -998,7 +1012,7 @@ public final class ArcanaForgeHost {
 
     /** Turns the live Forge input into an Arcana decision. Returns false if the input isn't a decision type. */
     private boolean decisionForInput(Input input, PlayerControllerHuman you, Game game) throws Exception {
-        String kind = input.getClass().getSimpleName();
+        String kind = inputClassName(input);
         if (kind.equals("InputSelectTargets")) {
             SpellAbility sa = (SpellAbility) field(input, "sa");
             forge.game.spellability.TargetRestrictions tgt = (forge.game.spellability.TargetRestrictions) field(input, "tgt");

@@ -1,0 +1,13 @@
+{"at_ms":0,"kind":"state","version":40,"turn":6,"phase":"COMBAT_DAMAGE","legal":0}
+{"at_ms":100,"kind":"action","name":"SubmitDecision"}
+{"at_ms":120,"kind":"error"}
+{"at_ms":150,"kind":"state","version":41,"turn":6,"phase":"COMBAT_DAMAGE","legal":0}
+{"at_ms":1100,"kind":"action","name":"SubmitDecision"}
+{"at_ms":1120,"kind":"error"}
+{"at_ms":1150,"kind":"state","version":42,"turn":6,"phase":"COMBAT_DAMAGE","legal":0}
+{"at_ms":2100,"kind":"action","name":"SubmitDecision"}
+{"at_ms":2120,"kind":"error"}
+{"at_ms":2150,"kind":"state","version":43,"turn":6,"phase":"COMBAT_DAMAGE","legal":0}
+{"at_ms":3100,"kind":"action","name":"SubmitDecision"}
+{"at_ms":3120,"kind":"error"}
+{"at_ms":3150,"kind":"state","version":44,"turn":6,"phase":"COMBAT_DAMAGE","legal":0}

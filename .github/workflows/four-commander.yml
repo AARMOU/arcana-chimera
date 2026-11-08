@@ -3,6 +3,12 @@ name: Chimera — four AI Commander seats (public, manual only)
 # No push, PR, schedule or automatic retry triggers.
 on:
   workflow_dispatch:
+    inputs:
+      seed:
+        description: 'Reproducible Forge AI game seed (0..2147483647)'
+        required: true
+        type: string
+        default: '8074'
 
 permissions:
   contents: read
@@ -35,6 +41,8 @@ jobs:
           df -h .
 
       - name: Run one four-player Commander game
+        env:
+          CHIMERA_SEED: ${{ inputs.seed }}
         run: bash scripts/run_four_commander.sh
 
       - name: Show bounded diagnostics (no artifacts uploaded)
