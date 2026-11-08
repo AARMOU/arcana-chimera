@@ -682,6 +682,34 @@ public final class ArcanaForgeHost {
      * player when trampling (CR 702.19c); blockers alone may be divided freely (CR 510.1c-d, Foundations rules).
      * Returns Forge's shape: blocker CardView -> amount, defender under the null key.
      */
+    /** Divided damage, counters, shields, mana: Arcana's DistributeDecision. Forge re-checks the split and asks again if it's short. */
+    private Map<Object, Integer> assignGenericAmount(forge.game.card.CardView source, Map<?, ?> targets, int amount,
+            boolean atLeastOne, String label) throws Exception {
+        Map<String, Object> byId = new LinkedHashMap<>();
+        JSONArray ids = new JSONArray();
+        JSONObject caps = new JSONObject();
+        for (Map.Entry<?, ?> e : targets.entrySet()) {
+            String id = idOf(e.getKey());
+            byId.put(id, e.getKey()); ids.put(id);
+            caps.put(id, e.getValue() instanceof Integer cap ? Math.min(cap, amount) : amount);
+        }
+        String name = source == null ? "this effect" : source.getName();
+        while (true) {
+            JSONObject d = decisionBase("DistributeDecision", "Divide " + amount + " " + (label == null ? "" : label) + " from " + name)
+                    .put("targets", ids).put("totalAmount", amount).put("minPerTarget", atLeastOne ? 1 : 0).put("maxPerTarget", caps);
+            JSONObject chosen = ask(d, Map.of()).optJSONObject("distribution");
+            Map<Object, Integer> out = new LinkedHashMap<>();
+            int total = 0; boolean ok = chosen != null;
+            if (chosen != null) for (String id : keys(chosen)) {
+                int n = chosen.optInt(id, -1);
+                if (n < 0 || !byId.containsKey(id)) { ok = false; break; }
+                out.put(byId.get(id), n); total += n;
+            }
+            if (ok && total == amount) { for (Object t : byId.values()) out.putIfAbsent(t, 0); return out; }
+            notice("distribute-invalid", "That split doesn't add up to " + amount + "; choose again.");
+        }
+    }
+
     private Map<forge.game.card.CardView, Integer> assignCombatDamage(forge.game.card.CardView attackerView, List<?> blockerViews,
             int damage, Object defenderView, boolean overrideOrder) throws Exception {
         Game game = match.getGame();
@@ -799,6 +827,7 @@ public final class ArcanaForgeHost {
             }
             case "chooseEntitiesForEffect": return choose((String) a[0], (Integer) a[2], (Integer) a[3], (List<?>) a[1]);
             case "getInteger": return askNumber((String) a[0], (Integer) a[1], (Integer) a[2]);
+            case "assignGenericAmount": return assignGenericAmount((forge.game.card.CardView) a[0], (Map<?, ?>) a[1], (Integer) a[2], (Boolean) a[3], (String) a[4]);
             case "assignCombatDamage": return assignCombatDamage((forge.game.card.CardView) a[0], (List<?>) a[1], (Integer) a[2], a[3], (Boolean) a[4]);
             case "order": {
                 // (title, top, source, card) | (title, top, remMin, remMax, source, dest, card, sideboard[, remember])
@@ -977,6 +1006,11 @@ public final class ArcanaForgeHost {
             return choices == null || choices.isEmpty() ? null : choices.get(0);
         }
         if (name.equals("getInteger")) return firstInt(args);
+        // Keep everything where it is rather than lose cards: an empty list here would drop them.
+        if (name.equals("manipulateCardList")) { List<Object> keep = new ArrayList<>(); for (Object c : (Iterable<?>) args[1]) keep.add(c); return keep; }
+        if (name.equals("insertInList")) { List<Object> l = new ArrayList<>((List<?>) args[2]); l.add(args[1]); return l; }
+        if (name.equals("sideboard")) return null; // Forge keeps the main deck unchanged
+        if (name.equals("showInputDialog")) return args[3];
         if (name.equals("showOptionDialog")) return args[4];
         if (rt == boolean.class || rt == Boolean.class) return true;
         if (rt == int.class || rt == Integer.class) return 0;
