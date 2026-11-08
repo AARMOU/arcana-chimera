@@ -18,7 +18,8 @@ public final class OneTurnProof {
     private static final String CREATURE = "Gray Ogre";
     public static void main(String[] args) throws Exception {
         LinkedBlockingQueue<JSONObject> inbox = new LinkedBlockingQueue<>();
-        ArcanaForgeHost host = new ArcanaForgeHost(inbox::add);
+        ProtocolGuard protocol = new ProtocolGuard(); // Goose's contract guard (PR #17)
+        ArcanaForgeHost host = new ArcanaForgeHost(m -> { protocol.observe(m); inbox.add(m); });
         long t0 = System.currentTimeMillis();
         ArcanaForgeHost.initForge(args.length > 0 ? args[0] : "../forge-gui/", host);
         System.out.println("PROOF forge loaded in " + (System.currentTimeMillis() - t0) + " ms");
@@ -124,6 +125,7 @@ public final class OneTurnProof {
         }
         System.out.println("PROOF updates received: " + updates);
         System.out.println("PROOF prompts answered by default (to become player decisions): " + new java.util.LinkedHashSet<>(host.defaultedPrompts));
+        if (result.startsWith("PASS") && !protocol.clean()) result = "FAIL: ProtocolGuard " + protocol.failures();
         System.out.println("PROOF RESULT " + result);
         System.exit(result.startsWith("PASS") ? 0 : 1);
     }

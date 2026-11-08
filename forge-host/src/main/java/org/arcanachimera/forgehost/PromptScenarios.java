@@ -47,7 +47,8 @@ public final class PromptScenarios {
     /** One game against an all-Forest AI, advanced to your first main phase. */
     private static final class Session {
         final LinkedBlockingQueue<JSONObject> inbox = new LinkedBlockingQueue<>();
-        final ArcanaForgeHost host = new ArcanaForgeHost(inbox::add);
+        final ProtocolGuard protocol = new ProtocolGuard(); // Goose's contract guard (PR #17): checked on close
+        final ArcanaForgeHost host = new ArcanaForgeHost(m -> { protocol.observe(m); inbox.add(m); });
         JSONObject last;
         final List<String> notices = new ArrayList<>();
 
@@ -120,7 +121,10 @@ public final class PromptScenarios {
                     .put("response", response.put("decisionId", decision.getString("id"))));
         }
 
-        void close() { host.shutdown(); }
+        void close() {
+            host.shutdown();
+            if (!protocol.clean()) throw new IllegalStateException("ProtocolGuard: " + String.join("; ", protocol.failures()));
+        }
     }
 
     private static boolean interactive(JSONObject m) { return m.optString("type").equals("stateUpdate") && m.optBoolean("interactive"); }
