@@ -866,13 +866,15 @@ public final class ArcanaForgeHost {
         JSONArray ordered = new JSONArray();
         JSONObject minimum = new JSONObject(), defaults = new JSONObject();
         int left = damage;
+        Map<String, Integer> lethalOf = new LinkedHashMap<>();
         for (Object o : blockerViews) {
             forge.game.card.CardView v = (forge.game.card.CardView) o;
             String id = "f" + v.getId();
             blockers.put(id, v); ordered.put(id);
             Card b = game.findByView(v);
             int lethal = b == null ? 1 : deathtouch ? 1 : Math.max(0, b.getLethalDamage());
-            minimum.put(id, trample && defenderId != null ? lethal : 0);
+            lethalOf.put(id, lethal);
+            minimum.put(id, 0); // a floor only applies if damage goes to the player (CR 702.19c), checked below
             int give = Math.min(lethal, left); defaults.put(id, give); left -= give;
         }
         if (left > 0) {
@@ -894,14 +896,15 @@ public final class ArcanaForgeHost {
                 int n = chosen.optInt(id, -1);
                 if (n < 0) { ok = false; break; }
                 if (blockers.containsKey(id)) { out.put(blockers.get(id), n); total += n; }
-                else if (id.equals(defenderId)) { out.put(null, n); total += n; }
-                else { ok = false; break; }
+                else if (id.equals(defenderId)) { if (n > 0) out.put(null, n); total += n; }
+                else if (n != 0) { ok = false; break; } // an unknown id with 0 (e.g. a stale editor entry) is harmless
             }
-            if (ok && total == damage) {
-                for (String id : blockers.keySet()) if (out.getOrDefault(blockers.get(id), 0) < minimum.optInt(id)) ok = false;
-            }
-            if (ok && total == damage) return out;
-            error("That damage split doesn't add up to " + damage + (defenderId != null ? " (trample: lethal to each blocker first)" : "") + ". Try again.");
+            String why = !ok ? "unknown target in " + chosen : total != damage ? "the split adds up to " + total + ", not " + damage : null;
+            if (why == null && out.getOrDefault(null, 0) > 0) // trample: the player gets damage only once every blocker has lethal
+                for (String id : blockers.keySet())
+                    if (out.getOrDefault(blockers.get(id), 0) < lethalOf.get(id)) { why = "damage can reach the player only after each blocker has lethal damage (" + lethalOf.get(id) + " for " + blockers.get(id).getName() + ")"; break; }
+            if (why == null) return out;
+            error("That damage split can't be used: " + why + ". Try again.");
         }
     }
 

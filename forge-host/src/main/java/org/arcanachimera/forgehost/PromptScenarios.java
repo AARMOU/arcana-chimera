@@ -33,9 +33,9 @@ public final class PromptScenarios {
     public static void main(String[] args) throws Exception {
         forgeDir = args.length > 0 ? args[0] : "../forge-gui/";
         List<String> failures = new ArrayList<>();
-        for (String name : List.of("A-ghalta-order", "B-combat-damage", "C-mulligan")) {
+        for (String name : List.of("A-ghalta-order", "B-combat-damage", "C-mulligan", "D-trample-short")) {
             String r;
-            try { r = name.startsWith("A") ? ghalta() : name.startsWith("B") ? combatDamage() : mulligan(); }
+            try { r = name.startsWith("A") ? ghalta() : name.startsWith("B") ? combatDamage() : name.startsWith("C") ? mulligan() : trampleShort(); }
             catch (Throwable t) { t.printStackTrace(); r = "FAIL: " + t; }
             System.out.println("SCENARIO " + name + " " + r);
             if (!r.startsWith("PASS")) failures.add(name);
@@ -339,6 +339,65 @@ public final class PromptScenarios {
                 }
                 if (attacked && first == null && state.optString("currentStep").equals("POSTCOMBAT_MAIN"))
                     return "FAIL: combat ended without a damage assignment prompt (did both Bears block?)";
+                s.send(new JSONObject().put("type", "PassPriority").put("playerId", ArcanaForgeHost.HUMAN_ID));
+            }
+        } finally { s.close(); }
+    }
+
+    // ------------------------------------------------------------------ D. trample short of lethal (phone, Nov 8 11:45)
+
+    /**
+     * A trampler (Prized Unicorn + Garruk's Uprising) with 2 power is blocked by two Grizzly Bears (lethal 2 each, 4 in
+     * all). Damage may go to the player only after every blocker has lethal, so 1 to the player must be refused,
+     * and 1 + 1 to the Bears must be accepted (the phone's split was refused forever).
+     */
+    private static String trampleShort() throws Exception {
+        Session s = new Session(String.join("\n",
+                "activeplayer=human", "activephase=MAIN1", "removesummoningsickness=true",
+                "humanlife=20", "ailife=20", "humanlibrary=" + LIBRARY, "ailibrary=" + LIBRARY,
+                "humanbattlefield=Prized Unicorn;Garruk's Uprising",
+                "aibattlefield=Grizzly Bears;Grizzly Bears", "aihand="), "Prized Unicorn");
+        try {
+            boolean attacked = false, refusedPlayerDamage = false;
+            int answers = 0;
+            while (true) {
+                JSONObject m = s.next(90);
+                if (!interactive(m) || !hasCard(m, "Prized Unicorn")) continue;
+                JSONObject d = m.optJSONObject("pendingDecision");
+                if (d != null && !s.fresh(d)) continue;
+                if (d != null) {
+                    if (!d.optString("type").equals("AssignDamageDecision")) return "FAIL: unexpected decision " + d.optString("type") + " (" + d.optString("prompt") + ")";
+                    if (!d.optBoolean("hasTrample") || d.isNull("defenderId")) return "FAIL: expected a trample decision with the defending player, got " + d;
+                    JSONArray t = d.getJSONArray("orderedTargets");
+                    String a = t.getString(0), b = t.getString(1), player = d.getString("defenderId");
+                    int before = s.notices.size();
+                    JSONObject split = answers == 0 ? new JSONObject().put(a, 1).put(b, 0).put(player, 1) : new JSONObject().put(a, 1).put(b, 1).put(player, 0);
+                    answers++;
+                    s.answer(d, new JSONObject().put("type", "DamageAssignmentResponse").put("assignments", split));
+                    if (answers == 1) { // must be refused with a reason, then asked again
+                        while (s.notices.size() == before) s.next(10);
+                        if (!s.notices.get(s.notices.size() - 1).contains("lethal")) return "FAIL: wrong refusal: " + s.notices.get(s.notices.size() - 1);
+                        refusedPlayerDamage = true;
+                    }
+                    continue;
+                }
+                JSONObject state = m.getJSONObject("state");
+                JSONArray legal = m.getJSONArray("legalActions");
+                JSONObject attack = null;
+                for (int i = 0; i < legal.length(); i++) if (legal.getJSONObject(i).optString("actionType").equals("DeclareAttackers")) attack = legal.getJSONObject(i);
+                if (attack != null && !attacked) {
+                    attacked = true;
+                    s.send(new JSONObject(attack.getJSONObject("action").toString()).put("attackers", new JSONObject().put(battlefield(state, ArcanaForgeHost.HUMAN_ID, "Prized Unicorn").get(0), ArcanaForgeHost.AI_ID)));
+                    continue;
+                }
+                if (answers >= 2 && state.optString("currentStep").equals("POSTCOMBAT_MAIN")) {
+                    int aiLife = -1;
+                    for (Object o : state.getJSONArray("players")) { JSONObject p = (JSONObject) o; if (p.optString("playerId").equals(ArcanaForgeHost.AI_ID)) aiLife = p.optInt("life"); }
+                    int bears = battlefield(state, ArcanaForgeHost.AI_ID, "Grizzly Bears").size();
+                    if (!refusedPlayerDamage || bears != 2 || aiLife != 20) return "FAIL: refused=" + refusedPlayerDamage + ", Bears " + bears + ", AI life " + aiLife;
+                    return "PASS: 1 to the player refused (blockers not lethal); 1 + 1 to the Bears accepted; both Bears alive, AI at 20, play continued";
+                }
+                if (attacked && answers == 0 && state.optString("currentStep").equals("POSTCOMBAT_MAIN")) return "FAIL: no damage assignment prompt";
                 s.send(new JSONObject().put("type", "PassPriority").put("playerId", ArcanaForgeHost.HUMAN_ID));
             }
         } finally { s.close(); }
