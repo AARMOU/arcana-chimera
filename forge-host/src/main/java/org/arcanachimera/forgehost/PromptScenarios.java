@@ -375,7 +375,9 @@ public final class PromptScenarios {
                     answers++;
                     s.answer(d, new JSONObject().put("type", "DamageAssignmentResponse").put("assignments", split));
                     if (answers == 1) { // must be refused with a reason, then asked again
-                        while (s.notices.size() == before) s.next(10);
+                        // the refusal comes first, then the question again: keep that question for the loop
+                        s.pushBack = s.next(10);
+                        if (s.notices.size() == before) return "FAIL: the split with damage to the player was not refused";
                         if (!s.notices.get(s.notices.size() - 1).contains("lethal")) return "FAIL: wrong refusal: " + s.notices.get(s.notices.size() - 1);
                         refusedPlayerDamage = true;
                     }
