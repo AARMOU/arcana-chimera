@@ -424,6 +424,17 @@ public final class ArcanaForgeHost {
     }
 
     private volatile int raceRetries;
+
+    /**
+     * Forge's cost check asks the paying player which creatures/artifacts to tap for Convoke, Improvise and
+     * Waterbend, even when only testing. For you, that question would block this thread forever, so such
+     * spells are offered and Forge settles the payment when you cast (scenario F stalled on Stoke the Flames).
+     */
+    private static boolean asksWhilePricing(SpellAbility sa) {
+        Card host = sa.getHostCard();
+        return host != null && (host.hasKeyword(forge.game.keyword.Keyword.CONVOKE) || host.hasKeyword(forge.game.keyword.Keyword.IMPROVISE))
+                || sa.hasParam("TapCreaturesForMana") || (sa.getMaxWaterbend() != null && sa.getMaxWaterbend() > 0);
+    }
     private volatile Input lastAutoPassed;
     /** Arcana's "respond to my own spells" (off: your own spells and abilities resolve without a stop, as Argentum did). */
     public volatile boolean respondToOwnStack;
@@ -553,7 +564,8 @@ public final class ArcanaForgeHost {
                         String abilityId = type.equals("ActivateAbility") ? "sa" + sa.getId() : "";
                         JSONObject a = new JSONObject().put("type", type).put("playerId", HUMAN_ID);
                         if (type.equals("ActivateAbility")) a.put("sourceId", cardId).put("abilityId", abilityId); else a.put("cardId", cardId);
-                        boolean affordable = sa.isLandAbility() || sa.isManaAbility() || forge.ai.ComputerUtilMana.canPayManaCost(sa, me, 0, false);
+                        boolean affordable = sa.isLandAbility() || sa.isManaAbility() || asksWhilePricing(sa)
+                                || forge.ai.ComputerUtilMana.canPayManaCost(sa, me, 0, false);
                         if (affordable) offered.put(key(type, cardId, abilityId), sa);
                         JSONObject offer = action(type, sa.isManaAbility() ? "Tap for mana: " + sa : sa.toString(), a).put("isAffordable", affordable);
                         if (sa.isManaAbility()) offer.put("isManaAbility", true);
@@ -617,7 +629,7 @@ public final class ArcanaForgeHost {
         JSONObject cards = new JSONObject();
         JSONArray zones = new JSONArray();
         JSONArray players = new JSONArray();
-        for (Player p : game.getPlayers()) {
+        for (Player p : game.getRegisteredPlayers()) { // everyone who started: a player who lost stays, with hasLost
             String pid = playerId(p);
             for (ZoneType z : new ZoneType[]{ZoneType.Library, ZoneType.Hand, ZoneType.Battlefield, ZoneType.Graveyard, ZoneType.Exile, ZoneType.Command}) {
                 Collection<Card> in = p.getCardsIn(z);
