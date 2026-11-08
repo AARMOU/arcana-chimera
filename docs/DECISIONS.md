@@ -1,5 +1,21 @@
 # Chimera decisions and guardrails
 
+## Owner decision: full Forge brain transplant, built in Chimera first (November 7, 2026, ~8:27 PM Mountain)
+
+Recorded by Claude B from the owner's chat answers. The owner asked to **"take the argentum rule engine out of arcana and replace it with forge"** and answered Claude B's four questions:
+
+1. **License:** GPL-3.0 accepted, **"as long as the apk is encrypted beforehand and I am able to decrypt it."** Delivery to the owner uses the encrypted-handoff route. GPL obligations attach only when a build is given to someone else, and then the corresponding source must go with it.
+2. **Where:** **Option A.** Prove it in Chimera first, then move it into Arcana later as a separate, owner-approved step.
+3. **Scope:** **"a full brain transplant"**: Forge replaces Argentum entirely as Arcana's rules engine and AI. No dual-engine switch is the goal (a temporary one may exist only as a development aid).
+4. **Priority:** **"Don't concern yourself with main arcana for this project. This is your only job for right now."**
+
+What this changes from the November 3 FrankenArcana scope:
+- The target is **Arcana's real Compose app with its engine swapped**, not an Arcana-styled overlay on Forge's own Android app. The Chimera adapter must speak the same game-message contract Arcana's UI already uses (`LocalArgentumHost` → `/game`-style messages), so Arcana's table, hand, Studio and menus run unchanged on Forge.
+- Arcana source is still **staged at build time into ignored space** from a pinned public commit and never mirrored into public Chimera history. Chimera commits only its own adapter code and minimal, clearly labelled patch files that swap the engine.
+- **Pending owner confirmation:** Claude B manually dispatching Chimera's build/test workflows on GitHub's free standard runners for this project. Until confirmed, builds run only through draft-PR checks. Either way: no paid compute, no public APK or binary, no unencrypted artifact.
+
+Unchanged: **no writes of any kind to `AARMOU/arcana_table`**, no spending, no automatic merges, no release.
+
 ## Owner override — November 3, 2026 (Mountain time)
 
 The owner expressly authorized making this research-only repository **public** to attempt one **free** GitHub Actions Forge Commander game. This supersedes only the November 2 prohibition on publication and GitHub Actions in private repositories. Never start a paid runner. Use only standard `ubuntu-24.04` after the repository is public, with manual `workflow_dispatch`, no scheduling or automatic retries, and no publicly uploaded compiled engine or assets. Visibility must be changed by the owner in GitHub Settings; the integration cannot alter visibility.
