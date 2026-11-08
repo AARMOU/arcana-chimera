@@ -152,6 +152,9 @@ public final class ArcanaForgeHost {
         FModel.initialize(null, prefs -> { // phones: parse card scripts on demand instead of all ~30k at start
             prefs.setPref(forge.localinstance.properties.ForgePreferences.FPref.LOAD_CARD_SCRIPTS_LAZILY, lazyCards);
             prefs.setPref(forge.localinstance.properties.ForgePreferences.FPref.YIELD_SKIP_PHASE_DELAY, true);
+            // Scry and similar: Forge's plain questions (top/bottom, which to bottom, order), all bridged, instead of
+            // dragging cards around the whole library (manipulateCardList; found by the soak test, Nov 8).
+            prefs.setPref(forge.localinstance.properties.ForgePreferences.FPref.UI_SELECT_FROM_CARD_DISPLAYS, false);
             prefs.setPref(forge.localinstance.properties.ForgePreferences.FPref.YIELD_SKIP_RESOLVE_DELAY, true);
             return null;
         });
@@ -1322,6 +1325,7 @@ public final class ArcanaForgeHost {
                     if (args != null && args.length > 0 && args[0] != null) error(String.valueOf(args[0]));
                     scheduleEmit(); return null;
                 case "isUiSetToSkipPhase": return skipPhase(args[0], (PhaseType) args[1]);
+                case "canPickStackTargets": return false; // a capability query, not a question: Forge then lists stack targets
                 case "getAbilityToPlay": { // Forge asks which of the card's abilities: the one the player chose
                     List<?> views = (List<?>) args[1];
                     for (Object v : views) if (v instanceof forge.game.spellability.SpellAbilityView sv && sv.getId() == chosenAbilityId) return v;
