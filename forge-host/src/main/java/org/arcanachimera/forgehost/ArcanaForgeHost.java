@@ -249,6 +249,13 @@ public final class ArcanaForgeHost {
         return null;
     }
 
+    /** JSONObject keys on both desktop org.json and Android (Android's JSONObject has only keys()). */
+    private static List<String> keys(JSONObject o) {
+        List<String> out = new ArrayList<>();
+        for (java.util.Iterator<String> it = o.keys(); it.hasNext(); ) out.add(it.next());
+        return out;
+    }
+
     private static int intField(Object o, String name) {
         try { java.lang.reflect.Field f = o.getClass().getDeclaredField(name); f.setAccessible(true); return f.getInt(o); }
         catch (ReflectiveOperationException e) { return 1; }
@@ -778,11 +785,11 @@ public final class ArcanaForgeHost {
         for (Card c : game.getCardsIn(ZoneType.Battlefield)) entities.put(cardId(c), c);
         if (action.optString("type").equals("DeclareAttackers")) {
             JSONObject attackers = action.optJSONObject("attackers");
-            if (attackers != null) for (String a : attackers.keySet())
+            if (attackers != null) for (String a : keys(attackers))
                 if (entities.get(a) instanceof Card c && entities.get(attackers.getString(a)) instanceof forge.game.GameEntity d) combat.addAttacker(c, d);
         } else {
             JSONObject blockers = action.optJSONObject("blockers");
-            if (blockers != null) for (String b : blockers.keySet()) {
+            if (blockers != null) for (String b : keys(blockers)) {
                 JSONArray list = blockers.getJSONArray(b);
                 for (int i = 0; i < list.length(); i++)
                     if (entities.get(b) instanceof Card blocker && entities.get(list.getString(i)) instanceof Card attacker) combat.addBlocker(attacker, blocker);
