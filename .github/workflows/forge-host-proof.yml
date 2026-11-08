@@ -1,7 +1,12 @@
 name: Forge host proof (milestone 1)
-# Manual only (owner rule: no automatic runs). Free standard runner, no artifacts uploaded.
+# Owner (Nov 7, 2026): run on Claude B's draft PR pushes. Free standard runner, no artifacts uploaded.
 on:
   workflow_dispatch:
+  pull_request:
+    paths:
+      - 'forge-host/**'
+      - 'scripts/forge_host_proof.sh'
+      - '.github/workflows/forge-host-proof.yml'
 permissions:
   contents: read
 jobs:

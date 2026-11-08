@@ -12,7 +12,7 @@ Recorded by Claude B from the owner's chat answers. The owner asked to **"take t
 What this changes from the November 3 FrankenArcana scope:
 - The target is **Arcana's real Compose app with its engine swapped**, not an Arcana-styled overlay on Forge's own Android app. The Chimera adapter must speak the same game-message contract Arcana's UI already uses (`LocalArgentumHost` → `/game`-style messages), so Arcana's table, hand, Studio and menus run unchanged on Forge.
 - Arcana source is still **staged at build time into ignored space** from a pinned public commit and never mirrored into public Chimera history. Chimera commits only its own adapter code and minimal, clearly labelled patch files that swap the engine.
-- **Pending owner confirmation:** Claude B manually dispatching Chimera's build/test workflows on GitHub's free standard runners for this project. Until confirmed, builds run only through draft-PR checks. Either way: no paid compute, no public APK or binary, no unencrypted artifact.
+- **Owner chose (Nov 7, 2026):** build/test workflows run automatically on Claude B's **draft PR** pushes, on GitHub's free standard runners. Nothing is merged to `main` for this. Still no paid compute, no public APK or binary, no unencrypted artifact.
 
 Unchanged: **no writes of any kind to `AARMOU/arcana_table`**, no spending, no automatic merges, no release.
 
