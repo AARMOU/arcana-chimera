@@ -33,9 +33,9 @@ public final class PromptScenarios {
     public static void main(String[] args) throws Exception {
         forgeDir = args.length > 0 ? args[0] : "../forge-gui/";
         List<String> failures = new ArrayList<>();
-        for (String name : List.of("A-ghalta-order", "B-combat-damage", "C-mulligan", "D-trample-short", "E-stack", "F-mana-convoke")) {
+        for (String name : List.of("A-ghalta-order", "B-combat-damage", "C-mulligan", "D-trample-short", "E-stack", "F-mana-convoke", "G-you-lose")) {
             String r;
-            try { r = name.startsWith("A") ? ghalta() : name.startsWith("B") ? combatDamage() : name.startsWith("C") ? mulligan() : name.startsWith("D") ? trampleShort() : name.startsWith("E") ? stack() : manaAndConvoke(); }
+            try { r = name.startsWith("A") ? ghalta() : name.startsWith("B") ? combatDamage() : name.startsWith("C") ? mulligan() : name.startsWith("D") ? trampleShort() : name.startsWith("E") ? stack() : name.startsWith("F") ? manaAndConvoke() : youLose(); }
             catch (Throwable t) { t.printStackTrace(); r = "FAIL: " + t; }
             System.out.println("SCENARIO " + name + " " + r);
             if (!r.startsWith("PASS")) failures.add(name);
@@ -572,6 +572,36 @@ public final class PromptScenarios {
                 }
                 s.send(new JSONObject().put("type", "PassPriority").put("playerId", ArcanaForgeHost.HUMAN_ID));
             }
+        } finally { s.close(); }
+    }
+
+    // ------------------------------------------------------------------ G. losing ends the game in Arcana (Nov 8)
+
+    /** At 1 life you Shock yourself: Forge drops your seat, and Arcana must still get gameOver (it waited forever). */
+    private static String youLose() throws Exception {
+        Session s = new Session(String.join("\n",
+                "activeplayer=human", "activephase=MAIN1",
+                "humanlife=1", "ailife=20", "humanlibrary=" + LIBRARY, "ailibrary=" + LIBRARY,
+                "humanbattlefield=Mountain", "humanhand=Shock", "aibattlefield=", "aihand="), "Shock");
+        try {
+            boolean cast = false;
+            long end = System.currentTimeMillis() + 60_000;
+            while (System.currentTimeMillis() < end) {
+                JSONObject m;
+                try { m = s.next(5); } catch (IllegalStateException timeout) { continue; }
+                if (m.optString("type").equals("gameOver"))
+                    return cast ? "PASS: lost at 0 life; Arcana got gameOver (winner " + m.opt("winnerId") + ", " + m.optString("reason") + ")" : "FAIL: game over before casting";
+                if (!m.optString("type").equals("stateUpdate") || !interactive(m)) continue;
+                JSONObject d = m.optJSONObject("pendingDecision");
+                if (d != null && !s.fresh(d)) continue;
+                if (d != null && d.optString("type").equals("ChooseTargetsDecision")) {
+                    s.answer(d, new JSONObject().put("type", "TargetsResponse").put("selectedTargets", new JSONObject().put("0", new JSONArray().put(ArcanaForgeHost.HUMAN_ID))));
+                    continue;
+                }
+                if (!cast) { JSONObject shock = castAction(m, "Shock"); if (shock == null) return "FAIL: Shock not castable"; cast = true; s.send(shock); continue; }
+                s.send(new JSONObject().put("type", "PassPriority").put("playerId", ArcanaForgeHost.HUMAN_ID));
+            }
+            return "FAIL: no gameOver after losing";
         } finally { s.close(); }
     }
 }

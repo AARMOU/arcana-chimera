@@ -499,6 +499,18 @@ public final class ArcanaForgeHost {
             }
         }
         if (you == null) return; // no human seat (yet): nothing to show
+        // You lost (or the game ended): tell Arcana even though Forge no longer lists you, and even if the
+        // remaining AIs play on in a multiplayer game (proof, Nov 8: losing left the app waiting forever).
+        if (!gameOverSent && (game.isGameOver() || you.getPlayer().hasLost())) {
+            gameOverSent = true;
+            sink.accept(fill(new JSONObject().put("type", "stateUpdate").put("state", state(game, you.getPlayer()))
+                    .put("legalActions", new JSONArray()).put("pendingDecision", JSONObject.NULL).put("stateVersion", ++version)
+                    .put("interactive", false).put("interactionEpoch", "forge-" + version).put("priorityMode", "auto"), "top"));
+            sink.accept(new JSONObject().put("type", "gameOver").put("winnerId", winnerId(game))
+                    .put("reason", you.getPlayer().hasLost() && !game.isGameOver() ? "ELIMINATED" : "GAME_OVER"));
+            return;
+        }
+        if (gameOverSent) return;
         // Forge shuffles and deals between mulligan prompts (and the AI mulligans too): that's still the mulligan.
         // Arcana shows the opening-hand screen only until the first game state, so send nothing until turn 1
         // (phone, Nov 8 11:31: after "Mulligan" the new hand never appeared).
@@ -573,10 +585,6 @@ public final class ArcanaForgeHost {
             lastPlayerActionAt = 0;
         }
         sink.accept(update);
-        if (game.isGameOver() && !gameOverSent) {
-            gameOverSent = true;
-            sink.accept(new JSONObject().put("type", "gameOver").put("winnerId", winnerId(game)).put("reason", "GAME_OVER"));
-        }
     }
 
     /** A state with nothing to do yet (Argentum sends one before each mulligan prompt). */
@@ -739,6 +747,8 @@ public final class ArcanaForgeHost {
         Game game = match == null ? null : match.getGame();
         if (game == null) return null;
         for (Player p : game.getPlayers()) if (p.getController() instanceof PlayerControllerHuman h) return h;
+        // A player who lost leaves game.getPlayers(); find them among everyone who started.
+        for (Player p : game.getRegisteredPlayers()) if (p.getController() instanceof PlayerControllerHuman h) return h;
         StringBuilder who = new StringBuilder();
         for (Player p : game.getPlayers()) who.append(p.getName()).append('=').append(p.getController() == null ? "null" : p.getController().getClass().getSimpleName()).append(' ');
         System.err.println("no human controller: players [" + who + "] age " + game.getAge() + " over " + game.isGameOver());
