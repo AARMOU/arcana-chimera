@@ -912,8 +912,24 @@ public final class ArcanaForgeHost {
             int index = ask(d, objects).optInt("optionIndex", -1);
             return index >= 0 && index < choices.size() ? new ArrayList<>(List.of(choices.get(index))) : new ArrayList<>();
         }
-        notice("multi-" + prompt, "Forge asked for several non-card choices (" + prompt + "); Arcana can't show that yet, so Forge's first options were used.");
-        return new ArrayList<>(choices.subList(0, min));
+        // Several non-card choices (colours, creature types, modes, players): a card picker with one named tile each.
+        JSONObject d = decisionBase("SelectCardsDecision", prompt);
+        JSONArray options = new JSONArray(); JSONObject info = new JSONObject();
+        int n = 0;
+        for (T c : choices) {
+            String id = "o" + (n++);
+            objects.put(id, c); options.put(id);
+            info.put(id, new JSONObject().put("name", label(c)).put("typeLine", "Choice").put("manaCost", ""));
+        }
+        d.put("options", options).put("minSelections", min).put("maxSelections", max).put("cardInfo", info);
+        JSONArray picked = ask(d, objects).optJSONArray("selectedCards");
+        List<T> out = new ArrayList<>();
+        if (picked != null) for (int i = 0; i < picked.length(); i++) {
+            @SuppressWarnings("unchecked") T t = (T) objects.get(picked.optString(i));
+            if (t != null && !out.contains(t)) out.add(t);
+        }
+        for (T c : choices) { if (out.size() >= min) break; if (!out.contains(c)) out.add(c); } // never fewer than Forge requires
+        return out;
     }
 
     /** Forge's dual-list prompt: pure ordering (OrderObjectsDecision) or "move some of these" (SelectCardsDecision). */

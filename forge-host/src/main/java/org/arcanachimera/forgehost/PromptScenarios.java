@@ -269,6 +269,24 @@ public final class PromptScenarios {
         if (!(r instanceof IGuiGame.OrderResult<?> or) || or.ordered().size() != items.size() || or.ordered().get(0) != items.get(items.size() - 1))
             return "replacement-order shape returned " + r + " (expected all items reversed in an OrderResult)";
         out.append(", replacement-order shape ok");
+        // Several non-card picks (e.g. "choose two colours") reach the player instead of Forge's first options.
+        AtomicReference<Object> picks = new AtomicReference<>();
+        Thread pickThread = new Thread(() -> {
+            try { picks.set(gui.getChoices("Choose two colors", 2, 2, new ArrayList<>(List.of("White", "Blue", "Black")))); }
+            catch (Throwable e) { picks.set(e); }
+        }, "multi-pick");
+        pickThread.start();
+        while (true) {
+            JSONObject m = s.next(30);
+            JSONObject d = m.optJSONObject("pendingDecision");
+            if (s.fresh(d) && d.optString("type").equals("SelectCardsDecision") && d.optInt("maxSelections") == 2) {
+                s.answer(d, new JSONObject().put("type", "CardsSelectedResponse").put("selectedCards", new JSONArray().put("o2").put("o0")));
+                break;
+            }
+        }
+        pickThread.join(30_000);
+        if (!List.of("Black", "White").equals(picks.get())) return "multi-pick returned " + picks.get() + " (expected [Black, White])";
+        out.append(", multi-pick ok");
         return out.toString();
     }
 
