@@ -4,6 +4,7 @@ package com.arcanatable.engine
 // keeping the same name, constructor and messages so the rest of Arcana runs unchanged.
 // Forge (GPL-3.0) runs through org.arcanachimera.forgehost.ArcanaForgeHost.
 
+import com.arcanatable.engine.ai.AiDifficulty
 import com.wingedsheep.engine.registry.CardRegistry
 import com.wingedsheep.sdk.model.EntityId
 import org.arcanachimera.forgehost.ArcanaForgeHost
@@ -11,7 +12,12 @@ import org.json.JSONObject
 import java.io.File
 import java.util.zip.ZipInputStream
 
-data class LocalSeat(val name: String, val deck: List<String>, val commander: String?)
+data class LocalSeat(
+    val name: String,
+    val deck: List<String>,
+    val commander: String?,
+    val difficulty: AiDifficulty = AiDifficulty.DEFAULT, // Arcana's own AI setting; Forge uses its AI profile
+)
 
 @Suppress("UNUSED_PARAMETER")
 class LocalArgentumHost(
@@ -22,9 +28,13 @@ class LocalArgentumHost(
     extraOpponents: List<LocalSeat> = emptyList(),
     resumeCheckpoint: String? = null,
     gameSeed: Long? = null,
+    tutorialPassiveOpponent: Boolean = false,
     private val emit: (JSONObject) -> Unit,
 ) {
     var quietOpponentTurns: Boolean = false
+    /** Arcana option "respond to my own spells": Forge's own priority handling applies; kept for the settings screen. */
+    var respondToOwnStack: Boolean = false
+    val isWifi: Boolean get() = false
     private val forge = ArcanaForgeHost { emit(it) }
 
     init {
@@ -41,7 +51,9 @@ class LocalArgentumHost(
     fun shutdown() { ForgeGameService.stop(app()); forge.shutdown() }
 
     /** Wi-Fi two-person games aren't on Forge yet (later milestone): tell both sides plainly. */
-    fun setGuest(seat: LocalSeat, guest: (JSONObject) -> Unit) {
+    fun setGuest(seat: LocalSeat, guest: (JSONObject) -> Unit) = setGuest(AI_ID, seat, guest)
+
+    fun setGuest(seatId: EntityId, seat: LocalSeat, guest: (JSONObject) -> Unit) {
         val note = JSONObject().put("type", "error").put("code", "WIFI").put("message", "Wi-Fi games aren't available in the Forge build yet.")
         guest(note)
         emit(JSONObject(note.toString()))

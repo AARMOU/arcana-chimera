@@ -48,3 +48,7 @@ Owner instructed **“It's arcana with forge. I want the same ui as it currently
 **Next decision:** Whether to run manual Forge compilation and gameplay tests, then (only if they succeed) develop a throwaway one-turn Android proof of concept.
 
 **Current result:** No Forge builds or gameplay tests executed by this repository's setup. All acceptance-matrix entries begin as `not_run`.
+
+## 2026-11-08 — Arcana build 142 + Studio
+Owner: build the Forge APK on the current Arcana build 142 including the latest Arcana Studio, with no changes to the Arcana repo.
+Staged read-only at `63edcb77` (head of AARMOU/arcana_table#1013, `claude/arcana-studio-ux-20261106`, versionCode 142). Debug build: Studio on, label "Arcana Forge B142 Studio", package `org.arcanachimera.arcanaforge.b142studio` (installs beside earlier Forge builds).

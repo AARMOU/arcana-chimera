@@ -2,7 +2,7 @@
 # Builds Arcana's real app with Forge as its rules engine (Chimera overlay), as a debug APK.
 # Arcana source is staged read-only from a pinned public commit into ignored third_party/; nothing is pushed to Arcana.
 set -euo pipefail
-ARCANA_SHA="${ARCANA_SHA:-12728c46ea18e0a117babb1ea5b8da7b55bbf8b9}"
+ARCANA_SHA="${ARCANA_SHA:-63edcb77f805637489acee9a034f2172265d6f02}"
 FORGE_SHA="${FORGE_SHA:-7c34365c749ca46ab71336c5f267340d6088e600}"
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 WORK="$ROOT/third_party"; mkdir -p "$WORK"
@@ -64,7 +64,7 @@ GRADLE
 
 echo "== Build"
 echo "sdk.dir=${ANDROID_HOME:-/usr/local/lib/android/sdk}" > "$ARCANA/android/local.properties"
-(cd "$ARCANA/android" && ./gradlew --no-daemon --max-workers=2 :custom-cards:exportCards :app:assembleDebug)
+(cd "$ARCANA/android" && ./gradlew --no-daemon --max-workers=2 :custom-cards:exportCards :app:assembleDebug "-Parcana.debugLabel=Arcana Forge B142 Studio")
 APK="$(ls "$APP"/build/outputs/apk/debug/*.apk | head -1)"
 ls -la "$APK"
 echo "APK=$APK" >> "${GITHUB_ENV:-/dev/null}"
