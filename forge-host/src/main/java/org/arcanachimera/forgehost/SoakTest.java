@@ -319,7 +319,9 @@ public final class SoakTest {
         for (int i = 0; i < ai.length(); i++) {
             JSONObject d = ai.getJSONObject(i);
             List<String> cards = new ArrayList<>();
-            for (Object c : d.getJSONArray("cards")) cards.add(String.valueOf(c));
+            Object list = d.get("cards"); // {name: count} (or a plain list)
+            if (list instanceof JSONObject counts) { for (String n : counts.keySet()) for (int k = 0; k < counts.optInt(n, 1); k++) cards.add(n); }
+            else for (Object c : (JSONArray) list) cards.add(String.valueOf(c));
             out.add(new Deck(d.optString("name", d.optString("id")), d.getString("commander"), cards));
         }
         return out;
