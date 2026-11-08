@@ -319,6 +319,8 @@ public final class ArcanaForgeHost {
         boolean priority = input instanceof InputPassPriority;
         String inputKind = input == null ? "" : input.getClass().getSimpleName();
         boolean combatInput = inputKind.equals("InputAttack") || inputKind.equals("InputBlock");
+        // InputLockUI is Forge's "waiting for actions" lock while its game thread works: not a decision. Show state only.
+        if (inputKind.equals("InputLockUI")) input = null;
         if (input != null && !priority && !combatInput && input != lastPrompted && decisionForInput(input, you, game)) { lastPrompted = input; return; }
         if (input != null && !priority && !combatInput && input != lastPrompted) {
             notice("input-" + inputKind, "Forge asked something Arcana can't show yet (" + inputKind + "); it was answered automatically.");
@@ -668,6 +670,89 @@ public final class ArcanaForgeHost {
         return choose(prompt, min, max, source);
     }
 
+    /**
+     * Forge's combat damage division (multi-block, trample) as Argentum's AssignDamageDecision. Forge decides when it's
+     * asked and resolves the damage; the bridge only transports. Minimums: lethal to each blocker before the defending
+     * player when trampling (CR 702.19c); blockers alone may be divided freely (CR 510.1c-d, Foundations rules).
+     * Returns Forge's shape: blocker CardView -> amount, defender under the null key.
+     */
+    private Map<forge.game.card.CardView, Integer> assignCombatDamage(forge.game.card.CardView attackerView, List<?> blockerViews,
+            int damage, Object defenderView, boolean overrideOrder) throws Exception {
+        Game game = match.getGame();
+        Card attacker = game.findByView(attackerView);
+        boolean trample = attacker != null && attacker.hasKeyword(forge.game.keyword.Keyword.TRAMPLE);
+        boolean deathtouch = attacker != null && attacker.hasKeyword(forge.game.keyword.Keyword.DEATHTOUCH);
+        String defenderId = defenderView != null && (trample || overrideOrder) ? idOf(defenderView) : null;
+        Map<String, forge.game.card.CardView> blockers = new LinkedHashMap<>();
+        JSONArray ordered = new JSONArray();
+        JSONObject minimum = new JSONObject(), defaults = new JSONObject();
+        int left = damage;
+        for (Object o : blockerViews) {
+            forge.game.card.CardView v = (forge.game.card.CardView) o;
+            String id = "f" + v.getId();
+            blockers.put(id, v); ordered.put(id);
+            Card b = game.findByView(v);
+            int lethal = b == null ? 1 : deathtouch ? 1 : Math.max(0, b.getLethalDamage());
+            minimum.put(id, defenderId != null ? lethal : 0);
+            int give = Math.min(lethal, left); defaults.put(id, give); left -= give;
+        }
+        if (left > 0) {
+            if (defenderId != null) defaults.put(defenderId, left);
+            else if (!blockers.isEmpty()) { String first = blockers.keySet().iterator().next(); defaults.put(first, defaults.getInt(first) + left); }
+        }
+        if (defenderId != null) minimum.put(defenderId, 0);
+        String name = attacker == null ? attackerView.getName() : attacker.getName();
+        while (true) {
+            JSONObject d = decisionBase("AssignDamageDecision", "Assign " + damage + " combat damage from " + name)
+                    .put("attackerId", "f" + attackerView.getId()).put("availablePower", damage).put("orderedTargets", ordered)
+                    .put("defenderId", defenderId == null ? JSONObject.NULL : defenderId).put("minimumAssignments", minimum)
+                    .put("defaultAssignments", defaults).put("hasTrample", trample).put("hasDeathtouch", deathtouch);
+            d.getJSONObject("context").put("phase", "COMBAT").put("sourceId", "f" + attackerView.getId()).put("sourceName", name);
+            JSONObject chosen = ask(d, Map.of()).optJSONObject("assignments");
+            Map<forge.game.card.CardView, Integer> out = new java.util.HashMap<>(); // HashMap: Forge keys the defender as null
+            int total = 0; boolean ok = chosen != null;
+            if (chosen != null) for (String id : keys(chosen)) {
+                int n = chosen.optInt(id, -1);
+                if (n < 0) { ok = false; break; }
+                if (blockers.containsKey(id)) { out.put(blockers.get(id), n); total += n; }
+                else if (id.equals(defenderId)) { out.put(null, n); total += n; }
+                else { ok = false; break; }
+            }
+            if (ok && total == damage) {
+                for (String id : blockers.keySet()) if (out.getOrDefault(blockers.get(id), 0) < minimum.optInt(id)) ok = false;
+            }
+            if (ok && total == damage) return out;
+            error("That damage split doesn't add up to " + damage + (defenderId != null ? " (trample: lethal to each blocker first)" : "") + ". Try again.");
+        }
+    }
+
+    // ---------------------------------------------------------------- test hooks (headless proof only)
+
+    /** Test-only: replace the board with a Forge GameState script, through Forge's own dev-mode setup path. */
+    public void applyStateForTest(String script, String waitForHandCard) throws Exception {
+        Game game = match.getGame();
+        forge.game.GameState gs = new forge.game.GameState();
+        gs.parse(java.util.Arrays.asList(script.split("\n")));
+        gs.applyToGame(game);
+        long until = System.currentTimeMillis() + 15_000;
+        while (System.currentTimeMillis() < until) {
+            boolean ready = false;
+            for (Card c : humanController().getPlayer().getCardsIn(ZoneType.Hand)) if (c.getName().equals(waitForHandCard)) ready = true;
+            if (ready) break;
+            Thread.sleep(50);
+        }
+        scheduleEmit();
+    }
+
+    /** Test-only: Forge's in-game GUI for this game, to call prompt shapes directly. */
+    public IGuiGame guiForTest() { return guiGame(); }
+
+    /** Test-only: Forge view of a battlefield card by Arcana id. */
+    public forge.game.card.CardView viewForTest(String cardId) {
+        for (Card c : match.getGame().getCardsIn(ZoneType.Battlefield)) if (cardId(c).equals(cardId)) return c.getView();
+        return null;
+    }
+
     private boolean askYesNo(String prompt, String yes, String no) throws Exception {
         JSONObject d = decisionBase("YesNoDecision", prompt).put("yesText", yes == null ? "Yes" : yes).put("noText", no == null ? "No" : no);
         return ask(d, Map.of()).optBoolean("choice");
@@ -704,6 +789,7 @@ public final class ArcanaForgeHost {
             }
             case "chooseEntitiesForEffect": return choose((String) a[0], (Integer) a[2], (Integer) a[3], (List<?>) a[1]);
             case "getInteger": return askNumber((String) a[0], (Integer) a[1], (Integer) a[2]);
+            case "assignCombatDamage": return assignCombatDamage((forge.game.card.CardView) a[0], (List<?>) a[1], (Integer) a[2], a[3], (Boolean) a[4]);
             case "order": {
                 // (title, top, source, card) | (title, top, remMin, remMax, source, dest, card, sideboard[, remember])
                 boolean full = a.length >= 8;

@@ -17,3 +17,5 @@ javac --release 17 -encoding UTF-8 -d "$OUT/classes" -cp "$CP" $(find "$ROOT/for
 cd "$FORGE/forge-gui"
 timeout 600s java -Xmx4g -Djava.awt.headless=true -cp "$OUT/classes:$CP" \
   org.arcanachimera.forgehost.OneTurnProof "$FORGE/forge-gui/"
+timeout 900s java -Xmx4g -Djava.awt.headless=true -cp "$OUT/classes:$CP" \
+  org.arcanachimera.forgehost.PromptScenarios "$FORGE/forge-gui/"
