@@ -17,6 +17,11 @@ LIBS="$WORK/forge-libs"; rm -rf "$LIBS"; mkdir -p "$LIBS"
 (cd "$FORGE" && mvn -B -q -pl forge-gui -am package dependency:copy-dependencies -DskipTests -DincludeScope=runtime -DoutputDirectory="$LIBS")
 cp "$FORGE"/forge-gui/target/forge-gui-*.jar "$LIBS"/
 rm -f "$LIBS"/*-sources.jar "$LIBS"/*-tests.jar "$LIBS"/json-*.jar   # Android ships org.json
+rm -f "$LIBS"/slf4j-api-*.jar                                         # Arcana already ships slf4j
+# Keep only the newest version when Forge's modules pull in two versions of one library.
+for base in $(ls "$LIBS" | sed -E 's/-[0-9][0-9.]*(-[A-Za-z0-9.]+)?\.jar$//' | sort | uniq -d); do
+  ls "$LIBS"/"$base"-[0-9]*.jar | sort -V | head -n -1 | xargs -r rm -f
+done
 ls -1 "$LIBS"; du -sh "$LIBS"
 
 echo "== Forge data (card scripts as one zip Forge reads directly)"
