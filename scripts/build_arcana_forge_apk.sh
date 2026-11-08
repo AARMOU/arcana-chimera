@@ -50,6 +50,7 @@ android {
     packaging { resources { excludes += setOf("META-INF/*", "**/module-info.class") } }
 }
 dependencies { implementation(fileTree(mapOf("dir" to "libs/forge", "include" to listOf("*.jar")))) }
+configurations.all { exclude(group = "com.google.guava", module = "listenablefuture") } // Forge brings full Guava
 GRADLE
 
 echo "== Build"
