@@ -293,9 +293,14 @@ public final class PromptScenarios {
                 }
                 if (first != null) {
                     List<String> bears = battlefield(state, ArcanaForgeHost.AI_ID, "Grizzly Bears");
-                    if (bears.size() == 1 && bears.get(0).equals(first))
-                        return "PASS: both Bears blocked; all damage put on the second blocker " + second + ", which died; the first (" + first
+                    if (bears.size() == 1 && bears.get(0).equals(first)) {
+                        // Forge's player messages (e.g. "this creature must be blocked") reach Arcana (phone, Nov 8 09:51)
+                        String probe = "Forge message probe " + System.nanoTime();
+                        s.host.guiForTest().message(probe);
+                        try { while (!s.notices.contains(probe)) s.next(5); } catch (IllegalStateException timeout) { return "FAIL: Forge's message() didn't reach Arcana"; }
+                        return "PASS: Forge messages shown; both Bears blocked; all damage put on the second blocker " + second + ", which died; the first (" + first
                                 + ") survived; play continued at " + state.optString("currentStep") + " v" + m.optInt("stateVersion");
+                    }
                     if (!state.optString("currentStep").contains("DAMAGE"))
                         return "FAIL: after the assignment the AI has Bears " + bears + " (expected only " + first + ")";
                 }

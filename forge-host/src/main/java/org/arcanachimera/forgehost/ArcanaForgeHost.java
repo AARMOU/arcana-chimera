@@ -293,7 +293,7 @@ public final class ArcanaForgeHost {
         PlayerControllerHuman you = humanController();
         Input input = you == null ? null : you.getInputQueue().getActualInput(you);
         if (input instanceof InputPayMana) { // Argentum default: auto-pay; if that can't pay, cancel instead of looping
-            if (input != lastAutoPaid) { lastAutoPaid = input; ok(you); } else { cancel(you); error("Not enough mana."); }
+            if (input != lastAutoPaid) { lastAutoPaid = input; ok(you); } else { cancel(you); error("Not enough mana for that, so it was cancelled."); }
             return;
         }
         if (input != null && input != lastPrompted) {
@@ -989,6 +989,10 @@ public final class ArcanaForgeHost {
                 case "setGameView": gameView[0] = args[0]; return null;
                 case "getGameView": return gameView[0];
                 case "showPromptMessage": case "updateButtons": case "finishGame": case "afterGameEnd": scheduleEmit(); return null;
+                // Forge's messages to the player (e.g. why a block or attack was rejected): show them, don't drop them.
+                case "message": case "showErrorDialog":
+                    if (args != null && args.length > 0 && args[0] != null) error(String.valueOf(args[0]));
+                    scheduleEmit(); return null;
                 case "isUiSetToSkipPhase": return skipPhase((PhaseType) args[1]);
                 case "getAbilityToPlay": { // Forge asks which of the card's abilities: the one the player chose
                     List<?> views = (List<?>) args[1];
