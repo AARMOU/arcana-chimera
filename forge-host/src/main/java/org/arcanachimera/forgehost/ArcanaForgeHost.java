@@ -313,6 +313,7 @@ public final class ArcanaForgeHost {
                 return;
             }
         }
+        if (you == null) return; // no human seat (yet): nothing to show
         if (inMulligan) { // Argentum's order: mulliganComplete, then the first game state
             inMulligan = false;
             sink.accept(new JSONObject().put("type", "mulliganComplete").put("finalHandSize", you.getPlayer().getCardsIn(ZoneType.Hand).size()));
@@ -470,6 +471,9 @@ public final class ArcanaForgeHost {
         Game game = match == null ? null : match.getGame();
         if (game == null) return null;
         for (Player p : game.getPlayers()) if (p.getController() instanceof PlayerControllerHuman h) return h;
+        StringBuilder who = new StringBuilder();
+        for (Player p : game.getPlayers()) who.append(p.getName()).append('=').append(p.getController() == null ? "null" : p.getController().getClass().getSimpleName()).append(' ');
+        System.err.println("no human controller: players [" + who + "] age " + game.getAge() + " over " + game.isGameOver());
         return null;
     }
 
@@ -745,7 +749,8 @@ public final class ArcanaForgeHost {
         m.setStartGameHook(() -> {
             Setup gs = new Setup();
             gs.parse(java.util.Arrays.asList(script.split("\n")));
-            gs.run(m.getGame());
+            try { gs.run(m.getGame()); }
+            catch (Throwable t) { System.err.println("start board failed: " + describe(t)); t.printStackTrace(); throw t; }
         });
     }
 
