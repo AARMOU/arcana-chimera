@@ -19,6 +19,5 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
-          cache: maven
       - name: Build Forge + forge-host, play one turn through Argentum-shaped messages
         run: bash scripts/forge_host_proof.sh
