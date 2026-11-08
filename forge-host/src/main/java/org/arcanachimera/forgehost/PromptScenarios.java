@@ -18,8 +18,8 @@ import java.util.concurrent.atomic.AtomicReference;
  * Argentum-shaped messages, after Forge's own dev-mode GameState setup places an exact board. Both decks are all
  * Forest, so the AI has nothing to do. Exit 0 = every scenario passed.
  *
- *  A. Ghalta: cast Ghalta, put two creatures from hand onto the battlefield (the phone's Nov 8 00:19 stall path:
- *     Forge's `order` prompt), then require both creatures on the battlefield and a following playable state.
+ *  A. Ghalta: cast Ghalta, put two creatures with enter triggers from hand onto the battlefield (the phone's
+ *     Nov 8 00:19 stall path: Forge's `order` prompt for the simultaneous triggers), then require both creatures on the battlefield and a following playable state.
  *     Also calls the 8- and 9-argument `order` forms directly and checks the returned order and wrapper type.
  *  B. Combat damage: Prized Unicorn (all able creatures must block it) attacks into two Grizzly Bears. The player
  *     puts all 2 damage on the SECOND blocker; the second must die and the first must survive.
@@ -132,11 +132,13 @@ public final class PromptScenarios {
                 // Forge sets an unlisted life to -1 (puzzle rule), and clears unlisted zones: list both.
                 "humanlife=20", "ailife=20", "humanlibrary=" + LIBRARY, "ailibrary=" + LIBRARY,
                 "humanbattlefield=Forest;Forest;Forest;Forest;Forest;Forest;Forest;Forest",
-                "humanhand=Ghalta, Stampede Tyrant;Grizzly Bears;Llanowar Elves",
+                // two creatures with "enters" triggers: entering together, Forge asks the player to order the triggers
+                "humanhand=Ghalta, Stampede Tyrant;Elvish Visionary;Wall of Omens",
                 "aibattlefield=", "aihand="), "Ghalta, Stampede Tyrant");
         try {
             boolean cast = false, ordered = false, selected = false;
             List<String> orderAnswer = null;
+            int afterEntry = 0;
             while (true) {
                 JSONObject m = s.next(90);
                 if (!interactive(m) || !hasCard(m, "Ghalta, Stampede Tyrant")) continue; // wait for the new board
@@ -160,18 +162,19 @@ public final class PromptScenarios {
                     continue;
                 }
                 JSONObject state = m.getJSONObject("state");
-                List<String> bears = battlefield(state, ArcanaForgeHost.HUMAN_ID, "Grizzly Bears"), elves = battlefield(state, ArcanaForgeHost.HUMAN_ID, "Llanowar Elves");
+                List<String> bears = battlefield(state, ArcanaForgeHost.HUMAN_ID, "Elvish Visionary"), elves = battlefield(state, ArcanaForgeHost.HUMAN_ID, "Wall of Omens");
                 if (!cast) {
                     JSONObject a = castAction(m, "Ghalta, Stampede Tyrant");
                     if (a == null) return "FAIL: Ghalta was not castable with 8 Forests";
                     cast = true; s.send(a); continue;
                 }
                 if (!bears.isEmpty() && !elves.isEmpty()) {
-                    if (!ordered) return "FAIL: creatures entered but Forge's order prompt was never shown (selected=" + selected + ")";
+                    // their enter triggers come next: allow a few states for Forge's order prompt before failing
+                    if (!ordered) { if (++afterEntry < 4) continue; return "FAIL: creatures entered but Forge's order prompt was never shown (selected=" + selected + ")"; }
                     String shapes = orderShapes(s, bears.get(0), elves.get(0));
                     if (!shapes.startsWith("ok")) return "FAIL: " + shapes;
                     return "PASS: cast Ghalta, chose both creatures, answered the order prompt " + orderAnswer
-                            + "; Grizzly Bears + Llanowar Elves on the battlefield, play continued at state v" + m.optInt("stateVersion") + "; " + shapes;
+                            + "; Elvish Visionary + Wall of Omens on the battlefield, play continued at state v" + m.optInt("stateVersion") + "; " + shapes;
                 }
                 s.send(new JSONObject().put("type", "PassPriority").put("playerId", ArcanaForgeHost.HUMAN_ID)); // let the stack resolve
                 if (state.optInt("turnNumber") > 2) return "FAIL: turn passed without the creatures entering (selected=" + selected + ", ordered=" + ordered + ")";

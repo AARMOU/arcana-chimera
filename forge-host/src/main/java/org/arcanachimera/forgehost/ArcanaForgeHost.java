@@ -716,7 +716,11 @@ public final class ArcanaForgeHost {
         Card attacker = game.findByView(attackerView);
         boolean trample = attacker != null && attacker.hasKeyword(forge.game.keyword.Keyword.TRAMPLE);
         boolean deathtouch = attacker != null && attacker.hasKeyword(forge.game.keyword.Keyword.DEATHTOUCH);
-        String defenderId = defenderView != null && (trample || overrideOrder) ? idOf(defenderView) : null;
+        // overrideOrder is Forge's "divide freely" (current rules, no damage order); it doesn't open the defender.
+        // Only trample, or the "divided as you choose among defending player" ability, lets damage reach them.
+        boolean freeToPlayer = attacker != null && attacker.hasKeyword("You may assign CARDNAME's combat damage divided as you choose among "
+                + "defending player and/or any number of creatures they control.");
+        String defenderId = defenderView != null && (trample || freeToPlayer) ? idOf(defenderView) : null;
         Map<String, forge.game.card.CardView> blockers = new LinkedHashMap<>();
         JSONArray ordered = new JSONArray();
         JSONObject minimum = new JSONObject(), defaults = new JSONObject();
@@ -727,7 +731,7 @@ public final class ArcanaForgeHost {
             blockers.put(id, v); ordered.put(id);
             Card b = game.findByView(v);
             int lethal = b == null ? 1 : deathtouch ? 1 : Math.max(0, b.getLethalDamage());
-            minimum.put(id, defenderId != null ? lethal : 0);
+            minimum.put(id, trample && defenderId != null ? lethal : 0);
             int give = Math.min(lethal, left); defaults.put(id, give); left -= give;
         }
         if (left > 0) {
