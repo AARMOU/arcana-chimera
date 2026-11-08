@@ -55,5 +55,5 @@ patch("DeckSupport.kt", [
 ])
 patch("TableController.kt", [
     ("if (supportReport != null && supportReport.unsupportedCopies > 0) {\n                    val names = supportReport.unsupportedNames",
-     "if (false && supportReport != null && supportReport.unsupportedCopies > 0) { // Forge build: no Argentum card check\n                    val names = supportReport.unsupportedNames"),
+     "if (supportReport != null && supportReport.unsupportedCopies > 0 && System.getProperty(\"arcana.argentumCardCheck\") != null) { // Forge build: no Argentum card check\n                    val names = supportReport.unsupportedNames"),
 ])
