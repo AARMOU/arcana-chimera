@@ -31,9 +31,13 @@ class LocalArgentumHost(
     tutorialPassiveOpponent: Boolean = false,
     private val emit: (JSONObject) -> Unit,
 ) {
-    var quietOpponentTurns: Boolean = false
-    /** Arcana option "respond to my own spells": Forge's own priority handling applies; kept for the settings screen. */
-    var respondToOwnStack: Boolean = false
+    var quietOpponentTurns: Boolean
+        get() = forge.quietOpponentTurns
+        set(value) { forge.quietOpponentTurns = value }
+    /** Arcana option "respond to my own spells": off (default) lets your own spells and abilities resolve without a stop. */
+    var respondToOwnStack: Boolean
+        get() = forge.respondToOwnStack
+        set(value) { forge.respondToOwnStack = value }
     val isWifi: Boolean get() = false
     private val forge = ArcanaForgeHost { emit(it) }
 

@@ -291,6 +291,10 @@ public final class ArcanaForgeHost {
             }
             case "concede" -> you.concede();
             case "requestResync" -> scheduleEmit();
+            case "arcanaSaveOffline" -> error("Saving a game isn't available in the Forge build yet.");
+            case "requestUndo" -> error("Undo isn't available in the Forge build.");
+            case "setRespondToOwnStack" -> respondToOwnStack = message.optBoolean("enabled");
+            case "setQuietOpponentTurns" -> quietOpponentTurns = message.optBoolean("enabled");
             default -> { }
         }
     }
@@ -306,7 +310,7 @@ public final class ArcanaForgeHost {
         if (input != null) input.selectButtonCancel();
     }
 
-    private volatile boolean tuckOffered, autoKeep, autoMulligan;
+    private volatile boolean tuckOffered, autoKeep, autoMulligan, youChosePlay;
     private volatile int tuckCount;
 
     private JSONArray firstHandIds(PlayerControllerHuman you, int n) {
@@ -405,8 +409,35 @@ public final class ArcanaForgeHost {
         return input != null && !input.getClass().getSimpleName().equals("InputLockUI");
     }
 
+    private volatile int raceRetries;
+    private volatile Input lastAutoPassed;
+    /** Arcana's "respond to my own spells" (off: your own spells and abilities resolve without a stop, as Argentum did). */
+    public volatile boolean respondToOwnStack;
+    /** Arcana's "don't stop for AI spells": on AI turns, pass AI items that don't target you or yours. */
+    public volatile boolean quietOpponentTurns;
+
+    private boolean autoPassStack(Game game, Player me) {
+        if (game.getStack().isEmpty()) return false;
+        forge.game.spellability.SpellAbilityStackInstance top = game.getStack().peek();
+        if (top == null) return false;
+        if (top.getActivatingPlayer() == me) return !respondToOwnStack;
+        if (!quietOpponentTurns || game.getPhaseHandler().getPlayerTurn() == me) return false;
+        forge.game.spellability.TargetChoices tc = top.getTargetChoices();
+        if (tc != null) {
+            for (Player p : tc.getTargetPlayers()) if (p == me) return false;
+            for (Card c : tc.getTargetCards()) if (c.getController() == me) return false;
+        }
+        return true;
+    }
+
     private void emitSafely() {
-        try { emit(); } catch (Throwable t) { error("Forge host problem: " + describe(t)); t.printStackTrace(); }
+        try { emit(); }
+        catch (java.util.ConcurrentModificationException | IndexOutOfBoundsException race) { // the game moved while being read
+            if (++raceRetries <= 5) { scheduleEmit(); return; }
+            error("Forge host problem: " + describe(race));
+        }
+        catch (Throwable t) { error("Forge host problem: " + describe(t)); t.printStackTrace(); }
+        raceRetries = 0;
     }
 
     private void tuneAi(Game game) {
@@ -432,7 +463,7 @@ public final class ArcanaForgeHost {
         if (input != null && input != lastPrompted) {
             String kind = input.getClass().getSimpleName();
             if (kind.equals("InputConfirm") && game.getPhaseHandler().getTurn() == 0) { // play or draw: Arcana's offline host doesn't ask; take the play
-                lastPrompted = input; defaultedPrompts.add("play or draw: play"); ok(you); return;
+                lastPrompted = input; youChosePlay = true; defaultedPrompts.add("play or draw: play"); ok(you); return;
             }
             if (kind.equals("InputConfirmMulligan") && (autoKeep || autoMulligan)) { // already answered on Arcana's screen
                 lastPrompted = input;
@@ -443,13 +474,13 @@ public final class ArcanaForgeHost {
             if (kind.equals("InputConfirmMulligan")) {
                 lastPrompted = input; mulligans = mulligans < 0 ? 0 : mulligans; inMulligan = true;
                 sink.accept(handMessage("mulliganDecision", you.getPlayer()).put("mulliganCount", mulligans)
-                        .put("cardsToPutOnBottom", 0).put("isOnThePlay", true));
+                        .put("cardsToPutOnBottom", 0).put("isOnThePlay", youChosePlay));
                 return;
             }
             if (kind.equals("InputLondonMulligan")) { // the new hand first, as Arcana expects; bottom cards after "keep"
                 lastPrompted = input; inMulligan = true; tuckOffered = true; tuckCount = intField(input, "toReturn");
                 sink.accept(handMessage("mulliganDecision", you.getPlayer()).put("mulliganCount", Math.max(mulligans, 1))
-                        .put("cardsToPutOnBottom", tuckCount).put("isOnThePlay", true));
+                        .put("cardsToPutOnBottom", tuckCount).put("isOnThePlay", youChosePlay));
                 return;
             }
         }
@@ -464,6 +495,7 @@ public final class ArcanaForgeHost {
         }
         if (pending != null) { emitDecision(); return; } // an open question stays on screen until answered
         boolean priority = input instanceof InputPassPriority;
+        if (priority && input != lastAutoPassed && autoPassStack(game, you.getPlayer())) { lastAutoPassed = input; ok(you); return; }
         String inputKind = input == null ? "" : input.getClass().getSimpleName();
         boolean combatInput = inputKind.equals("InputAttack") || inputKind.equals("InputBlock");
         // InputLockUI is Forge's "waiting for actions" lock while its game thread works: not a decision. Show state only.
@@ -574,11 +606,17 @@ public final class ArcanaForgeHost {
                     .put("handSize", p.getCardsIn(ZoneType.Hand).size()).put("librarySize", p.getCardsIn(ZoneType.Library).size())
                     .put("graveyardSize", p.getCardsIn(ZoneType.Graveyard).size()).put("exileSize", p.getCardsIn(ZoneType.Exile).size())
                     .put("landsPlayedThisTurn", p.getLandsPlayedThisTurn()).put("hasLost", p.hasLost()).put("poisonCounters", p.getPoisonCounters())
-                    .put("maxHandSize", p.getMaxHandSize()).put("commanderDamage", new JSONArray()).put("activeEffects", new JSONArray())
-                    .put("manaPool", new JSONObject().put("white", 0).put("blue", 0).put("black", 0).put("red", 0).put("green", 0).put("colorless", 0).put("restrictedMana", new JSONArray()))));
+                    .put("maxHandSize", p.getMaxHandSize()).put("commanderDamage", commanderDamage(p)).put("activeEffects", new JSONArray())
+                    .put("manaPool", manaPool(p))));
         }
         JSONArray stack = new JSONArray();
-        for (Card c : game.getCardsIn(ZoneType.Stack)) { stack.put(cardId(c)); cards.put(cardId(c), card(c, ZoneType.Stack)); }
+        List<forge.game.spellability.SpellAbilityStackInstance> items = new ArrayList<>();
+        for (forge.game.spellability.SpellAbilityStackInstance si : game.getStack()) items.add(si); // top first
+        java.util.Collections.reverse(items); // Arcana's stack zone lists the bottom first
+        for (forge.game.spellability.SpellAbilityStackInstance si : items) {
+            JSONObject item = stackItem(si);
+            stack.put(item.getString("id")); cards.put(item.getString("id"), item);
+        }
         zones.put(new JSONObject().put("zoneId", new JSONObject().put("zoneType", "Stack").put("ownerId", JSONObject.NULL))
                 .put("cardIds", stack).put("size", stack.length()).put("isVisible", true).put("positions", JSONObject.NULL));
         PhaseType phase = ph.getPhase();
@@ -594,6 +632,21 @@ public final class ArcanaForgeHost {
     }
 
     private static JSONObject fillPlayer(JSONObject p) throws Exception { return fill(p, "player"); }
+
+    private JSONArray commanderDamage(Player p) throws Exception {
+        JSONArray out = new JSONArray();
+        for (Map.Entry<Card, Integer> e : p.getCommanderDamage())
+            if (e.getValue() > 0) out.put(new JSONObject().put("commanderId", cardId(e.getKey())).put("commanderName", e.getKey().getName()).put("amount", e.getValue()));
+        return out;
+    }
+
+    private static JSONObject manaPool(Player p) throws Exception {
+        forge.game.mana.ManaPool pool = p.getManaPool();
+        return new JSONObject().put("white", pool.getAmountOfColor(forge.card.MagicColor.WHITE)).put("blue", pool.getAmountOfColor(forge.card.MagicColor.BLUE))
+                .put("black", pool.getAmountOfColor(forge.card.MagicColor.BLACK)).put("red", pool.getAmountOfColor(forge.card.MagicColor.RED))
+                .put("green", pool.getAmountOfColor(forge.card.MagicColor.GREEN)).put("colorless", pool.getAmountOfColor((byte) forge.card.MagicColor.COLORLESS))
+                .put("restrictedMana", new JSONArray());
+    }
 
     private JSONObject card(Card c, ZoneType z) throws Exception {
         JSONArray types = new JSONArray();
@@ -615,7 +668,52 @@ public final class ArcanaForgeHost {
                 .put("keywords", new JSONArray()).put("counters", new JSONObject()).put("attachments", new JSONArray()).put("targets", new JSONArray())
                 .put("isAttacking", stateCombat != null && stateCombat.isAttacking(c)).put("isBlocking", stateCombat != null && stateCombat.isBlocking(c))
                 .put("attackingTarget", stateCombat != null && stateCombat.isAttacking(c) ? idOrNull(stateCombat.getDefenderByAttacker(c)) : JSONObject.NULL);
+        cardDetails(card, c);
         return fill(card, "card");
+    }
+
+    /** Fields Arcana's table draws that the base card leaves at their defaults (audit, Nov 8). */
+    private void cardDetails(JSONObject card, Card c) throws Exception {
+        JSONArray colors = new JSONArray();
+        if (c.isWhite()) colors.put("WHITE"); if (c.isBlue()) colors.put("BLUE"); if (c.isBlack()) colors.put("BLACK");
+        if (c.isRed()) colors.put("RED"); if (c.isGreen()) colors.put("GREEN");
+        card.put("colors", colors);
+        JSONObject counters = new JSONObject();
+        for (forge.game.card.CounterType t : c.getCounters().elementSet()) {
+            String key = t instanceof forge.game.card.CounterEnumType e
+                    ? (e == forge.game.card.CounterEnumType.P1P1 ? "PLUS_ONE_PLUS_ONE" : e == forge.game.card.CounterEnumType.M1M1 ? "MINUS_ONE_MINUS_ONE" : e.name())
+                    : t.getName();
+            counters.put(key, c.getCounters().count(t));
+        }
+        card.put("counters", counters);
+        if (c.getAttachedTo() != null) card.put("attachedTo", cardId(c.getAttachedTo()));
+        if (c.getDamage() > 0) card.put("damage", c.getDamage());
+        card.put("isToken", c.isToken()).put("isCommander", c.isCommander());
+        if (c.isFaceDown()) { // hidden from opponents: no name, text or cost
+            card.put("isFaceDown", true);
+            PlayerControllerHuman you = humanController();
+            if (you == null || c.getController() != you.getPlayer()) card.put("name", "Face-down card").put("oracleText", "").put("manaCost", "").put("typeLine", "Creature");
+        }
+    }
+
+    /** A spell or ability on Forge's stack, as an Arcana stack card (abilities aren't cards in Forge's stack zone). */
+    private JSONObject stackItem(forge.game.spellability.SpellAbilityStackInstance si) throws Exception {
+        Card src = si.getSourceCard();
+        JSONObject item = si.isSpell() && src != null ? card(src, ZoneType.Stack)
+                : new JSONObject().put("id", "st" + si.getId()).put("name", src == null ? "Ability" : src.getName())
+                    .put("typeLine", si.isTrigger() ? "Triggered ability" : "Activated ability").put("cardTypes", new JSONArray())
+                    .put("oracleText", si.getStackDescription()).put("manaCost", "").put("manaValue", 0)
+                    .put("zone", new JSONObject().put("zoneType", "Stack").put("ownerId", JSONObject.NULL));
+        String controller = playerId(si.getActivatingPlayer());
+        item.put("controllerId", controller).put("ownerId", controller);
+        JSONArray targets = new JSONArray();
+        forge.game.spellability.TargetChoices tc = si.getTargetChoices();
+        if (tc != null) {
+            for (Player p : tc.getTargetPlayers()) targets.put(new JSONObject().put("playerId", playerId(p)).put("name", p.getName()));
+            for (Card t : tc.getTargetCards()) targets.put(new JSONObject().put("cardId", cardId(t)).put("name", t.getName()));
+        }
+        item.put("targets", targets);
+        return fill(item, "card");
     }
 
     // ---------------------------------------------------------------- naming
@@ -1062,7 +1160,10 @@ public final class ArcanaForgeHost {
             String prompt = field(input, "message") instanceof String m ? m : "Choose";
             JSONObject d = decisionBase("SelectCardsDecision", prompt).put("options", options)
                     .put("minSelections", Math.min(min, options.length())).put("maxSelections", Math.min(max, options.length())).put("cardInfo", info);
+            boolean cancellable = Boolean.TRUE.equals(field(input, "allowCancel"));
+            if (cancellable) d.put("canCancel", true);
             openForInput(d, objects, r -> {
+                if (cancellable && r.optString("type").equals("CancelDecisionResponse")) { cancel(you); return; }
                 JSONArray ids = r.optJSONArray("selectedCards");
                 if (ids != null) for (int i = 0; i < ids.length(); i++) {
                     Object o = objects.get(ids.optString(i));

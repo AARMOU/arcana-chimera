@@ -33,9 +33,9 @@ public final class PromptScenarios {
     public static void main(String[] args) throws Exception {
         forgeDir = args.length > 0 ? args[0] : "../forge-gui/";
         List<String> failures = new ArrayList<>();
-        for (String name : List.of("A-ghalta-order", "B-combat-damage", "C-mulligan", "D-trample-short")) {
+        for (String name : List.of("A-ghalta-order", "B-combat-damage", "C-mulligan", "D-trample-short", "E-stack")) {
             String r;
-            try { r = name.startsWith("A") ? ghalta() : name.startsWith("B") ? combatDamage() : name.startsWith("C") ? mulligan() : trampleShort(); }
+            try { r = name.startsWith("A") ? ghalta() : name.startsWith("B") ? combatDamage() : name.startsWith("C") ? mulligan() : name.startsWith("D") ? trampleShort() : stack(); }
             catch (Throwable t) { t.printStackTrace(); r = "FAIL: " + t; }
             System.out.println("SCENARIO " + name + " " + r);
             if (!r.startsWith("PASS")) failures.add(name);
@@ -411,6 +411,71 @@ public final class PromptScenarios {
                 }
                 if (attacked && answers == 0 && state.optString("currentStep").equals("POSTCOMBAT_MAIN")) return "FAIL: no damage assignment prompt";
                 s.send(new JSONObject().put("type", "PassPriority").put("playerId", ArcanaForgeHost.HUMAN_ID));
+            }
+        } finally { s.close(); }
+    }
+
+    // ------------------------------------------------------------------ E. the stack (audit, Nov 8)
+
+    private static int life(JSONObject state, String id) {
+        for (Object o : state.getJSONArray("players")) { JSONObject p = (JSONObject) o; if (p.optString("playerId").equals(id)) return p.optInt("life"); }
+        return -1;
+    }
+
+    /**
+     * An activated ability on the stack is shown (Forge's stack zone has no card for it) with its source and target;
+     * with "respond to my own spells" off, your own Shock resolves without a stop.
+     */
+    private static String stack() throws Exception {
+        Session s = new Session(String.join("\n",
+                "activeplayer=human", "activephase=MAIN1", "removesummoningsickness=true",
+                "humanlife=20", "ailife=20", "humanlibrary=" + LIBRARY, "ailibrary=" + LIBRARY,
+                "humanbattlefield=Prodigal Pyromancer;Mountain", "humanhand=Shock",
+                "aibattlefield=", "aihand="), "Prodigal Pyromancer");
+        try {
+            s.host.respondToOwnStack = true; // part 1: stop on your own ability to see it
+            boolean activated = false, seenOnStack = false, shocked = false;
+            while (true) {
+                JSONObject m = s.next(60);
+                if (!interactive(m)) continue;
+                JSONObject d = m.optJSONObject("pendingDecision");
+                if (d != null && !s.fresh(d)) continue;
+                if (d != null) {
+                    if (!d.optString("type").equals("ChooseTargetsDecision")) return "FAIL: unexpected decision " + d.optString("type");
+                    s.answer(d, new JSONObject().put("type", "TargetsResponse").put("selectedTargets", new JSONObject().put("0", new JSONArray().put(ArcanaForgeHost.AI_ID))));
+                    continue;
+                }
+                JSONObject state = m.getJSONObject("state");
+                if (!activated) {
+                    JSONArray legal = m.getJSONArray("legalActions");
+                    for (int i = 0; i < legal.length(); i++) if (legal.getJSONObject(i).optString("actionType").equals("ActivateAbility")) {
+                        activated = true; s.send(legal.getJSONObject(i).getJSONObject("action")); break;
+                    }
+                    if (!activated) return "FAIL: Prodigal Pyromancer's ability wasn't offered";
+                    continue;
+                }
+                JSONArray stackIds = null;
+                for (Object z : state.getJSONArray("zones")) { JSONObject zone = (JSONObject) z; if (zone.getJSONObject("zoneId").optString("zoneType").equals("Stack")) stackIds = zone.getJSONArray("cardIds"); }
+                if (!seenOnStack) {
+                    if (stackIds == null || stackIds.length() != 1) return "FAIL: expected the ability on the stack, stack " + stackIds;
+                    JSONObject item = state.getJSONObject("cards").getJSONObject(stackIds.getString(0));
+                    JSONArray t = item.optJSONArray("targets");
+                    if (!item.optString("name").equals("Prodigal Pyromancer") || t == null || t.length() != 1 || !t.getJSONObject(0).optString("playerId").equals(ArcanaForgeHost.AI_ID))
+                        return "FAIL: stack item " + item.optString("name") + " targets " + t;
+                    seenOnStack = true;
+                    s.host.respondToOwnStack = false; // part 2: your own spell resolves without a stop
+                    s.send(new JSONObject().put("type", "PassPriority").put("playerId", ArcanaForgeHost.HUMAN_ID));
+                    continue;
+                }
+                if (stackIds != null && stackIds.length() > 0) return "FAIL: stopped with your own item on the stack while 'respond to my own spells' is off";
+                if (!shocked) {
+                    if (life(state, ArcanaForgeHost.AI_ID) != 19) return "FAIL: AI life " + life(state, ArcanaForgeHost.AI_ID) + " after the ability (expected 19)";
+                    JSONObject shock = castAction(m, "Shock");
+                    if (shock == null) return "FAIL: Shock not castable";
+                    shocked = true; s.send(shock); continue;
+                }
+                if (life(state, ArcanaForgeHost.AI_ID) == 17)
+                    return "PASS: ability shown on the stack with its source and target (AI), resolved for 1; own Shock resolved without a stop (AI at 17)";
             }
         } finally { s.close(); }
     }
