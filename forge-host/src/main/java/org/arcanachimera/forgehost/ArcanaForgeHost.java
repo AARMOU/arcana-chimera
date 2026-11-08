@@ -61,7 +61,18 @@ public final class ArcanaForgeHost {
     private static volatile ArcanaForgeHost current;
     private final ScheduledExecutorService emitter = Executors.newSingleThreadScheduledExecutor(r -> new Thread(r, "forge-emit"));
     private static volatile Thread edtThread;
-    private volatile ScheduledFuture<?> pendingEmit;
+    private final java.util.concurrent.atomic.AtomicLong emitDueAt = new java.util.concurrent.atomic.AtomicLong(Long.MAX_VALUE);
+
+    /**
+     * How hard Forge's AI searches (its Monte Carlo playouts on copies of the game), from Arcana's AI difficulty.
+     * Forge picks this from GuiBase.isMobile(), which this host can't set (it would also turn off lazy card loading),
+     * so without this the AI would ask for desktop strength on a phone.
+     */
+    public enum AiStrength { OFF, LITE, MAX }
+    public volatile AiStrength aiStrength = AiStrength.LITE;
+    private volatile Game aiTuned;
+    private volatile long lastPlayerActionAt;
+    private volatile String lastBuild = "";
     private final Map<String, SpellAbility> offered = new ConcurrentHashMap<>();
     private volatile HostedMatch match;
     private volatile boolean gameOverSent;
@@ -140,6 +151,8 @@ public final class ArcanaForgeHost {
         GuiBase.setInterface(guiBase(assetsDir));
         FModel.initialize(null, prefs -> { // phones: parse card scripts on demand instead of all ~30k at start
             prefs.setPref(forge.localinstance.properties.ForgePreferences.FPref.LOAD_CARD_SCRIPTS_LAZILY, lazyCards);
+            prefs.setPref(forge.localinstance.properties.ForgePreferences.FPref.YIELD_SKIP_PHASE_DELAY, true);
+            prefs.setPref(forge.localinstance.properties.ForgePreferences.FPref.YIELD_SKIP_RESOLVE_DELAY, true);
             return null;
         });
         forgeLoaded = true;
@@ -252,6 +265,7 @@ public final class ArcanaForgeHost {
     }
 
     private void handleUnsafe(JSONObject message) throws Exception {
+        if (message.optString("type").equals("submitAction")) lastPlayerActionAt = System.currentTimeMillis();
         String t = message.optString("type");
         if (t.equals("connect")) { sink.accept(new JSONObject().put("type", "connected").put("playerId", HUMAN_ID).put("token", "offline")); return; }
         if (t.equals("ping")) { sink.accept(new JSONObject().put("type", "pong")); return; }
@@ -343,19 +357,51 @@ public final class ArcanaForgeHost {
 
     // ---------------------------------------------------------------- state out to the UI
 
+    /**
+     * Coalesces Forge's GUI callbacks into one table update: 40 ms when Forge is waiting on the player, 300 ms while
+     * its game thread is busy (AI turns), so the table isn't rebuilt for every callback while the AI is thinking.
+     * An update is never dropped: one is always due after the latest callback.
+     */
     private void scheduleEmit() {
-        ScheduledFuture<?> previous = pendingEmit;
-        if (previous != null) previous.cancel(false);
-        pendingEmit = emitter.schedule(this::emitSafely, 40, TimeUnit.MILLISECONDS);
+        long delay = waitingOnPlayer() ? 40 : 300;
+        long due = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(delay);
+        while (true) {
+            long current = emitDueAt.get();
+            if (current <= due) return; // an update is already due sooner; it will read the latest state
+            if (emitDueAt.compareAndSet(current, due)) break;
+        }
+        emitter.schedule(() -> {
+            if (System.nanoTime() < emitDueAt.get()) return; // superseded by a later due time... handled by its own task
+            emitDueAt.set(Long.MAX_VALUE);
+            emitSafely();
+        }, delay, TimeUnit.MILLISECONDS);
+    }
+
+    private boolean waitingOnPlayer() {
+        if (pending != null) return true;
+        PlayerControllerHuman you = humanController();
+        Input input = you == null ? null : you.getInputQueue().getActualInput(you);
+        return input != null && !input.getClass().getSimpleName().equals("InputLockUI");
     }
 
     private void emitSafely() {
         try { emit(); } catch (Throwable t) { error("Forge host problem: " + describe(t)); t.printStackTrace(); }
     }
 
+    private void tuneAi(Game game) {
+        if (aiTuned == game) return;
+        aiTuned = game;
+        game.AI_FLAT_MONTE_CARLO = aiStrength != AiStrength.OFF;
+        game.AI_FLAT_MONTE_CARLO_MAX = aiStrength == AiStrength.MAX;
+        game.AI_FLAT_MONTE_CARLO_LITE = aiStrength == AiStrength.LITE;
+        System.out.println("Forge AI strength " + aiStrength + ", heap " + (Runtime.getRuntime().maxMemory() >> 20) + " MB");
+    }
+
     private void emit() throws Exception {
         Game game = match == null ? null : match.getGame();
         if (game == null) return;
+        tuneAi(game);
+        long buildStart = System.nanoTime();
         PlayerControllerHuman you = humanController();
         Input input = you == null ? null : you.getInputQueue().getActualInput(you);
         if (input instanceof InputPayMana) { // Argentum default: auto-pay; if that can't pay, cancel instead of looping
@@ -436,7 +482,16 @@ public final class ArcanaForgeHost {
                 .put("interactive", priority || combatInput)
                 .put("interactionEpoch", "forge-" + version)
                 .put("forgeInput", input == null ? "none" : input.getClass().getSimpleName());
-        sink.accept(fill(update, "top"));
+        fill(update, "top");
+        if (priority || combatInput) { // Arcana's diagnostic log shows these: "engine N ms, stages {...}"
+            long now = System.currentTimeMillis();
+            if (lastPlayerActionAt > 0) update.put("engineMs", now - lastPlayerActionAt);
+            update.put("engineTimingsMs", new JSONObject().put("build", (System.nanoTime() - buildStart) / 1_000_000)
+                    .put("kb", update.toString().length() / 1024).put("heapMb", Runtime.getRuntime().maxMemory() >> 20)
+                    .put("ai", aiStrength.name()));
+            lastPlayerActionAt = 0;
+        }
+        sink.accept(update);
         if (game.isGameOver() && !gameOverSent) {
             gameOverSent = true;
             sink.accept(new JSONObject().put("type", "gameOver").put("winnerId", winnerId(game)).put("reason", "GAME_OVER"));
@@ -1059,7 +1114,7 @@ public final class ArcanaForgeHost {
                 case "message": case "showErrorDialog":
                     if (args != null && args.length > 0 && args[0] != null) error(String.valueOf(args[0]));
                     scheduleEmit(); return null;
-                case "isUiSetToSkipPhase": return skipPhase((PhaseType) args[1]);
+                case "isUiSetToSkipPhase": return skipPhase(args[0], (PhaseType) args[1]);
                 case "getAbilityToPlay": { // Forge asks which of the card's abilities: the one the player chose
                     List<?> views = (List<?>) args[1];
                     for (Object v : views) if (v instanceof forge.game.spellability.SpellAbilityView sv && sv.getId() == chosenAbilityId) return v;
@@ -1081,7 +1136,11 @@ public final class ArcanaForgeHost {
     }
 
     /** Stop only where Arcana normally stops: main phases and combat declarations. */
-    private static boolean skipPhase(PhaseType phase) {
+    private boolean skipPhase(Object turnPlayer, PhaseType phase) {
+        boolean yourTurn = false;
+        PlayerControllerHuman you = humanController();
+        if (you != null && turnPlayer instanceof forge.game.player.PlayerView pv) yourTurn = pv.getId() == you.getPlayer().getId();
+        if (!yourTurn) return phase != PhaseType.COMBAT_DECLARE_BLOCKERS; // AI turns: stop only after blocks (and for spells)
         return phase != PhaseType.MAIN1 && phase != PhaseType.MAIN2
                 && phase != PhaseType.COMBAT_DECLARE_ATTACKERS && phase != PhaseType.COMBAT_DECLARE_BLOCKERS;
     }

@@ -40,6 +40,13 @@ class LocalArgentumHost(
     init {
         val seats = (listOf(human, opponent) + extraOpponents.take(2)).map { ArcanaForgeHost.Seat(it.name, it.deck, it.commander) }
         ArcanaForgeHost.lazyCards = true
+        // Arcana's AI difficulty → how hard Forge's AI searches. Easy: Forge's plain heuristics; Normal: Forge's
+        // phone setting; Hard/Brutal: Forge's desktop search (Forge still falls back if the phone's heap is small).
+        forge.aiStrength = when ((listOf(opponent) + extraOpponents).maxOf { it.difficulty }) {
+            AiDifficulty.EASY -> ArcanaForgeHost.AiStrength.OFF
+            AiDifficulty.NORMAL -> ArcanaForgeHost.AiStrength.LITE
+            else -> ArcanaForgeHost.AiStrength.MAX
+        }
         forge.prepare(seats) { forgeAssetsDir() } // unpacked on Forge's start thread, not the UI thread
         ForgeGameService.start(app())
     }

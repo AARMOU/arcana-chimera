@@ -51,6 +51,7 @@ public final class OneTurnProof {
                 if (!aiTurnSeen) System.out.println("PROOF AI turn " + turn + " observed, AI battlefield " + battlefield(s, ArcanaForgeHost.AI_ID));
                 aiTurnSeen = true;
             }
+            if (m.has("engineTimingsMs")) System.out.println("PROOF timing engine " + m.optLong("engineMs", -1) + " ms, stages " + m.getJSONObject("engineTimingsMs"));
             JSONObject decision = m.optJSONObject("pendingDecision");
             if (decision != null && m.optBoolean("interactive")) {
                 System.out.println("PROOF decision " + decision.optString("type") + ": " + decision.optString("prompt"));
