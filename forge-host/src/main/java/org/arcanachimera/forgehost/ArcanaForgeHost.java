@@ -256,6 +256,8 @@ public final class ArcanaForgeHost {
 
     private void submit(PlayerControllerHuman you, JSONObject action) throws Exception {
         String type = action.optString("type");
+        if (type.equals("SubmitDecision")) { answer(action.optJSONObject("response") == null ? new JSONObject() : action.getJSONObject("response")); return; }
+        if (type.equals("DeclareAttackers") || type.equals("DeclareBlockers")) { declareCombat(you, action); return; }
         if (type.equals("PassPriority")) { ok(you); return; }
         SpellAbility sa = offered.get(key(type, action.optString("cardId", action.optString("sourceId")), action.optString("abilityId")));
         if (sa == null) { error("You can't do that right now (not enough mana, or it's no longer available)."); scheduleEmit(); return; }
@@ -287,7 +289,7 @@ public final class ArcanaForgeHost {
         }
         if (input != null && input != lastPrompted) {
             String kind = input.getClass().getSimpleName();
-            if (kind.equals("InputConfirm")) { // play or draw: Arcana's offline host doesn't ask; take the play
+            if (kind.equals("InputConfirm") && game.getPhaseHandler().getTurn() == 0) { // play or draw: Arcana's offline host doesn't ask; take the play
                 lastPrompted = input; defaultedPrompts.add("play or draw: play"); ok(you); return;
             }
             if (kind.equals("InputConfirmMulligan")) {
@@ -306,8 +308,13 @@ public final class ArcanaForgeHost {
             inMulligan = false;
             sink.accept(new JSONObject().put("type", "mulliganComplete").put("finalHandSize", you.getPlayer().getCardsIn(ZoneType.Hand).size()));
         }
+        if (pending != null) { emitDecision(); return; } // an open question stays on screen until answered
         boolean priority = input instanceof InputPassPriority;
-        if (input != null && !priority && input != lastPrompted) {
+        String inputKind = input == null ? "" : input.getClass().getSimpleName();
+        boolean combatInput = inputKind.equals("InputAttack") || inputKind.equals("InputBlock");
+        if (input != null && !priority && !combatInput && input != lastPrompted && decisionForInput(input, you, game)) { lastPrompted = input; return; }
+        if (input != null && !priority && !combatInput && input != lastPrompted) {
+            notice("input-" + inputKind, "Forge asked something Arcana can't show yet (" + inputKind + "); it was answered automatically.");
             // Milestone 1 stand-in until combat/targets reach Arcana's screens: Forge's default (no attack,
             // no block, its suggested target) so the game never waits on a prompt the UI can't show yet.
             lastPrompted = input;
@@ -318,6 +325,7 @@ public final class ArcanaForgeHost {
         }
         JSONArray legal = new JSONArray();
         offered.clear();
+        if (combatInput) legal.put(inputKind.equals("InputAttack") ? attackAction(input, you.getPlayer()) : blockAction(input, you.getPlayer()));
         if (priority) {
             Player me = you.getPlayer();
             legal.put(action("PassPriority", "Pass priority", new JSONObject().put("type", "PassPriority").put("playerId", HUMAN_ID)));
@@ -347,7 +355,7 @@ public final class ArcanaForgeHost {
                 .put("undoAvailable", false)
                 .put("priorityMode", "auto")
                 .put("stateVersion", ++version)
-                .put("interactive", priority)
+                .put("interactive", priority || combatInput)
                 .put("interactionEpoch", "forge-" + version)
                 .put("forgeInput", input == null ? "none" : input.getClass().getSimpleName());
         sink.accept(fill(update, "top"));
@@ -373,8 +381,17 @@ public final class ArcanaForgeHost {
         return new JSONObject().put("actionType", actionType).put("description", description).put("action", action).put("isAffordable", true);
     }
 
+    private volatile forge.game.combat.Combat stateCombat;
+
+    private Object idOrNull(forge.game.GameEntity e) {
+        if (e instanceof Card c) return cardId(c);
+        String id = idOf(e);
+        return id == null ? JSONObject.NULL : id;
+    }
+
     private JSONObject state(Game game, Player viewer) throws Exception {
         PhaseHandler ph = game.getPhaseHandler();
+        stateCombat = game.getCombat();
         JSONObject cards = new JSONObject();
         JSONArray zones = new JSONArray();
         JSONArray players = new JSONArray();
@@ -431,7 +448,8 @@ public final class ArcanaForgeHost {
                 .put("controllerId", playerId(c.getController())).put("ownerId", playerId(c.getOwner()))
                 .put("zone", new JSONObject().put("zoneType", zoneName(z)).put("ownerId", playerId(c.getOwner())))
                 .put("keywords", new JSONArray()).put("counters", new JSONObject()).put("attachments", new JSONArray()).put("targets", new JSONArray())
-                .put("isAttacking", false).put("isBlocking", false);
+                .put("isAttacking", stateCombat != null && stateCombat.isAttacking(c)).put("isBlocking", stateCombat != null && stateCombat.isBlocking(c))
+                .put("attackingTarget", stateCombat != null && stateCombat.isAttacking(c) ? idOrNull(stateCombat.getDefenderByAttacker(c)) : JSONObject.NULL);
         return fill(card, "card");
     }
 
@@ -514,6 +532,266 @@ public final class ArcanaForgeHost {
         catch (Exception ignored) { }
     }
 
+    // ---------------------------------------------------------------- player decisions (Argentum pendingDecision)
+
+    /** An open question to the player. {@code onAnswer} applies it to a Forge input; null = a waiting GUI call takes it. */
+    private record Decision(String id, JSONObject json, Map<String, Object> objects, java.util.function.Consumer<JSONObject> onAnswer) { }
+
+    private volatile Decision pending;
+    private final java.util.concurrent.SynchronousQueue<JSONObject> answers = new java.util.concurrent.SynchronousQueue<>();
+    private final java.util.concurrent.atomic.AtomicInteger decisionSeq = new java.util.concurrent.atomic.AtomicInteger();
+    private final java.util.Set<String> noticed = java.util.concurrent.ConcurrentHashMap.newKeySet();
+
+    private JSONObject decisionBase(String type, String prompt) throws Exception {
+        String id = "forge-d" + decisionSeq.incrementAndGet();
+        return new JSONObject().put("type", type).put("id", id).put("playerId", HUMAN_ID).put("prompt", prompt == null ? "" : prompt)
+                .put("context", new JSONObject().put("phase", "RESOLUTION"));
+    }
+
+    /** Shows the decision and, for GUI calls, blocks Forge's game thread until the player answers (as desktop Forge does). */
+    private JSONObject ask(JSONObject json, Map<String, Object> objects) throws Exception {
+        pending = new Decision(json.getString("id"), json, objects, null);
+        emitDecision();
+        try { return answers.take(); } finally { pending = null; }
+    }
+
+    private void openForInput(JSONObject json, Map<String, Object> objects, java.util.function.Consumer<JSONObject> onAnswer) throws Exception {
+        pending = new Decision(json.getString("id"), json, objects, onAnswer);
+        emitDecision();
+    }
+
+    private void emitDecision() throws Exception {
+        Decision d = pending;
+        Game game = match == null ? null : match.getGame();
+        PlayerControllerHuman you = humanController();
+        if (d == null || game == null || you == null) return;
+        sink.accept(fill(new JSONObject().put("type", "stateUpdate").put("state", state(game, you.getPlayer()))
+                .put("legalActions", new JSONArray()).put("pendingDecision", d.json()).put("stateVersion", ++version)
+                .put("interactive", true).put("interactionEpoch", "forge-" + version).put("priorityMode", "auto"), "top"));
+    }
+
+    private void answer(JSONObject response) {
+        Decision d = pending;
+        if (d == null || !d.id().equals(response.optString("decisionId"))) { error("That question was already answered."); return; }
+        if (d.onAnswer() == null) { answers.offer(response); return; }
+        pending = null;
+        try { d.onAnswer().accept(response); } catch (Exception e) { error("Forge host problem: " + describe(e)); }
+    }
+
+    private void notice(String kind, String text) {
+        if (noticed.add(kind)) error(text);
+    }
+
+    /** Arcana id for a Forge object (cards and players), or null. */
+    private String idOf(Object o) {
+        if (o instanceof Card c) return cardId(c);
+        if (o instanceof forge.game.card.CardView cv) return "f" + cv.getId();
+        if (o instanceof Player p) return playerId(p);
+        if (o instanceof forge.game.player.PlayerView pv) {
+            Game g = match == null ? null : match.getGame();
+            if (g != null) for (Player p : g.getPlayers()) if (p.getId() == pv.getId()) return playerId(p);
+        }
+        return null;
+    }
+
+    private String label(Object o) {
+        if (o instanceof forge.game.player.PlayerView pv) return pv.getName();
+        if (o instanceof Player p) return p.getName();
+        if (o instanceof forge.game.card.CardView cv) return cv.getName();
+        return String.valueOf(o);
+    }
+
+    private JSONObject cardInfo(Object o) throws Exception {
+        String name = o instanceof Card c ? c.getName() : o instanceof forge.game.card.CardView cv ? cv.getName() : label(o);
+        String type = o instanceof Card c ? c.getType().toString() : "";
+        String cost = o instanceof Card c && c.getManaCost() != null ? c.getManaCost().getShortString() : "";
+        return new JSONObject().put("name", name).put("typeLine", type).put("manaCost", cost);
+    }
+
+    /** Pick min..max of the choices: cards via SelectCardsDecision, anything else (single pick) via ChooseOptionDecision. */
+    private <T> List<T> choose(String prompt, int min, int max, List<T> choices) throws Exception {
+        if (choices == null || choices.isEmpty()) return new ArrayList<>();
+        max = Math.min(max, choices.size());
+        min = Math.min(min, max);
+        boolean cards = choices.stream().allMatch(c -> c instanceof Card || c instanceof forge.game.card.CardView);
+        Map<String, Object> objects = new LinkedHashMap<>();
+        if (cards) {
+            JSONObject d = decisionBase("SelectCardsDecision", prompt);
+            JSONArray options = new JSONArray(); JSONObject info = new JSONObject();
+            for (T c : choices) { String id = idOf(c); objects.put(id, c); options.put(id); info.put(id, cardInfo(c)); }
+            d.put("options", options).put("minSelections", min).put("maxSelections", max).put("cardInfo", info);
+            JSONArray picked = ask(d, objects).optJSONArray("selectedCards");
+            List<T> out = new ArrayList<>();
+            if (picked != null) for (int i = 0; i < picked.length(); i++) {
+                @SuppressWarnings("unchecked") T t = (T) objects.get(picked.getString(i));
+                if (t != null) out.add(t);
+            }
+            return out;
+        }
+        if (max <= 1) {
+            JSONObject d = decisionBase("ChooseOptionDecision", prompt);
+            JSONArray options = new JSONArray();
+            for (T c : choices) options.put(label(c));
+            d.put("options", options).put("canCancel", min == 0);
+            int index = ask(d, objects).optInt("optionIndex", -1);
+            return index >= 0 && index < choices.size() ? new ArrayList<>(List.of(choices.get(index))) : new ArrayList<>();
+        }
+        notice("multi-" + prompt, "Forge asked for several non-card choices (" + prompt + "); Arcana can't show that yet, so Forge's first options were used.");
+        return new ArrayList<>(choices.subList(0, min));
+    }
+
+    private boolean askYesNo(String prompt, String yes, String no) throws Exception {
+        JSONObject d = decisionBase("YesNoDecision", prompt).put("yesText", yes == null ? "Yes" : yes).put("noText", no == null ? "No" : no);
+        return ask(d, Map.of()).optBoolean("choice");
+    }
+
+    private int askNumber(String prompt, int min, int max) throws Exception {
+        if (min >= max) return min;
+        JSONObject d = decisionBase("ChooseNumberDecision", prompt).put("minValue", min).put("maxValue", max);
+        return Math.max(min, Math.min(max, ask(d, Map.of()).optInt("number", min)));
+    }
+
+    /** Forge's synchronous questions (called on Forge's game thread). Returns NOT_HANDLED when the name isn't a question. */
+    private static final Object NOT_HANDLED = new Object();
+
+    private Object question(String name, Object[] a) throws Exception {
+        switch (name) {
+            case "confirm": {
+                List<?> opts = a.length > 3 && a[3] instanceof List<?> l && l.size() > 1 ? l : null;
+                return askYesNo((String) a[1], opts == null ? "Yes" : String.valueOf(opts.get(0)), opts == null ? "No" : String.valueOf(opts.get(1)));
+            }
+            case "showConfirmDialog":
+                return askYesNo((String) a[0], a.length >= 4 ? (String) a[2] : "Yes", a.length >= 4 ? (String) a[3] : "No");
+            case "getChoices": return choose((String) a[0], (Integer) a[1], (Integer) a[2], (List<?>) a[3]);
+            case "one": { List<?> r = choose((String) a[0], 1, 1, (List<?>) a[1]); return r.isEmpty() ? null : r.get(0); }
+            case "oneOrNone": { List<?> r = choose((String) a[0], 0, 1, (List<?>) a[1]); return r.isEmpty() ? null : r.get(0); }
+            case "many": {
+                boolean range = a.length > 4 && a[2] instanceof Integer && a[3] instanceof Integer;
+                int min = (Integer) a[2], max = range ? (Integer) a[3] : min;
+                return choose((String) a[0], min, max, (List<?>) a[range ? 4 : 3]);
+            }
+            case "chooseSingleEntityForEffect": {
+                List<?> r = choose((String) a[0], Boolean.TRUE.equals(a[3]) ? 0 : 1, 1, (List<?>) a[1]);
+                return r.isEmpty() ? null : r.get(0);
+            }
+            case "chooseEntitiesForEffect": return choose((String) a[0], (Integer) a[2], (Integer) a[3], (List<?>) a[1]);
+            case "getInteger": return askNumber((String) a[0], (Integer) a[1], (Integer) a[2]);
+            default: return NOT_HANDLED;
+        }
+    }
+
+    // ---------------------------------------------------------------- Forge inputs that are decisions
+
+    /** Turns the live Forge input into an Arcana decision. Returns false if the input isn't a decision type. */
+    private boolean decisionForInput(Input input, PlayerControllerHuman you, Game game) throws Exception {
+        String kind = input.getClass().getSimpleName();
+        if (kind.equals("InputSelectTargets")) {
+            SpellAbility sa = (SpellAbility) field(input, "sa");
+            forge.game.spellability.TargetRestrictions tgt = (forge.game.spellability.TargetRestrictions) field(input, "tgt");
+            Map<String, Object> objects = new LinkedHashMap<>();
+            JSONArray legal = new JSONArray();
+            for (Player p : game.getPlayers()) if (sa.canTarget(p)) { objects.put(playerId(p), p); legal.put(playerId(p)); }
+            for (Card c : game.getCardsInGame()) if (sa.canTarget(c)) { objects.put(cardId(c), c); legal.put(cardId(c)); }
+            int min = tgt == null ? 1 : tgt.getMinTargets(sa.getHostCard(), sa), max = tgt == null ? 1 : tgt.getMaxTargets(sa.getHostCard(), sa);
+            JSONObject d = decisionBase("ChooseTargetsDecision", "Choose targets for " + sa.getHostCard().getName())
+                    .put("targetRequirements", new JSONArray().put(new JSONObject().put("index", 0)
+                            .put("description", tgt == null || field(tgt, "uiPrompt") == null ? "target" : String.valueOf(field(tgt, "uiPrompt"))).put("minTargets", min).put("maxTargets", max)))
+                    .put("legalTargets", new JSONObject().put("0", legal)).put("canCancel", true);
+            d.getJSONObject("context").put("phase", "CASTING").put("sourceId", cardId(sa.getHostCard())).put("sourceName", sa.getHostCard().getName());
+            openForInput(d, objects, r -> {
+                JSONObject sel = r.optJSONObject("selectedTargets");
+                JSONArray ids = sel == null ? null : sel.optJSONArray("0");
+                if (ids == null || ids.length() == 0) { cancel(you); return; }
+                for (int i = 0; i < ids.length(); i++) {
+                    Object o = objects.get(ids.optString(i));
+                    if (o instanceof Card c) input.selectCard(c, null, null);
+                    else if (o instanceof Player p) input.selectPlayer(p, null);
+                }
+                input.selectButtonOK(); // same input; ignored by Forge if picking already finished it
+            });
+            return true;
+        }
+        if (kind.equals("InputSelectEntitiesFromList") || kind.equals("InputSelectCardsFromList")) {
+            Object choices = field(input, "validChoices");
+            int min = field(input, "min") instanceof Integer n ? n : 0, max = field(input, "max") instanceof Integer n ? n : 1;
+            Map<String, Object> objects = new LinkedHashMap<>();
+            JSONArray options = new JSONArray(); JSONObject info = new JSONObject();
+            if (choices instanceof Iterable<?> it) for (Object o : it) { String id = idOf(o); if (id != null) { objects.put(id, o); options.put(id); info.put(id, cardInfo(o)); } }
+            String prompt = field(input, "message") instanceof String m ? m : "Choose";
+            JSONObject d = decisionBase("SelectCardsDecision", prompt).put("options", options)
+                    .put("minSelections", Math.min(min, options.length())).put("maxSelections", Math.min(max, options.length())).put("cardInfo", info);
+            openForInput(d, objects, r -> {
+                JSONArray ids = r.optJSONArray("selectedCards");
+                if (ids != null) for (int i = 0; i < ids.length(); i++) {
+                    Object o = objects.get(ids.optString(i));
+                    if (o instanceof Card c) input.selectCard(c, null, null);
+                    else if (o instanceof Player p) input.selectPlayer(p, null);
+                }
+                input.selectButtonOK(); // same input; ignored by Forge if picking already finished it
+            });
+            return true;
+        }
+        if (kind.equals("InputConfirm")) {
+            String prompt = field(input, "message") instanceof String m ? m : "Confirm";
+            Object opts = field(input, "options");
+            List<?> labels = opts instanceof List<?> l && l.size() > 1 ? l : null;
+            JSONObject d = decisionBase("YesNoDecision", prompt)
+                    .put("yesText", labels == null ? "Yes" : String.valueOf(labels.get(0))).put("noText", labels == null ? "No" : String.valueOf(labels.get(1)));
+            openForInput(d, Map.of(), r -> { if (r.optBoolean("choice")) ok(you); else cancel(you); });
+            return true;
+        }
+        return false;
+    }
+
+    // ---------------------------------------------------------------- combat (Argentum DeclareAttackers / DeclareBlockers)
+
+    private JSONObject attackAction(Input input, Player me) throws Exception {
+        forge.game.combat.Combat combat = (forge.game.combat.Combat) field(input, "combat");
+        JSONArray valid = new JSONArray(), generic = new JSONArray();
+        JSONObject byAttacker = new JSONObject();
+        for (forge.game.GameEntity d : combat.getDefenders()) generic.put(idOf(d) != null ? idOf(d) : cardId((Card) d));
+        for (Card c : me.getCreaturesInPlay()) {
+            JSONArray targets = new JSONArray();
+            for (forge.game.GameEntity d : combat.getDefenders()) if (forge.game.combat.CombatUtil.canAttack(c, d)) targets.put(d instanceof Card dc ? cardId(dc) : idOf(d));
+            if (targets.length() > 0) { valid.put(cardId(c)); byAttacker.put(cardId(c), targets); }
+        }
+        return action("DeclareAttackers", "Declare attackers", new JSONObject().put("type", "DeclareAttackers").put("playerId", HUMAN_ID).put("attackers", new JSONObject()))
+                .put("validAttackers", valid).put("mandatoryAttackers", new JSONArray()).put("attackTargetsByAttacker", byAttacker).put("validAttackTargets", generic);
+    }
+
+    private JSONObject blockAction(Input input, Player me) throws Exception {
+        forge.game.combat.Combat combat = (forge.game.combat.Combat) field(input, "combat");
+        JSONArray valid = new JSONArray();
+        JSONObject maxBlocks = new JSONObject();
+        for (Card c : me.getCreaturesInPlay()) if (forge.game.combat.CombatUtil.canBlock(c, combat)) { valid.put(cardId(c)); maxBlocks.put(cardId(c), 1); }
+        return action("DeclareBlockers", "Declare blockers", new JSONObject().put("type", "DeclareBlockers").put("playerId", HUMAN_ID).put("blockers", new JSONObject()))
+                .put("validBlockers", valid).put("blockerMaxBlockCounts", maxBlocks).put("mandatoryBlockerAssignments", new JSONObject());
+    }
+
+    private void declareCombat(PlayerControllerHuman you, JSONObject action) throws Exception {
+        Input input = you.getInputQueue().getActualInput(you);
+        forge.game.combat.Combat combat = input == null ? null : (forge.game.combat.Combat) field(input, "combat");
+        Game game = match.getGame();
+        if (combat == null) { error("It's not time to declare that."); scheduleEmit(); return; }
+        Map<String, Object> entities = new LinkedHashMap<>();
+        for (Player p : game.getPlayers()) entities.put(playerId(p), p);
+        for (Card c : game.getCardsIn(ZoneType.Battlefield)) entities.put(cardId(c), c);
+        if (action.optString("type").equals("DeclareAttackers")) {
+            JSONObject attackers = action.optJSONObject("attackers");
+            if (attackers != null) for (String a : attackers.keySet())
+                if (entities.get(a) instanceof Card c && entities.get(attackers.getString(a)) instanceof forge.game.GameEntity d) combat.addAttacker(c, d);
+        } else {
+            JSONObject blockers = action.optJSONObject("blockers");
+            if (blockers != null) for (String b : blockers.keySet()) {
+                JSONArray list = blockers.getJSONArray(b);
+                for (int i = 0; i < list.length(); i++)
+                    if (entities.get(b) instanceof Card blocker && entities.get(list.getString(i)) instanceof Card attacker) combat.addBlocker(attacker, blocker);
+            }
+        }
+        ok(you);
+        scheduleEmit(); // if Forge rejected the declaration (rules), the input stays and is offered again
+    }
+
     // ---------------------------------------------------------------- Forge GUI stand-ins
 
     /** Forge's in-game GUI. Prompts and input changes trigger a state update; questions get a logged default. */
@@ -539,6 +817,9 @@ public final class ArcanaForgeHost {
                 default: break;
             }
             if (m.getReturnType() == void.class) return null;
+            Object asked = question(name, args == null ? new Object[0] : args);
+            if (asked != NOT_HANDLED) return asked;
+            notice("gui-" + name, "Forge asked something Arcana can't show yet (" + name + "); Forge's default was used.");
             return defaultAnswer(m, args);
         });
     }

@@ -27,8 +27,8 @@ public final class OneTurnProof {
         new Thread(() -> { try { host.startGame(you, ai); } catch (Exception e) { e.printStackTrace(); } }, "proof-start").start();
 
         boolean landPlayed = false, creatureCast = false, aiTurnSeen = false;
-        int myFirstTurn = -1, landTurn = -1, castTurn = -1, updates = 0;
-        long deadline = System.currentTimeMillis() + TimeUnit.MINUTES.toMillis(5);
+        int myFirstTurn = -1, landTurn = -1, castTurn = -1, updates = 0, attacks = 0, decisions = 0, aiLife = 20;
+        long deadline = System.currentTimeMillis() + TimeUnit.MINUTES.toMillis(8);
         String result = "FAIL: timed out";
         while (System.currentTimeMillis() < deadline) {
             JSONObject m = inbox.poll(5, TimeUnit.SECONDS);
@@ -50,6 +50,14 @@ public final class OneTurnProof {
                 if (!aiTurnSeen) System.out.println("PROOF AI turn " + turn + " observed, AI battlefield " + battlefield(s, ArcanaForgeHost.AI_ID));
                 aiTurnSeen = true;
             }
+            JSONObject decision = m.optJSONObject("pendingDecision");
+            if (decision != null && m.optBoolean("interactive")) {
+                System.out.println("PROOF decision " + decision.optString("type") + ": " + decision.optString("prompt"));
+                host.handle(new JSONObject().put("type", "submitAction").put("action", new JSONObject().put("type", "SubmitDecision")
+                        .put("playerId", ArcanaForgeHost.HUMAN_ID).put("response", answer(decision))));
+                decisions++;
+                continue;
+            }
             if (!m.optBoolean("interactive")) {
                 System.out.println("PROOF   (update v" + m.optInt("stateVersion") + " turn " + turn + " " + step + " active=" + active
                         + " input=" + m.optString("forgeInput") + " you=" + battlefield(s, ArcanaForgeHost.HUMAN_ID) + ")");
@@ -58,13 +66,28 @@ public final class OneTurnProof {
             if (active.equals(ArcanaForgeHost.HUMAN_ID) && myFirstTurn < 0) myFirstTurn = turn;
             boolean bearsOut = battlefield(s, ArcanaForgeHost.HUMAN_ID).contains("Grizzly Bears");
             if (creatureCast && !bearsOut && turn > castTurn) { result = "FAIL: cast Grizzly Bears on turn " + castTurn + " but it never reached the battlefield"; break; }
-            if (aiTurnSeen && active.equals(ArcanaForgeHost.HUMAN_ID) && bearsOut && turn > castTurn) {
-                result = "PASS: played a land on turn " + landTurn + (creatureCast ? ", cast Grizzly Bears on turn " + castTurn : "")
+            aiLife = player(s, ArcanaForgeHost.AI_ID).optInt("life", aiLife);
+            if (aiTurnSeen && active.equals(ArcanaForgeHost.HUMAN_ID) && bearsOut && turn > castTurn && attacks > 0 && aiLife < 20) {
+                result = "PASS: attacked " + attacks + "x (AI life " + aiLife + "), answered " + decisions + " decision(s); played a land on turn " + landTurn + (creatureCast ? ", cast Grizzly Bears on turn " + castTurn : "")
                         + ", Forge AI took a turn, priority back on turn " + turn + " (" + step + "); your battlefield "
                         + battlefield(s, ArcanaForgeHost.HUMAN_ID) + ", AI battlefield " + battlefield(s, ArcanaForgeHost.AI_ID);
                 break;
             }
             JSONArray legal = m.getJSONArray("legalActions");
+            JSONObject attack = find(legal, "DeclareAttackers"), block = find(legal, "DeclareBlockers");
+            if (attack != null || block != null) {
+                JSONObject act = new JSONObject((attack != null ? attack : block).getJSONObject("action").toString());
+                if (attack != null) {
+                    JSONObject chosen = new JSONObject();
+                    JSONArray valid = attack.getJSONArray("validAttackers");
+                    for (int i = 0; i < valid.length(); i++) chosen.put(valid.getString(i), attack.getJSONObject("attackTargetsByAttacker").getJSONArray(valid.getString(i)).getString(0));
+                    act.put("attackers", chosen);
+                    if (chosen.length() > 0) attacks++;
+                }
+                System.out.println("PROOF turn " + turn + " " + act.getString("type") + " " + act.opt(attack != null ? "attackers" : "blockers"));
+                host.handle(new JSONObject().put("type", "submitAction").put("action", act));
+                continue;
+            }
             JSONObject choice = find(legal, "PassPriority");
             if (active.equals(ArcanaForgeHost.HUMAN_ID) && step.equals("PRECOMBAT_MAIN")) {
                 JSONObject land = find(legal, "PlayLand");
@@ -104,6 +127,28 @@ public final class OneTurnProof {
     private static JSONObject find(JSONArray legal, String actionType) {
         for (int i = 0; i < legal.length(); i++) if (legal.getJSONObject(i).optString("actionType").equals(actionType)) return legal.getJSONObject(i);
         return null;
+    }
+
+    /** A legal default answer to any Argentum decision (picks the first options). */
+    private static JSONObject answer(JSONObject d) {
+        String id = d.optString("id");
+        JSONObject r = new JSONObject().put("decisionId", id);
+        switch (d.optString("type")) {
+            case "YesNoDecision": return r.put("type", "YesNoResponse").put("choice", true);
+            case "ChooseNumberDecision": return r.put("type", "NumberChosenResponse").put("number", d.optInt("minValue"));
+            case "ChooseOptionDecision": return r.put("type", "OptionChosenResponse").put("optionIndex", 0);
+            case "SelectCardsDecision": {
+                JSONArray opts = d.optJSONArray("options"), picked = new JSONArray();
+                for (int i = 0; opts != null && i < Math.min(d.optInt("minSelections"), opts.length()); i++) picked.put(opts.get(i));
+                return r.put("type", "CardsSelectedResponse").put("selectedCards", picked);
+            }
+            case "ChooseTargetsDecision": {
+                JSONArray legal = d.getJSONObject("legalTargets").optJSONArray("0");
+                return r.put("type", "TargetsResponse").put("selectedTargets", new JSONObject().put("0",
+                        legal == null || legal.length() == 0 ? new JSONArray() : new JSONArray().put(legal.get(0))));
+            }
+            default: return r;
+        }
     }
 
     private static JSONObject findAffordable(JSONArray legal, String actionType) {
