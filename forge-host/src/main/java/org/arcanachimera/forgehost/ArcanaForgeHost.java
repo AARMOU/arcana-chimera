@@ -731,9 +731,12 @@ public final class ArcanaForgeHost {
     /** Test-only: replace the board with a Forge GameState script, through Forge's own dev-mode setup path. */
     public void applyStateForTest(String script, String waitForHandCard) throws Exception {
         Game game = match.getGame();
-        forge.game.GameState gs = new forge.game.GameState();
+        // Applied synchronously while Forge's game thread waits for the player's input (the same moment Forge's dev-mode
+        // setup uses, which hands it to a game-pool thread); synchronous so the next state the test sees is the new board.
+        class Setup extends forge.game.GameState { void run(Game g) { applyGameOnThread(g); } }
+        Setup gs = new Setup();
         gs.parse(java.util.Arrays.asList(script.split("\n")));
-        gs.applyToGame(game);
+        gs.run(game);
         long until = System.currentTimeMillis() + 15_000;
         while (System.currentTimeMillis() < until) {
             boolean ready = false;

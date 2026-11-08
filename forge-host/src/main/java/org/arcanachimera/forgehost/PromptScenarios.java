@@ -101,6 +101,13 @@ public final class PromptScenarios {
         return ids;
     }
 
+    /** True if any visible card in the state has this name (hand, stack, battlefield, graveyard...). */
+    private static boolean hasCard(JSONObject m, String name) {
+        JSONObject cards = m.getJSONObject("state").getJSONObject("cards");
+        for (String k : cards.keySet()) if (cards.getJSONObject(k).optString("name").equals(name)) return true;
+        return false;
+    }
+
     private static JSONObject castAction(JSONObject m, String name) {
         JSONArray legal = m.getJSONArray("legalActions");
         JSONObject cards = m.getJSONObject("state").getJSONObject("cards");
@@ -118,7 +125,6 @@ public final class PromptScenarios {
         Session s = new Session();
         try {
             s.host.applyStateForTest(String.join("\n",
-                    "activeplayer=human", "activephase=MAIN1",
                     "humanbattlefield=Forest;Forest;Forest;Forest;Forest;Forest;Forest;Forest",
                     "humanhand=Ghalta, Stampede Tyrant;Grizzly Bears;Llanowar Elves",
                     "aibattlefield=", "aihand="), "Ghalta, Stampede Tyrant");
@@ -126,7 +132,7 @@ public final class PromptScenarios {
             List<String> orderAnswer = null;
             while (true) {
                 JSONObject m = s.next(90);
-                if (!interactive(m)) continue;
+                if (!interactive(m) || !hasCard(m, "Ghalta, Stampede Tyrant")) continue; // wait for the new board
                 JSONObject d = m.optJSONObject("pendingDecision");
                 if (d != null) {
                     switch (d.optString("type")) {
@@ -208,7 +214,6 @@ public final class PromptScenarios {
         Session s = new Session();
         try {
             s.host.applyStateForTest(String.join("\n",
-                    "activeplayer=human", "activephase=MAIN1",
                     "humanbattlefield=Prized Unicorn",
                     "humanhand=Llanowar Elves",
                     "aibattlefield=Grizzly Bears;Grizzly Bears", "aihand="), "Llanowar Elves");
@@ -216,7 +221,7 @@ public final class PromptScenarios {
             String first = null, second = null;
             while (true) {
                 JSONObject m = s.next(90);
-                if (!interactive(m)) continue;
+                if (!interactive(m) || !hasCard(m, "Prized Unicorn") && first == null) continue; // wait for the new board
                 JSONObject d = m.optJSONObject("pendingDecision");
                 if (d != null) {
                     switch (d.optString("type")) {
