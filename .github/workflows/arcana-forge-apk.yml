@@ -1,6 +1,7 @@
 name: Arcana + Forge APK build
 # Owner (Nov 7, 2026): runs on Claude B's draft-PR pushes, free standard runner.
-# Build check only: the APK is NOT uploaded. Delivery to the owner is a separate encrypted step.
+# Owner (Nov 7, 2026, "Don't worry about encryption"): the debug APK is uploaded as a 1-day artifact for the owner's phone.
+# Chimera is public, so the artifact is visible to signed-in GitHub users until it expires.
 on:
   workflow_dispatch:
   pull_request:
@@ -21,7 +22,13 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
-      - uses: android-actions/setup-android@v3
-      - run: sdkmanager 'platforms;android-36' 'build-tools;36.0.0'
+      - name: Android SDK packages (preinstalled SDK)
+        run: yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" 'platforms;android-36' 'build-tools;36.0.0' > /dev/null
       - name: Build Arcana with Forge inside
         run: bash scripts/build_arcana_forge_apk.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: arcana-forge-debug-apk
+          path: ${{ env.APK }}
+          retention-days: 1
+          if-no-files-found: error
