@@ -41,4 +41,4 @@ PY
 echo "Arcana decks at $ARCANA_SHA: $(wc -l < "$ADECKS/names.txt") distinct card names"
 timeout 1500s java -Xmx6g -Djava.awt.headless=true -cp "$OUT/classes:$CP" \
   org.arcanachimera.forgehost.AllCardsCheck "$FORGE/forge-gui/" "@$ADECKS/names.txt" \
-  || echo "ALLCARDS gate: see the ALLCARDS lines above"
+  # now a gate: every Forge card must build and every bundled deck card must resolve

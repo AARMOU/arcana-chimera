@@ -184,6 +184,11 @@ public final class ArcanaForgeHost {
         if (k.isEmpty()) return null;
         List<String> hits = new ArrayList<>();
         for (String x : cardKeys()) if (x.endsWith("_" + k)) hits.add(x);
+        if (hits.size() > 1) { // e.g. "The Necropolis": prefer a numbered title prefix ("Vault 12: …") over "Unseal the Necropolis"
+            List<String> titled = new ArrayList<>();
+            for (String x : hits) if (x.substring(0, x.length() - k.length() - 1).matches("[a-z]+_[0-9]+")) titled.add(x);
+            hits = titled;
+        }
         if (hits.size() != 1) return null;
         String hit = hits.get(0);
         FModel.getMagicDb().attemptToLoadCard(hit); // lazy mode: the key is its own transformed name
