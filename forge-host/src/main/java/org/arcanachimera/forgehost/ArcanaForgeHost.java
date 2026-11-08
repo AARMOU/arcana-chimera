@@ -65,6 +65,7 @@ public final class ArcanaForgeHost {
     private volatile Input lastAutoPaid;
     private volatile Input lastPrompted;
     private volatile int mulligans = -1;
+    private volatile boolean inMulligan;
     private int version;
     /** Forge prompts answered with a default instead of the player (milestone 1 gap list). */
     public final List<String> defaultedPrompts = new ArrayList<>();
@@ -264,18 +265,20 @@ public final class ArcanaForgeHost {
                 lastPrompted = input; defaultedPrompts.add("play or draw: play"); ok(you); return;
             }
             if (kind.equals("InputConfirmMulligan")) {
-                lastPrompted = input; mulligans = mulligans < 0 ? 0 : mulligans;
-                sink.accept(passiveUpdate(game, you));
+                lastPrompted = input; mulligans = mulligans < 0 ? 0 : mulligans; inMulligan = true;
                 sink.accept(handMessage("mulliganDecision", you.getPlayer()).put("mulliganCount", mulligans)
                         .put("cardsToPutOnBottom", 0).put("isOnThePlay", true));
                 return;
             }
             if (kind.equals("InputLondonMulligan")) {
-                lastPrompted = input;
-                sink.accept(passiveUpdate(game, you));
+                lastPrompted = input; inMulligan = true;
                 sink.accept(handMessage("chooseBottomCards", you.getPlayer()).put("cardsToPutOnBottom", intField(input, "toReturn")));
                 return;
             }
+        }
+        if (inMulligan) { // Argentum's order: mulliganComplete, then the first game state
+            inMulligan = false;
+            sink.accept(new JSONObject().put("type", "mulliganComplete").put("finalHandSize", you.getPlayer().getCardsIn(ZoneType.Hand).size()));
         }
         boolean priority = input instanceof InputPassPriority;
         if (input != null && !priority && input != lastPrompted) {
