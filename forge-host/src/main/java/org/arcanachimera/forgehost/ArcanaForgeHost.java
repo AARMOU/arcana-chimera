@@ -122,7 +122,8 @@ public final class ArcanaForgeHost {
             sink.accept(new JSONObject().put("type", "quickGameLobbyState").put("lobbyId", "offline").put("youPlayerId", HUMAN_ID)
                     .put("vsAi", true).put("players", lobby));
             sink.accept(new JSONObject().put("type", "gameStarted").put("players", started));
-            match.startMatch(new GameRules(commander ? GameType.Commander : GameType.Constructed), null, players, players.get(0), guiGame());
+            applyStartBoard(match);
+        match.startMatch(new GameRules(commander ? GameType.Commander : GameType.Constructed), null, players, players.get(0), guiGame());
         } catch (Throwable t) {
             error("Forge could not start the game: " + describe(t));
             t.printStackTrace();
@@ -154,6 +155,7 @@ public final class ArcanaForgeHost {
         sink.accept(new JSONObject().put("type", "gameStarted").put("players", new JSONArray()
                 .put(new JSONObject().put("playerId", HUMAN_ID).put("isYou", true))
                 .put(new JSONObject().put("playerId", AI_ID).put("isYou", false))));
+        applyStartBoard(match);
         match.startMatch(new GameRules(GameType.Constructed), null, players, you, guiGame());
     }
 
@@ -728,23 +730,23 @@ public final class ArcanaForgeHost {
 
     // ---------------------------------------------------------------- test hooks (headless proof only)
 
-    /** Test-only: replace the board with a Forge GameState script, through Forge's own dev-mode setup path. */
-    public void applyStateForTest(String script, String waitForHandCard) throws Exception {
-        Game game = match.getGame();
-        // Applied synchronously while Forge's game thread waits for the player's input (the same moment Forge's dev-mode
-        // setup uses, which hands it to a game-pool thread); synchronous so the next state the test sees is the new board.
+    private volatile String startBoardForTest;
+
+    /**
+     * Test-only: the board to start from, as a Forge GameState script. Applied by Forge's own puzzle-mode start hook
+     * (HostedMatch.setStartGameHook), on Forge's game thread, before the first turn.
+     */
+    public void setStartBoardForTest(String script) { startBoardForTest = script; }
+
+    private void applyStartBoard(HostedMatch m) {
+        String script = startBoardForTest;
+        if (script == null) return;
         class Setup extends forge.game.GameState { void run(Game g) { applyGameOnThread(g); } }
-        Setup gs = new Setup();
-        gs.parse(java.util.Arrays.asList(script.split("\n")));
-        gs.run(game);
-        long until = System.currentTimeMillis() + 15_000;
-        while (System.currentTimeMillis() < until) {
-            boolean ready = false;
-            for (Card c : humanController().getPlayer().getCardsIn(ZoneType.Hand)) if (c.getName().equals(waitForHandCard)) ready = true;
-            if (ready) break;
-            Thread.sleep(50);
-        }
-        scheduleEmit();
+        m.setStartGameHook(() -> {
+            Setup gs = new Setup();
+            gs.parse(java.util.Arrays.asList(script.split("\n")));
+            gs.run(m.getGame());
+        });
     }
 
     /** Test-only: Forge's in-game GUI for this game, to call prompt shapes directly. */

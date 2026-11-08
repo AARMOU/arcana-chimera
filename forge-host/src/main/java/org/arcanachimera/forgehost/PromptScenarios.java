@@ -49,20 +49,23 @@ public final class PromptScenarios {
         JSONObject last;
         final List<String> notices = new ArrayList<>();
 
-        Session() throws Exception {
+        Session(String board, String marker) throws Exception {
             ArcanaForgeHost.initForge(forgeDir, host);
+            host.setStartBoardForTest(board);
             Map<String, Integer> forests = new LinkedHashMap<>(); forests.put("Forest", 60);
             new Thread(() -> { try { host.startGame(forests, forests); } catch (Exception e) { e.printStackTrace(); } }, "scenario-start").start();
             while (true) {
                 JSONObject m = next(60);
                 if (m.optString("type").equals("mulliganDecision")) { host.handle(new JSONObject().put("type", "keepHand")); continue; }
-                if (interactive(m) && m.getJSONObject("state").optString("activePlayerId").equals(ArcanaForgeHost.HUMAN_ID)
-                        && m.getJSONObject("state").optString("currentStep").equals("PRECOMBAT_MAIN")) return;
+                if (interactive(m) && hasCard(m, marker)) { pushBack = m; return; } // the scenario board is in place
                 if (interactive(m) && m.optJSONObject("pendingDecision") == null) send(new JSONObject().put("type", "PassPriority").put("playerId", ArcanaForgeHost.HUMAN_ID));
             }
         }
 
+        JSONObject pushBack;
+
         JSONObject next(int seconds) throws Exception {
+            if (pushBack != null) { JSONObject m = pushBack; pushBack = null; return m; }
             while (true) {
                 JSONObject m = inbox.poll(seconds, TimeUnit.SECONDS);
                 if (m == null) throw new IllegalStateException("timed out after " + seconds + " s waiting for Forge (last state v" + (last == null ? "-" : last.optInt("stateVersion")) + ")");
@@ -122,13 +125,12 @@ public final class PromptScenarios {
     // ------------------------------------------------------------------ A. Ghalta / order
 
     private static String ghalta() throws Exception {
-        Session s = new Session();
+        Session s = new Session(String.join("\n",
+                "activeplayer=human", "activephase=MAIN1", "removesummoningsickness=true",
+                "humanbattlefield=Forest;Forest;Forest;Forest;Forest;Forest;Forest;Forest",
+                "humanhand=Ghalta, Stampede Tyrant;Grizzly Bears;Llanowar Elves",
+                "aibattlefield=", "aihand="), "Ghalta, Stampede Tyrant");
         try {
-            s.host.applyStateForTest(String.join("\n",
-                    "activeplayer=human", "activephase=MAIN1",
-                    "humanbattlefield=Forest;Forest;Forest;Forest;Forest;Forest;Forest;Forest",
-                    "humanhand=Ghalta, Stampede Tyrant;Grizzly Bears;Llanowar Elves",
-                    "aibattlefield=", "aihand="), "Ghalta, Stampede Tyrant");
             boolean cast = false, ordered = false, selected = false;
             List<String> orderAnswer = null;
             while (true) {
@@ -212,13 +214,12 @@ public final class PromptScenarios {
     // ------------------------------------------------------------------ B. multi-block combat damage
 
     private static String combatDamage() throws Exception {
-        Session s = new Session();
+        Session s = new Session(String.join("\n",
+                "activeplayer=human", "activephase=MAIN1", "removesummoningsickness=true",
+                "humanbattlefield=Prized Unicorn",
+                "humanhand=Llanowar Elves",
+                "aibattlefield=Grizzly Bears;Grizzly Bears", "aihand="), "Prized Unicorn");
         try {
-            s.host.applyStateForTest(String.join("\n",
-                    "activeplayer=human", "activephase=MAIN1",
-                    "humanbattlefield=Prized Unicorn",
-                    "humanhand=Llanowar Elves",
-                    "aibattlefield=Grizzly Bears;Grizzly Bears", "aihand="), "Llanowar Elves");
             boolean attacked = false;
             String first = null, second = null;
             while (true) {
