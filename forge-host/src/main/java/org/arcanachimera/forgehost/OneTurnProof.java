@@ -79,10 +79,25 @@ public final class OneTurnProof {
                     + " (" + legal.length() + " legal, input " + m.optString("forgeInput") + ")");
             host.handle(new JSONObject().put("type", "submitAction").put("action", choice.getJSONObject("action")));
         }
+        if (result.startsWith("PASS")) { // a second game in the same app session (phone crash, Nov 7 23:05)
+            host.shutdown();
+            LinkedBlockingQueue<JSONObject> inbox2 = new LinkedBlockingQueue<>();
+            ArcanaForgeHost host2 = new ArcanaForgeHost(inbox2::add);
+            ArcanaForgeHost.initForge(args.length > 0 ? args[0] : "../forge-gui/", host2);
+            new Thread(() -> { try { host2.startGame(you, ai); } catch (Exception e) { e.printStackTrace(); } }, "proof-start-2").start();
+            boolean offered = false;
+            long until = System.currentTimeMillis() + 90_000;
+            while (!offered && System.currentTimeMillis() < until) {
+                JSONObject m2 = inbox2.poll(5, TimeUnit.SECONDS);
+                if (m2 != null && m2.optString("type").equals("mulliganDecision")) offered = true;
+            }
+            System.out.println("PROOF second game in the same session: " + (offered ? "started (opening hand offered)" : "DID NOT START"));
+            if (!offered) result = "FAIL: second game did not start";
+            host2.shutdown();
+        }
         System.out.println("PROOF updates received: " + updates);
         System.out.println("PROOF prompts answered by default (to become player decisions): " + new java.util.LinkedHashSet<>(host.defaultedPrompts));
         System.out.println("PROOF RESULT " + result);
-        host.shutdown();
         System.exit(result.startsWith("PASS") ? 0 : 1);
     }
 

@@ -55,9 +55,12 @@ public final class ArcanaForgeHost {
     public static final String AI_ID = "offline-ai";
 
     private final Consumer<JSONObject> sink;
-    private final ExecutorService edt = Executors.newSingleThreadExecutor(r -> new Thread(r, "forge-edt"));
+    /** Forge's "UI thread": one per app process, shared by every game (Forge itself loads once per process). */
+    private static final ExecutorService edt = Executors.newSingleThreadExecutor(r -> { Thread t = new Thread(r, "forge-edt"); t.setDaemon(true); return t; });
+    /** The game Forge's GUI hooks currently talk to. */
+    private static volatile ArcanaForgeHost current;
     private final ScheduledExecutorService emitter = Executors.newSingleThreadScheduledExecutor(r -> new Thread(r, "forge-emit"));
-    private volatile Thread edtThread;
+    private static volatile Thread edtThread;
     private volatile ScheduledFuture<?> pendingEmit;
     private final Map<String, SpellAbility> offered = new ConcurrentHashMap<>();
     private volatile HostedMatch match;
@@ -73,7 +76,7 @@ public final class ArcanaForgeHost {
 
     public ArcanaForgeHost(Consumer<JSONObject> sink) {
         this.sink = sink;
-        edt.submit(() -> edtThread = Thread.currentThread());
+        if (edtThread == null) edt.submit(() -> edtThread = Thread.currentThread());
     }
 
     // ---------------------------------------------------------------- startup
@@ -127,11 +130,12 @@ public final class ArcanaForgeHost {
     }
 
     public static synchronized void initForge(String assetsDir, ArcanaForgeHost owner) {
+        current = owner;
         if (forgeLoaded) return;
         // Forge keeps prefs/caches under user.home; Android has no usable home folder, so use the app's own storage.
         String home = System.getProperty("user.home");
         if (home == null || home.isEmpty() || !new java.io.File(home).canWrite()) System.setProperty("user.home", assetsDir);
-        GuiBase.setInterface(owner.guiBase(assetsDir));
+        GuiBase.setInterface(guiBase(assetsDir));
         FModel.initialize(null, prefs -> { // phones: parse card scripts on demand instead of all ~30k at start
             prefs.setPref(forge.localinstance.properties.ForgePreferences.FPref.LOAD_CARD_SCRIPTS_LAZILY, lazyCards);
             return null;
@@ -580,7 +584,7 @@ public final class ArcanaForgeHost {
     }
 
     /** Forge's app-level GUI: a single "UI thread" executor, no images, no sound. */
-    private IGuiBase guiBase(String assetsDir) {
+    private static IGuiBase guiBase(String assetsDir) {
         return (IGuiBase) Proxy.newProxyInstance(IGuiBase.class.getClassLoader(), new Class<?>[]{IGuiBase.class}, (proxy, m, args) -> {
             switch (m.getName()) {
                 case "isRunningOnDesktop": return true;
@@ -601,7 +605,7 @@ public final class ArcanaForgeHost {
                 }
                 case "runBackgroundTask": new Thread((Runnable) args[1], "forge-bg").start(); return null;
                 case "hostMatch": return new HostedMatch();
-                case "getNewGuiGame": return guiGame();
+                case "getNewGuiGame": return current.guiGame();
                 case "hasNetGame": return false;
                 case "getScreenScale": return 1f;
                 case "getAvatarCount": case "getSleevesCount": return 1;
@@ -621,7 +625,6 @@ public final class ArcanaForgeHost {
     }
 
     public void shutdown() {
-        edt.shutdownNow();
-        emitter.shutdownNow();
+        emitter.shutdownNow(); // the shared Forge UI thread stays for the next game
     }
 }
