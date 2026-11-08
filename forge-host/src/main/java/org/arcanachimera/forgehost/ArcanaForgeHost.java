@@ -647,6 +647,27 @@ public final class ArcanaForgeHost {
         return new ArrayList<>(choices.subList(0, min));
     }
 
+    /** Forge's dual-list prompt: pure ordering (OrderObjectsDecision) or "move some of these" (SelectCardsDecision). */
+    private List<?> order(String prompt, List<?> source, int remMin, int remMax, boolean hasDest) throws Exception {
+        if (source == null || source.size() <= 1 && remMin == 0 && remMax == 0) return source == null ? List.of() : source;
+        boolean cards = source.stream().allMatch(o -> o instanceof Card || o instanceof forge.game.card.CardView);
+        if (!cards) { notice("order-" + prompt, "Forge asked to order non-card items (" + prompt + "); kept Forge's order."); return source; }
+        if (remMin == 0 && remMax == 0 && !hasDest) {
+            Map<String, Object> objects = new LinkedHashMap<>();
+            JSONArray ids = new JSONArray(); JSONObject info = new JSONObject();
+            for (Object o : source) { String id = idOf(o); objects.put(id, o); ids.put(id); info.put(id, cardInfo(o)); }
+            JSONObject d = decisionBase("OrderObjectsDecision", prompt).put("objects", ids).put("cardInfo", info).put("orderingTitle", prompt);
+            JSONArray ordered = ask(d, objects).optJSONArray("orderedObjects");
+            List<Object> out = new ArrayList<>();
+            if (ordered != null) for (int i = 0; i < ordered.length(); i++) { Object o = objects.get(ordered.optString(i)); if (o != null) out.add(o); }
+            for (Object o : source) if (!out.contains(o)) out.add(o); // never drop anything
+            return out;
+        }
+        // Choose which cards move: between (size - remMax) and (size - remMin) of them.
+        int min = Math.max(0, source.size() - remMax), max = Math.max(min, source.size() - remMin);
+        return choose(prompt, min, max, source);
+    }
+
     private boolean askYesNo(String prompt, String yes, String no) throws Exception {
         JSONObject d = decisionBase("YesNoDecision", prompt).put("yesText", yes == null ? "Yes" : yes).put("noText", no == null ? "No" : no);
         return ask(d, Map.of()).optBoolean("choice");
@@ -683,6 +704,14 @@ public final class ArcanaForgeHost {
             }
             case "chooseEntitiesForEffect": return choose((String) a[0], (Integer) a[2], (Integer) a[3], (List<?>) a[1]);
             case "getInteger": return askNumber((String) a[0], (Integer) a[1], (Integer) a[2]);
+            case "order": {
+                // (title, top, source, card) | (title, top, remMin, remMax, source, dest, card, sideboard[, remember])
+                boolean full = a.length >= 8;
+                List<?> source = (List<?>) (full ? a[4] : a[2]);
+                int remMin = full ? (Integer) a[2] : 0, remMax = full ? (Integer) a[3] : 0;
+                List<Object> result = new ArrayList<>(order((String) a[0], source, remMin, remMax, full && a[5] != null));
+                return a.length >= 9 ? new IGuiGame.OrderResult<>(result, false) : result;
+            }
             default: return NOT_HANDLED;
         }
     }
