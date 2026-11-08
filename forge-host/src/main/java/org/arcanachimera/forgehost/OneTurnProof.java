@@ -24,7 +24,7 @@ public final class OneTurnProof {
 
         Map<String, Integer> you = new LinkedHashMap<>(); you.put("Forest", 30); you.put("Grizzly Bears", 30);
         Map<String, Integer> ai = new LinkedHashMap<>(); ai.put("Mountain", 30); ai.put("Hill Giant", 30);
-        new Thread(() -> host.startGame(you, ai), "proof-start").start();
+        new Thread(() -> { try { host.startGame(you, ai); } catch (Exception e) { e.printStackTrace(); } }, "proof-start").start();
 
         boolean landPlayed = false, creatureCast = false, aiTurnSeen = false;
         int myFirstTurn = -1, landTurn = -1, castTurn = -1, updates = 0;

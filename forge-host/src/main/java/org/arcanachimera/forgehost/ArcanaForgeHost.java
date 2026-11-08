@@ -134,7 +134,7 @@ public final class ArcanaForgeHost {
     }
 
     /** Starts a one-on-one game: you against Forge's AI. Decks are card name → count. */
-    public void startGame(Map<String, Integer> yourDeck, Map<String, Integer> aiDeck) {
+    public void startGame(Map<String, Integer> yourDeck, Map<String, Integer> aiDeck) throws Exception {
         RegisteredPlayer you = new RegisteredPlayer(deck("You", yourDeck));
         you.setPlayer(GamePlayerUtil.getGuiPlayer());
         RegisteredPlayer ai = new RegisteredPlayer(deck("AI", aiDeck));
@@ -166,6 +166,10 @@ public final class ArcanaForgeHost {
     // ---------------------------------------------------------------- messages from the UI
 
     public void handle(JSONObject message) {
+        try { handleUnsafe(message); } catch (Exception e) { error("Forge host problem: " + e); }
+    }
+
+    private void handleUnsafe(JSONObject message) throws Exception {
         String t = message.optString("type");
         if (t.equals("connect")) { sink.accept(new JSONObject().put("type", "connected").put("playerId", HUMAN_ID).put("token", "offline")); return; }
         if (t.equals("ping")) { sink.accept(new JSONObject().put("type", "pong")); return; }
@@ -194,7 +198,7 @@ public final class ArcanaForgeHost {
         if (input != null) input.selectButtonCancel();
     }
 
-    private void bottom(PlayerControllerHuman you, JSONArray ids) {
+    private void bottom(PlayerControllerHuman you, JSONArray ids) throws Exception {
         Input input = you.getInputQueue().getActualInput(you);
         if (input == null || ids == null) return;
         for (int i = 0; i < ids.length(); i++)
@@ -203,7 +207,7 @@ public final class ArcanaForgeHost {
         ok(you);
     }
 
-    private JSONObject handMessage(String type, Player p) {
+    private JSONObject handMessage(String type, Player p) throws Exception {
         JSONArray hand = new JSONArray();
         JSONObject cards = new JSONObject();
         for (Card c : p.getCardsIn(ZoneType.Hand)) { hand.put(cardId(c)); cards.put(cardId(c), card(c, ZoneType.Hand)); }
@@ -216,7 +220,7 @@ public final class ArcanaForgeHost {
         catch (ReflectiveOperationException e) { return 1; }
     }
 
-    private void submit(PlayerControllerHuman you, JSONObject action) {
+    private void submit(PlayerControllerHuman you, JSONObject action) throws Exception {
         String type = action.optString("type");
         if (type.equals("PassPriority")) { ok(you); return; }
         SpellAbility sa = offered.get(key(type, action.optString("cardId", action.optString("sourceId")), action.optString("abilityId")));
@@ -237,7 +241,7 @@ public final class ArcanaForgeHost {
         try { emit(); } catch (Throwable t) { error("Forge host problem: " + t); t.printStackTrace(); }
     }
 
-    private void emit() {
+    private void emit() throws Exception {
         Game game = match == null ? null : match.getGame();
         if (game == null) return;
         PlayerControllerHuman you = humanController();
@@ -309,11 +313,11 @@ public final class ArcanaForgeHost {
         return JSONObject.NULL;
     }
 
-    private static JSONObject action(String actionType, String description, JSONObject action) {
+    private static JSONObject action(String actionType, String description, JSONObject action) throws Exception {
         return new JSONObject().put("actionType", actionType).put("description", description).put("action", action).put("isAffordable", true);
     }
 
-    private JSONObject state(Game game, Player viewer) {
+    private JSONObject state(Game game, Player viewer) throws Exception {
         PhaseHandler ph = game.getPhaseHandler();
         JSONObject cards = new JSONObject();
         JSONArray zones = new JSONArray();
@@ -350,7 +354,7 @@ public final class ArcanaForgeHost {
                 .put("combat", JSONObject.NULL).put("gameLog", new JSONArray());
     }
 
-    private JSONObject card(Card c, ZoneType z) {
+    private JSONObject card(Card c, ZoneType z) throws Exception {
         JSONArray types = new JSONArray();
         if (c.isLand()) types.put("LAND");
         if (c.isCreature()) types.put("CREATURE");
@@ -416,7 +420,8 @@ public final class ArcanaForgeHost {
     }
 
     private void error(String text) {
-        sink.accept(new JSONObject().put("type", "error").put("code", "FORGE_HOST").put("message", text));
+        try { sink.accept(new JSONObject().put("type", "error").put("code", "FORGE_HOST").put("message", text)); }
+        catch (Exception ignored) { }
     }
 
     // ---------------------------------------------------------------- Forge GUI stand-ins
