@@ -553,7 +553,8 @@ public final class ArcanaForgeHost {
     private record Decision(String id, JSONObject json, Map<String, Object> objects, java.util.function.Consumer<JSONObject> onAnswer) { }
 
     private volatile Decision pending;
-    private final java.util.concurrent.SynchronousQueue<JSONObject> answers = new java.util.concurrent.SynchronousQueue<>();
+    // Buffered: a SynchronousQueue dropped an answer that arrived before Forge's thread reached take().
+    private final java.util.concurrent.LinkedBlockingQueue<JSONObject> answers = new java.util.concurrent.LinkedBlockingQueue<>();
     private final java.util.concurrent.atomic.AtomicInteger decisionSeq = new java.util.concurrent.atomic.AtomicInteger();
     private final java.util.Set<String> noticed = java.util.concurrent.ConcurrentHashMap.newKeySet();
 
@@ -565,6 +566,7 @@ public final class ArcanaForgeHost {
 
     /** Shows the decision and, for GUI calls, blocks Forge's game thread until the player answers (as desktop Forge does). */
     private JSONObject ask(JSONObject json, Map<String, Object> objects) throws Exception {
+        answers.clear();
         pending = new Decision(json.getString("id"), json, objects, null);
         emitDecision();
         try { return answers.take(); } finally { pending = null; }
