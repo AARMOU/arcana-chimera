@@ -84,7 +84,13 @@ public final class PromptScenarios {
 
         void send(JSONObject action) throws Exception { host.handle(new JSONObject().put("type", "submitAction").put("action", action)); }
 
+        /** Decisions already answered: the host re-sends an open decision, so a queued copy can arrive after the answer. */
+        final java.util.Set<String> answered = new java.util.HashSet<>();
+
+        boolean fresh(JSONObject d) { return d != null && !answered.contains(d.optString("id")); }
+
         void answer(JSONObject decision, JSONObject response) throws Exception {
+            answered.add(decision.getString("id"));
             System.out.println("  decision " + decision.optString("type") + ": " + decision.optString("prompt") + " -> " + response);
             send(new JSONObject().put("type", "SubmitDecision").put("playerId", ArcanaForgeHost.HUMAN_ID)
                     .put("response", response.put("decisionId", decision.getString("id"))));
@@ -143,6 +149,7 @@ public final class PromptScenarios {
                 JSONObject m = s.next(90);
                 if (!interactive(m) || !hasCard(m, "Ghalta, Stampede Tyrant")) continue; // wait for the new board
                 JSONObject d = m.optJSONObject("pendingDecision");
+                if (d != null && !s.fresh(d)) continue; // a re-sent copy of a decision already answered
                 if (d != null) {
                     switch (d.optString("type")) {
                         case "SelectCardsDecision" -> { // which creatures to put onto the battlefield: all of them
@@ -201,7 +208,7 @@ public final class PromptScenarios {
             while (true) {
                 JSONObject m = s.next(30);
                 JSONObject d = m.optJSONObject("pendingDecision");
-                if (d != null && d.optString("type").equals("OrderObjectsDecision")) {
+                if (s.fresh(d) && d.optString("type").equals("OrderObjectsDecision")) {
                     JSONArray objs = d.getJSONArray("objects");
                     s.answer(d, new JSONObject().put("type", "OrderedResponse").put("orderedObjects", new JSONArray().put(objs.get(1)).put(objs.get(0))));
                     break;
@@ -226,7 +233,7 @@ public final class PromptScenarios {
         while (true) {
             JSONObject m = s.next(30);
             JSONObject d = m.optJSONObject("pendingDecision");
-            if (d != null && d.optString("type").equals("OrderObjectsDecision")) {
+            if (s.fresh(d) && d.optString("type").equals("OrderObjectsDecision")) {
                 JSONArray objs = d.getJSONArray("objects"), rev = new JSONArray();
                 for (int i = objs.length() - 1; i >= 0; i--) rev.put(objs.get(i));
                 s.answer(d, new JSONObject().put("type", "OrderedResponse").put("orderedObjects", rev));
@@ -258,6 +265,7 @@ public final class PromptScenarios {
                 JSONObject m = s.next(90);
                 if (!interactive(m) || !hasCard(m, "Prized Unicorn") && first == null) continue; // wait for the new board
                 JSONObject d = m.optJSONObject("pendingDecision");
+                if (d != null && !s.fresh(d)) continue; // a re-sent copy of a decision already answered
                 if (d != null) {
                     switch (d.optString("type")) {
                         case "AssignDamageDecision" -> {
