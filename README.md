@@ -1,5 +1,7 @@
 # Project Chimera 🧪
 
+> **Workers: start with [docs/TESTING.md](docs/TESTING.md).** It lists every test of the Arcana ↔ Forge bridge (including the random-play soak test), how to run and replay them, and the rules for changes. The current work is the Forge brain transplant, draft PR #16.
+
 **Independent Forge-versus-Argentum research experiment.** This is an evaluation harness, **not** an Android app or a working Forge port.
 
 ## Objective

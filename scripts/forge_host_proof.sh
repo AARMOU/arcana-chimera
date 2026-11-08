@@ -46,3 +46,8 @@ echo "Arcana decks at $ARCANA_SHA: $(wc -l < "$ADECKS/names.txt") distinct card 
 timeout 1500s java -Xmx6g -Djava.awt.headless=true -cp "$OUT/classes:$CP" \
   org.arcanachimera.forgehost.AllCardsCheck "$FORGE/forge-gui/" "@$ADECKS/names.txt" \
   # now a gate: every Forge card must build and every bundled deck card must resolve
+# SOAK: random play through the real bridge, whole games on Arcana's bundled decks (docs/TESTING.md).
+# Fixed seeds on every push so a failure is repeatable; the "Soak test" workflow runs more games on demand.
+timeout 1500s java -Xmx4g -Djava.awt.headless=true -cp "$OUT/classes:$CP" \
+  org.arcanachimera.forgehost.SoakTest "$FORGE/forge-gui/" "$ADECKS/repo/android/app/src/main/assets" \
+  games="${SOAK_GAMES:-6}" seed="${SOAK_SEED:-1}" turns="${SOAK_TURNS:-12}" players="${SOAK_PLAYERS:-2-4}" ai="${SOAK_AI:-OFF}"

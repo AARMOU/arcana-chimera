@@ -1,7 +1,13 @@
 name: Forge host proof (milestone 1)
 # Owner (Nov 7, 2026): run on Claude B's draft PR pushes. Free standard runner, no artifacts uploaded.
 on:
-  workflow_dispatch:
+  workflow_dispatch: # also the on-demand soak run: Actions → this workflow → Run workflow (docs/TESTING.md)
+    inputs:
+      soak_games: { description: 'Soak: number of games', default: '6' }
+      soak_seed: { description: 'Soak: first seed (a failure prints its seed; games=1 replays it)', default: '1' }
+      soak_turns: { description: 'Soak: turn limit per game', default: '12' }
+      soak_players: { description: 'Soak: seats, e.g. 2-4 or 4', default: '2-4' }
+      soak_ai: { description: 'Soak: Forge AI strength OFF/LITE/MAX', default: 'OFF' }
   pull_request:
     paths:
       - 'forge-host/**'
@@ -12,7 +18,7 @@ permissions:
 jobs:
   proof:
     runs-on: ubuntu-24.04
-    timeout-minutes: 45
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
@@ -21,3 +27,9 @@ jobs:
           java-version: '17'
       - name: Build Forge + forge-host, play one turn through Argentum-shaped messages
         run: bash scripts/forge_host_proof.sh
+        env:
+          SOAK_GAMES: ${{ inputs.soak_games || '6' }}
+          SOAK_SEED: ${{ inputs.soak_seed || '1' }}
+          SOAK_TURNS: ${{ inputs.soak_turns || '12' }}
+          SOAK_PLAYERS: ${{ inputs.soak_players || '2-4' }}
+          SOAK_AI: ${{ inputs.soak_ai || 'OFF' }}
