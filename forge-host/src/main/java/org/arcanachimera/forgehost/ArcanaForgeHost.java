@@ -265,12 +265,14 @@ public final class ArcanaForgeHost {
             }
             if (kind.equals("InputConfirmMulligan")) {
                 lastPrompted = input; mulligans = mulligans < 0 ? 0 : mulligans;
+                sink.accept(passiveUpdate(game, you));
                 sink.accept(handMessage("mulliganDecision", you.getPlayer()).put("mulliganCount", mulligans)
                         .put("cardsToPutOnBottom", 0).put("isOnThePlay", true));
                 return;
             }
             if (kind.equals("InputLondonMulligan")) {
                 lastPrompted = input;
+                sink.accept(passiveUpdate(game, you));
                 sink.accept(handMessage("chooseBottomCards", you.getPlayer()).put("cardsToPutOnBottom", intField(input, "toReturn")));
                 return;
             }
@@ -317,11 +319,18 @@ public final class ArcanaForgeHost {
                 .put("interactive", priority)
                 .put("interactionEpoch", "forge-" + version)
                 .put("forgeInput", input == null ? "none" : input.getClass().getSimpleName());
-        sink.accept(update);
+        sink.accept(fill(update, "top"));
         if (game.isGameOver() && !gameOverSent) {
             gameOverSent = true;
             sink.accept(new JSONObject().put("type", "gameOver").put("winnerId", winnerId(game)).put("reason", "GAME_OVER"));
         }
+    }
+
+    /** A state with nothing to do yet (Argentum sends one before each mulligan prompt). */
+    private JSONObject passiveUpdate(Game game, PlayerControllerHuman you) throws Exception {
+        return fill(new JSONObject().put("type", "stateUpdate").put("state", state(game, you.getPlayer()))
+                .put("legalActions", new JSONArray()).put("pendingDecision", JSONObject.NULL).put("stateVersion", ++version)
+                .put("interactive", false).put("interactionEpoch", "forge-" + version).put("priorityMode", "auto"), "top");
     }
 
     private Object winnerId(Game game) {
@@ -348,27 +357,30 @@ public final class ArcanaForgeHost {
                 zones.put(new JSONObject().put("zoneId", new JSONObject().put("zoneType", zoneName(z)).put("ownerId", pid))
                         .put("cardIds", ids).put("size", in.size()).put("isVisible", visible).put("positions", JSONObject.NULL));
             }
-            players.put(new JSONObject().put("playerId", pid).put("name", p.getName()).put("life", p.getLife())
+            players.put(fillPlayer(new JSONObject().put("playerId", pid).put("name", p.getName()).put("life", p.getLife())
                     .put("handSize", p.getCardsIn(ZoneType.Hand).size()).put("librarySize", p.getCardsIn(ZoneType.Library).size())
                     .put("graveyardSize", p.getCardsIn(ZoneType.Graveyard).size()).put("exileSize", p.getCardsIn(ZoneType.Exile).size())
                     .put("landsPlayedThisTurn", p.getLandsPlayedThisTurn()).put("hasLost", p.hasLost()).put("poisonCounters", p.getPoisonCounters())
                     .put("maxHandSize", p.getMaxHandSize()).put("commanderDamage", new JSONArray()).put("activeEffects", new JSONArray())
-                    .put("manaPool", new JSONObject().put("white", 0).put("blue", 0).put("black", 0).put("red", 0).put("green", 0).put("colorless", 0).put("restrictedMana", new JSONArray())));
+                    .put("manaPool", new JSONObject().put("white", 0).put("blue", 0).put("black", 0).put("red", 0).put("green", 0).put("colorless", 0).put("restrictedMana", new JSONArray()))));
         }
         JSONArray stack = new JSONArray();
         for (Card c : game.getCardsIn(ZoneType.Stack)) { stack.put(cardId(c)); cards.put(cardId(c), card(c, ZoneType.Stack)); }
         zones.put(new JSONObject().put("zoneId", new JSONObject().put("zoneType", "Stack").put("ownerId", JSONObject.NULL))
                 .put("cardIds", stack).put("size", stack.length()).put("isVisible", true).put("positions", JSONObject.NULL));
         PhaseType phase = ph.getPhase();
-        return new JSONObject()
+        return fill(new JSONObject()
+                .put("deck", new JSONArray())
                 .put("viewingPlayerId", viewer == null ? JSONObject.NULL : playerId(viewer))
                 .put("cards", cards).put("zones", zones).put("players", players)
                 .put("currentPhase", phaseName(phase)).put("currentStep", stepName(phase))
                 .put("activePlayerId", ph.getPlayerTurn() == null ? JSONObject.NULL : playerId(ph.getPlayerTurn()))
                 .put("priorityPlayerId", ph.getPriorityPlayer() == null ? JSONObject.NULL : playerId(ph.getPriorityPlayer()))
                 .put("turnNumber", ph.getTurn()).put("isGameOver", game.isGameOver()).put("winnerId", game.isGameOver() ? winnerId(game) : JSONObject.NULL)
-                .put("combat", JSONObject.NULL).put("gameLog", new JSONArray());
+                .put("combat", JSONObject.NULL).put("gameLog", new JSONArray()), "state");
     }
+
+    private static JSONObject fillPlayer(JSONObject p) throws Exception { return fill(p, "player"); }
 
     private JSONObject card(Card c, ZoneType z) throws Exception {
         JSONArray types = new JSONArray();
@@ -379,7 +391,7 @@ public final class ArcanaForgeHost {
         if (c.isPlaneswalker()) types.put("PLANESWALKER");
         if (c.isInstant()) types.put("INSTANT");
         if (c.isSorcery()) types.put("SORCERY");
-        return new JSONObject().put("id", cardId(c)).put("name", c.getName())
+        JSONObject card = new JSONObject().put("id", cardId(c)).put("name", c.getName())
                 .put("manaCost", c.getManaCost() == null ? "" : c.getManaCost().getShortString()).put("manaValue", c.getCMC())
                 .put("typeLine", c.getType().toString()).put("cardTypes", types).put("subtypes", new JSONArray(new ArrayList<>(c.getType().getSubtypes())))
                 .put("colors", new JSONArray()).put("oracleText", c.getOracleText())
@@ -389,6 +401,7 @@ public final class ArcanaForgeHost {
                 .put("zone", new JSONObject().put("zoneType", zoneName(z)).put("ownerId", playerId(c.getOwner())))
                 .put("keywords", new JSONArray()).put("counters", new JSONObject()).put("attachments", new JSONArray()).put("targets", new JSONArray())
                 .put("isAttacking", false).put("isBlocking", false);
+        return fill(card, "card");
     }
 
     // ---------------------------------------------------------------- naming
@@ -433,6 +446,25 @@ public final class ArcanaForgeHost {
             case "UNTAP", "UPKEEP", "DRAW" -> "BEGINNING"; case "PRECOMBAT_MAIN" -> "PRECOMBAT_MAIN"; case "POSTCOMBAT_MAIN" -> "POSTCOMBAT_MAIN";
             case "END", "CLEANUP" -> "ENDING"; default -> "COMBAT";
         };
+    }
+
+    /** Every field Argentum's stateUpdate carries (neutral values), taken from a real Argentum message, so Arcana's parser finds them all. */
+    private static final String ARGENTUM_DEFAULTS = "{\"card\":{\"classMaxLevel\":null,\"isLandscapeFace\":false,\"attackingTarget\":null,\"ownerId\":null,\"subtypes\":[],\"manaPaidCost\":null,\"perModeTargets\":[],\"wasBlightPaid\":false,\"id\":null,\"toughness\":0,\"backFacePower\":null,\"isAttacking\":false,\"counters\":{},\"controllerId\":null,\"isDashed\":false,\"saddleRequirement\":null,\"isBlitzed\":false,\"stackText\":null,\"chosenCardName\":null,\"deliriumInfo\":null,\"isExerted\":false,\"isWarped\":false,\"damage\":null,\"attachments\":[],\"isTransformed\":false,\"optionalCostLabel\":null,\"classLevel\":null,\"targets\":[],\"colors\":[],\"basePower\":0,\"playableFromExile\":false,\"castFaceIndex\":null,\"power\":0,\"faceDownMode\":null,\"chosenCreatureType\":null,\"isBlocking\":false,\"oracleText\":null,\"hexproofFromMonocolored\":false,\"isSaddled\":false,\"sacrificedCreatureTypes\":null,\"backFaceToughness\":null,\"protections\":[],\"copyOf\":null,\"abilityFlags\":[],\"hasSummoningSickness\":false,\"chosenModeDescriptions\":[],\"revealedName\":null,\"isSolved\":false,\"grantedSubtypes\":[],\"chosenCardType\":null,\"cardFaces\":[],\"grantedColors\":[],\"protectorId\":null,\"evoke\":null,\"activeEffects\":[],\"nonLegendaryCopy\":false,\"backFaceKeywords\":[],\"keywords\":[],\"cardTypes\":[],\"rulings\":[],\"damageDistribution\":null,\"isRingBearer\":false,\"isRoom\":false,\"isToken\":false,\"backFaceName\":null,\"zone\":{},\"blockingTarget\":null,\"chosenColor\":null,\"isPreparedSpell\":false,\"hexproofFromColors\":[],\"isFaceDown\":false,\"sourceZone\":null,\"copyOfImageUri\":null,\"grantedCardTypes\":[],\"morphCost\":null,\"impending\":null,\"name\":null,\"manaValue\":0,\"currentFace\":null,\"isMonstrous\":false,\"isPlotted\":false,\"backFaceOracleText\":null,\"castProvenanceLabel\":null,\"isCommander\":false,\"attachedTo\":null,\"bestow\":null,\"revealedImageUri\":null,\"imageUri\":null,\"isDoubleFaced\":false,\"isParadigm\":false,\"backFaceImageUri\":null,\"copyIndex\":null,\"abilityIdentity\":null,\"mutate\":null,\"typeLine\":null,\"isSuspected\":false,\"isSuspended\":false,\"isPhasedOut\":false,\"pairedWithId\":null,\"linkedExile\":[],\"isRenowned\":false,\"costSacrificeLabel\":null,\"legendaryByEffect\":false,\"copyTotal\":null,\"baseToughness\":0,\"thresholdInfo\":null,\"imageRotation\":0,\"backFaceIsLandscape\":false,\"isPrepared\":false,\"chosenX\":null,\"giftPromised\":false,\"sagaTotalChapters\":null,\"planeswalkerAbilities\":null,\"backFaceTypeLine\":null,\"chosenMode\":null,\"manaCost\":null,\"isTapped\":false,\"hexproofFromMulticolored\":false,\"triggeringEntityId\":null},\"player\":{\"experienceCounters\":0,\"poisonCounters\":0,\"landsPlayedThisTurn\":0,\"handSize\":0,\"exileSize\":0,\"manaPool\":{\"white\":0,\"blue\":0,\"black\":0,\"red\":0,\"green\":0,\"colorless\":0,\"restrictedMana\":[]},\"life\":0,\"speed\":0,\"manaPaymentColors\":{},\"graveyardSize\":0,\"energyCounters\":0,\"commanderDamage\":[],\"completedDungeons\":[],\"hasLost\":false,\"companionId\":null,\"playerId\":null,\"maxHandSize\":0,\"teamSharedTurns\":false,\"teamSharedLife\":false,\"dungeon\":null,\"librarySize\":0,\"name\":null,\"radCounters\":0,\"teamIndex\":null,\"activeEffects\":[]},\"state\":{\"gameLog\":[],\"youAreHijacking\":null,\"youAreHijackedBy\":null,\"combat\":null,\"currentStep\":null,\"isGameOver\":false,\"roundNumber\":0,\"priorityPlayerId\":null,\"dayNight\":null,\"currentPhase\":null,\"winnerId\":null,\"attackMode\":null,\"hotseat\":false,\"turnNumber\":0,\"activePlayerId\":null,\"viewingPlayerId\":null,\"activeYields\":[],\"voidActive\":false},\"top\":{\"stopOverrides\":null,\"pendingDecision\":null,\"priorityMode\":null,\"interactionEpoch\":null,\"legalActions\":[],\"opponentDecisionStatus\":null,\"type\":null,\"undoAvailable\":false,\"events\":[],\"nextStopPoint\":null,\"stateVersion\":0}}";
+    private static JSONObject defaults;
+
+    private static JSONObject defaults(String part) throws Exception {
+        if (defaults == null) defaults = new JSONObject(ARGENTUM_DEFAULTS);
+        return defaults.getJSONObject(part);
+    }
+
+    private static JSONObject fill(JSONObject target, String part) throws Exception {
+        JSONObject d = defaults(part);
+        java.util.Iterator<String> keys = d.keys();
+        while (keys.hasNext()) {
+            String k = keys.next();
+            if (!target.has(k)) target.put(k, d.isNull(k) ? JSONObject.NULL : d.get(k));
+        }
+        return target;
     }
 
     /** Exception with its root cause and first frames, for Arcana's diagnostic report. */
