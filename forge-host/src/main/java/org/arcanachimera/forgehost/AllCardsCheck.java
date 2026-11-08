@@ -57,9 +57,9 @@ public final class AllCardsCheck {
         for (int i = 1; i < args.length; i++) {
             String name = args[i].trim();
             if (name.isEmpty()) continue;
-            boolean found = StaticData.instance().getCommonCards().getCard(name) != null
-                    || StaticData.instance().getVariantCards().getCard(name) != null;
-            System.out.println("ALLCARDS LOOKUP " + name + " -> " + (found ? "in Forge" : "NOT in Forge"));
+            PaperCard pc = ArcanaForgeHost.resolveCard(name); // the host's own lookup, as a game would use it
+            boolean found = pc != null;
+            System.out.println("ALLCARDS LOOKUP " + name + " -> " + (found ? "in Forge as " + pc.getName() : "NOT in Forge"));
             if (!found) missing.add(name);
         }
         boolean ok = failed.isEmpty() && missing.isEmpty();

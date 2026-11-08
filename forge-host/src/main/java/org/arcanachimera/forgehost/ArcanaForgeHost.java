@@ -118,6 +118,7 @@ public final class ArcanaForgeHost {
                 started.put(new JSONObject().put("playerId", seatId(i)).put("isYou", i == 0));
             }
             if (!unknownCards.isEmpty()) error("Forge doesn't have " + unknownCards.size() + " card(s), left out: " + String.join(", ", unknownCards));
+            if (!aliasedCards.isEmpty()) System.out.println("Forge matched card names: " + String.join("; ", aliasedCards));
             match = GuiBase.getInterface().hostMatch();
             sink.accept(new JSONObject().put("type", "quickGameLobbyState").put("lobbyId", "offline").put("youPlayerId", HUMAN_ID)
                     .put("vsAi", true).put("players", lobby));
@@ -168,12 +169,72 @@ public final class ArcanaForgeHost {
     /** Cards Forge doesn't know, left out of the last game's decks (reported to the player). */
     public final List<String> unknownCards = new ArrayList<>();
 
+    public final List<String> aliasedCards = new ArrayList<>();
+
+    /**
+     * Forge's card for a deck name. Exact name, then the front face of "A // B", then a unique Forge card whose
+     * name ends with this one (Arcana's lists say "Middle School" for Forge's "Vault 75: Middle School").
+     */
+    public static PaperCard resolveCard(String card) {
+        forge.card.CardDb db = FModel.getMagicDb().getCommonCards();
+        PaperCard pc = db.getCard(card);
+        if (pc == null && card.contains(" // ")) pc = db.getCard(card.substring(0, card.indexOf(" // ")));
+        if (pc != null) return pc;
+        String k = cardKey(card);
+        if (k.isEmpty()) return null;
+        List<String> hits = new ArrayList<>();
+        for (String x : cardKeys()) if (x.endsWith("_" + k)) hits.add(x);
+        if (hits.size() != 1) return null;
+        String hit = hits.get(0);
+        FModel.getMagicDb().attemptToLoadCard(hit); // lazy mode: the key is its own transformed name
+        for (PaperCard u : db.getUniqueCards()) if (cardKey(u.getName()).equals(hit)) return u;
+        return null;
+    }
+
+    private static volatile java.util.Set<String> cardKeys;
+
+    /** Forge's card-file keys (lazy mode keeps an index of all of them), or every loaded card's key. */
+    @SuppressWarnings("unchecked")
+    private static java.util.Set<String> cardKeys() {
+        java.util.Set<String> keys = cardKeys;
+        if (keys != null) return keys;
+        keys = new java.util.HashSet<>();
+        try {
+            Object reader = field(FModel.getMagicDb(), "cardReader");
+            for (String f : new String[]{"zipEntriesByCardName", "cardFilesByCardName"}) {
+                Object m = field(reader, f);
+                if (m instanceof Map<?, ?> map) for (Object x : map.keySet()) keys.add(String.valueOf(x));
+            }
+        } catch (Exception ignored) { }
+        if (keys.isEmpty()) for (PaperCard u : FModel.getMagicDb().getCommonCards().getUniqueCards()) keys.add(cardKey(u.getName()));
+        return cardKeys = keys;
+    }
+
+    /** Forge's card-file name rule (CardStorageReader.transformName). */
+    static String cardKey(String name) {
+        String n = java.text.Normalizer.normalize(name, java.text.Normalizer.Form.NFD).replaceAll("\\p{M}", "");
+        StringBuilder b = new StringBuilder();
+        for (int i = 0; i < n.length(); i++) {
+            char c = Character.toLowerCase(n.charAt(i));
+            if (c == '\'') continue;
+            if ((c < 'a' || c > 'z') && (c < '0' || c > '9')) {
+                if (b.length() > 0 && b.charAt(b.length() - 1) == '_') continue;
+                if (c == ',' && b.length() > 0) continue;
+                c = '_';
+            }
+            b.append(c);
+        }
+        int end = b.length();
+        if (end > 0 && b.charAt(end - 1) == '_') end--;
+        return b.substring(0, end);
+    }
+
     private Deck deck(String name, Map<String, Integer> cards) {
         Deck d = new Deck(name);
         cards.forEach((card, n) -> {
-            PaperCard pc = FModel.getMagicDb().getCommonCards().getCard(card);
-            if (pc == null && card.contains(" // ")) pc = FModel.getMagicDb().getCommonCards().getCard(card.substring(0, card.indexOf(" // ")));
+            PaperCard pc = resolveCard(card);
             if (pc == null) { unknownCards.add(card); return; }
+            if (!pc.getName().equalsIgnoreCase(card)) aliasedCards.add(card + " → " + pc.getName());
             d.getMain().add(pc, n);
         });
         return d;
