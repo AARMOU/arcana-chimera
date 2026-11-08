@@ -1,0 +1,55 @@
+#!/usr/bin/env bash
+# Builds Arcana's real app with Forge as its rules engine (Chimera overlay), as a debug APK.
+# Arcana source is staged read-only from a pinned public commit into ignored third_party/; nothing is pushed to Arcana.
+set -euo pipefail
+ARCANA_SHA="${ARCANA_SHA:-12728c46ea18e0a117babb1ea5b8da7b55bbf8b9}"
+FORGE_SHA="${FORGE_SHA:-7c34365c749ca46ab71336c5f267340d6088e600}"
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+WORK="$ROOT/third_party"; mkdir -p "$WORK"
+ARCANA="$WORK/arcana"; FORGE="$WORK/forge"
+[ -d "$ARCANA/.git" ] || git clone --quiet --filter=blob:none --no-checkout https://github.com/AARMOU/arcana_table.git "$ARCANA"
+git -C "$ARCANA" checkout --quiet --detach "$ARCANA_SHA"
+[ -d "$FORGE/.git" ] || git clone --quiet --filter=blob:none --no-checkout https://github.com/Card-Forge/forge.git "$FORGE"
+git -C "$FORGE" checkout --quiet --detach "$FORGE_SHA"
+
+echo "== Forge libraries"
+LIBS="$WORK/forge-libs"; rm -rf "$LIBS"; mkdir -p "$LIBS"
+(cd "$FORGE" && mvn -B -q -pl forge-gui -am package dependency:copy-dependencies -DskipTests -DincludeScope=runtime -DoutputDirectory="$LIBS")
+cp "$FORGE"/forge-gui/target/forge-gui-*.jar "$LIBS"/
+rm -f "$LIBS"/*-sources.jar "$LIBS"/*-tests.jar "$LIBS"/json-*.jar   # Android ships org.json
+ls -1 "$LIBS"; du -sh "$LIBS"
+
+echo "== Forge data (card scripts as one zip Forge reads directly)"
+DATA="$WORK/forge-data"; rm -rf "$DATA"; mkdir -p "$DATA/res/cardsfolder"
+RES="$FORGE/forge-gui/res"
+du -sh "$RES"/* | sort -h | tail -15
+rsync -a --exclude cardsfolder --exclude adventure --exclude skins --exclude sound --exclude music \
+  --exclude puzzle --exclude quest --exclude conquest --exclude 'planechase' --exclude images "$RES"/ "$DATA/res"/
+(cd "$RES/cardsfolder" && zip -q -r -9 "$DATA/res/cardsfolder/cardsfolder.zip" . -x 'cardsfolder.zip')
+(cd "$DATA" && rm -f "$WORK/forge-res.zip" && zip -q -r -1 "$WORK/forge-res.zip" res)
+du -sh "$DATA/res" "$WORK/forge-res.zip"
+
+echo "== Overlay onto Arcana"
+APP="$ARCANA/android/app"
+cp "$ROOT/arcana-overlay/app/src/main/java/com/arcanatable/engine/LocalArgentumHost.kt" "$APP/src/main/java/com/arcanatable/engine/LocalArgentumHost.kt"
+mkdir -p "$APP/src/main/java/org/arcanachimera/forgehost" "$APP/libs/forge" "$APP/src/main/assets"
+cp "$ROOT/forge-host/src/main/java/org/arcanachimera/forgehost/ArcanaForgeHost.java" "$APP/src/main/java/org/arcanachimera/forgehost/"
+cp "$LIBS"/*.jar "$APP/libs/forge/"
+cp "$WORK/forge-res.zip" "$APP/src/main/assets/forge-res.zip"
+grep -q 'android:largeHeap' "$APP/src/main/AndroidManifest.xml" || sed -i 's/<application/<application android:largeHeap="true"/' "$APP/src/main/AndroidManifest.xml"
+cat >> "$APP/build.gradle.kts" <<'GRADLE'
+
+// CHIMERA OVERLAY: Forge replaces Argentum as the rules engine; installs beside real Arcana.
+android {
+    defaultConfig { applicationId = "org.arcanachimera.arcanaforge" }
+    packaging { resources { excludes += setOf("META-INF/*", "**/module-info.class") } }
+}
+dependencies { implementation(fileTree(mapOf("dir" to "libs/forge", "include" to listOf("*.jar")))) }
+GRADLE
+
+echo "== Build"
+echo "sdk.dir=${ANDROID_HOME:-/usr/local/lib/android/sdk}" > "$ARCANA/android/local.properties"
+(cd "$ARCANA/android" && ./gradlew --no-daemon --max-workers=2 :custom-cards:exportCards :app:assembleDebug)
+APK="$(ls "$APP"/build/outputs/apk/debug/*.apk | head -1)"
+ls -la "$APK"
+echo "APK=$APK" >> "${GITHUB_ENV:-/dev/null}"

@@ -78,11 +78,58 @@ public final class ArcanaForgeHost {
 
     /** Loads Forge's card database once. {@code assetsDir} is the folder holding Forge's {@code res/}. */
     private static boolean forgeLoaded;
+    /** Set true on Android before {@link #initForge}. */
+    public static volatile boolean lazyCards;
+
+    /** One seat: a name, its deck as card names, and an optional commander. */
+    public record Seat(String name, List<String> deck, String commander) { }
+
+    private final java.util.IdentityHashMap<RegisteredPlayer, String> seatIds = new java.util.IdentityHashMap<>();
+    private List<Seat> pendingSeats;
+    private java.util.function.Supplier<String> assetsDir;
+
+    /** Arcana-style setup: seats[0] is you, the rest are Forge AIs. The game starts on "createQuickGameLobby". */
+    public void prepare(List<Seat> seats, java.util.function.Supplier<String> forgeAssetsDir) { this.pendingSeats = seats; this.assetsDir = forgeAssetsDir; }
+
+    private static String seatId(int i) { return i == 0 ? HUMAN_ID : i == 1 ? AI_ID : AI_ID + "-" + i; }
+
+    private void startPrepared() {
+        try {
+            initForge(assetsDir.get(), this);
+            boolean commander = pendingSeats.stream().allMatch(x -> x.commander() != null && !x.commander().isEmpty());
+            List<RegisteredPlayer> players = new ArrayList<>();
+            JSONArray lobby = new JSONArray(), started = new JSONArray();
+            for (int i = 0; i < pendingSeats.size(); i++) {
+                Seat seat = pendingSeats.get(i);
+                Map<String, Integer> counts = new LinkedHashMap<>();
+                for (String c : seat.deck()) counts.merge(c, 1, Integer::sum);
+                Deck d = deck(seat.name(), counts);
+                if (commander) d.getOrCreate(forge.deck.DeckSection.Commander).add(card(seat.commander()), 1);
+                RegisteredPlayer rp = commander ? RegisteredPlayer.forCommander(d) : new RegisteredPlayer(d);
+                rp.setPlayer(i == 0 ? GamePlayerUtil.getGuiPlayer() : GamePlayerUtil.createAiPlayer(seat.name(), i));
+                seatIds.put(rp, seatId(i));
+                players.add(rp);
+                lobby.put(new JSONObject().put("playerId", seatId(i)).put("name", seat.name()));
+                started.put(new JSONObject().put("playerId", seatId(i)).put("isYou", i == 0));
+            }
+            match = GuiBase.getInterface().hostMatch();
+            sink.accept(new JSONObject().put("type", "quickGameLobbyState").put("lobbyId", "offline").put("youPlayerId", HUMAN_ID)
+                    .put("vsAi", true).put("players", lobby));
+            sink.accept(new JSONObject().put("type", "gameStarted").put("players", started));
+            match.startMatch(new GameRules(commander ? GameType.Commander : GameType.Constructed), null, players, players.get(0), guiGame());
+        } catch (Throwable t) {
+            error("Forge could not start the game: " + t);
+            t.printStackTrace();
+        }
+    }
 
     public static synchronized void initForge(String assetsDir, ArcanaForgeHost owner) {
         if (forgeLoaded) return;
         GuiBase.setInterface(owner.guiBase(assetsDir));
-        FModel.initialize(null, null);
+        FModel.initialize(null, prefs -> { // phones: parse card scripts on demand instead of all ~30k at start
+            prefs.setPref(forge.localinstance.properties.ForgePreferences.FPref.LOAD_CARD_SCRIPTS_LAZILY, lazyCards);
+            return null;
+        });
         forgeLoaded = true;
     }
 
@@ -100,6 +147,12 @@ public final class ArcanaForgeHost {
         match.startMatch(new GameRules(GameType.Constructed), null, players, you, guiGame());
     }
 
+    private static PaperCard card(String name) {
+        PaperCard pc = FModel.getMagicDb().getCommonCards().getCard(name);
+        if (pc == null) throw new IllegalArgumentException("Forge has no card named " + name);
+        return pc;
+    }
+
     private static Deck deck(String name, Map<String, Integer> cards) {
         Deck d = new Deck(name);
         cards.forEach((card, n) -> {
@@ -113,6 +166,10 @@ public final class ArcanaForgeHost {
     // ---------------------------------------------------------------- messages from the UI
 
     public void handle(JSONObject message) {
+        String t = message.optString("type");
+        if (t.equals("connect")) { sink.accept(new JSONObject().put("type", "connected").put("playerId", HUMAN_ID).put("token", "offline")); return; }
+        if (t.equals("ping")) { sink.accept(new JSONObject().put("type", "pong")); return; }
+        if (t.equals("createQuickGameLobby") && match == null && pendingSeats != null) { new Thread(this::startPrepared, "forge-start").start(); return; }
         PlayerControllerHuman you = humanController();
         if (you == null) return;
         switch (message.optString("type")) {
@@ -324,7 +381,9 @@ public final class ArcanaForgeHost {
     }
 
     private String playerId(Player p) {
-        return p != null && p.getController() instanceof PlayerControllerHuman ? HUMAN_ID : AI_ID;
+        if (p == null) return AI_ID;
+        String id = seatIds.get(p.getRegisteredPlayer());
+        return id != null ? id : p.getController() instanceof PlayerControllerHuman ? HUMAN_ID : AI_ID;
     }
 
     private static String cardId(Card c) { return "f" + c.getId(); }
