@@ -233,7 +233,7 @@ public final class ArcanaForgeHost {
         String type = action.optString("type");
         if (type.equals("PassPriority")) { ok(you); return; }
         SpellAbility sa = offered.get(key(type, action.optString("cardId", action.optString("sourceId")), action.optString("abilityId")));
-        if (sa == null) { error("That action is no longer available."); scheduleEmit(); return; }
+        if (sa == null) { error("You can't do that right now (not enough mana, or it's no longer available)."); scheduleEmit(); return; }
         Input input = you.getInputQueue().getActualInput(you);
         if (input == null || !input.selectAbility(sa)) { error("Forge did not accept " + sa); scheduleEmit(); }
     }
@@ -303,8 +303,9 @@ public final class ArcanaForgeHost {
                         String abilityId = type.equals("ActivateAbility") ? "sa" + sa.getId() : "";
                         JSONObject a = new JSONObject().put("type", type).put("playerId", HUMAN_ID);
                         if (type.equals("ActivateAbility")) a.put("sourceId", cardId).put("abilityId", abilityId); else a.put("cardId", cardId);
-                        offered.put(key(type, cardId, abilityId), sa);
-                        legal.put(action(type, sa.toString(), a));
+                        boolean affordable = sa.isLandAbility() || forge.ai.ComputerUtilMana.canPayManaCost(sa, me, 0, false);
+                        if (affordable) offered.put(key(type, cardId, abilityId), sa);
+                        legal.put(action(type, sa.toString(), a).put("isAffordable", affordable));
                     }
                 }
             }

@@ -56,7 +56,9 @@ public final class OneTurnProof {
                 continue;
             }
             if (active.equals(ArcanaForgeHost.HUMAN_ID) && myFirstTurn < 0) myFirstTurn = turn;
-            if (aiTurnSeen && active.equals(ArcanaForgeHost.HUMAN_ID) && landPlayed && turn > landTurn) {
+            boolean bearsOut = battlefield(s, ArcanaForgeHost.HUMAN_ID).contains("Grizzly Bears");
+            if (creatureCast && !bearsOut && turn > castTurn) { result = "FAIL: cast Grizzly Bears on turn " + castTurn + " but it never reached the battlefield"; break; }
+            if (aiTurnSeen && active.equals(ArcanaForgeHost.HUMAN_ID) && bearsOut && turn > castTurn) {
                 result = "PASS: played a land on turn " + landTurn + (creatureCast ? ", cast Grizzly Bears on turn " + castTurn : "")
                         + ", Forge AI took a turn, priority back on turn " + turn + " (" + step + "); your battlefield "
                         + battlefield(s, ArcanaForgeHost.HUMAN_ID) + ", AI battlefield " + battlefield(s, ArcanaForgeHost.AI_ID);
@@ -66,10 +68,10 @@ public final class OneTurnProof {
             JSONObject choice = find(legal, "PassPriority");
             if (active.equals(ArcanaForgeHost.HUMAN_ID) && step.equals("PRECOMBAT_MAIN")) {
                 JSONObject land = find(legal, "PlayLand");
-                JSONObject spell = find(legal, "CastSpell");
+                JSONObject spell = findAffordable(legal, "CastSpell");
                 if (land != null && player(s, ArcanaForgeHost.HUMAN_ID).optInt("landsPlayedThisTurn") == 0) {
                     choice = land; landPlayed = true; landTurn = turn;
-                } else if (spell != null && !creatureCast && countLands(s, ArcanaForgeHost.HUMAN_ID) >= 2) {
+                } else if (spell != null && !creatureCast && true) {
                     choice = spell; creatureCast = true; castTurn = turn;
                 }
             }
@@ -86,6 +88,14 @@ public final class OneTurnProof {
 
     private static JSONObject find(JSONArray legal, String actionType) {
         for (int i = 0; i < legal.length(); i++) if (legal.getJSONObject(i).optString("actionType").equals(actionType)) return legal.getJSONObject(i);
+        return null;
+    }
+
+    private static JSONObject findAffordable(JSONArray legal, String actionType) {
+        for (int i = 0; i < legal.length(); i++) {
+            JSONObject a = legal.getJSONObject(i);
+            if (a.optString("actionType").equals(actionType) && a.optBoolean("isAffordable", true)) return a;
+        }
         return null;
     }
 
