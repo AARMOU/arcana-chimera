@@ -66,6 +66,7 @@ public final class ArcanaForgeHost {
     private volatile Input lastPrompted;
     private volatile int mulligans = -1;
     private volatile boolean inMulligan;
+    private volatile int chosenAbilityId = -1;
     private int version;
     /** Forge prompts answered with a default instead of the player (milestone 1 gap list). */
     public final List<String> defaultedPrompts = new ArrayList<>();
@@ -224,6 +225,26 @@ public final class ArcanaForgeHost {
                 .put("forgeHandZone", p.getZone(ZoneType.Hand).size()).put("forgeLibrary", p.getCardsIn(ZoneType.Library).size());
     }
 
+    /** For "choose N" prompts (e.g. discard to hand size): pick the first N valid choices so OK is accepted. */
+    private static void autoSelectMinimum(Input input) {
+        Object min = field(input, "min"), choices = field(input, "validChoices");
+        if (!(min instanceof Integer n) || !(choices instanceof Iterable<?> it)) return;
+        int picked = 0;
+        for (Object o : it) {
+            if (picked >= n) break;
+            if (o instanceof Card c && input.selectCard(c, null, null)) picked++;
+        }
+    }
+
+    private static Object field(Object o, String name) {
+        for (Class<?> k = o.getClass(); k != null; k = k.getSuperclass()) {
+            try { java.lang.reflect.Field f = k.getDeclaredField(name); f.setAccessible(true); return f.get(o); }
+            catch (NoSuchFieldException e) { /* keep looking up the hierarchy */ }
+            catch (ReflectiveOperationException e) { return null; }
+        }
+        return null;
+    }
+
     private static int intField(Object o, String name) {
         try { java.lang.reflect.Field f = o.getClass().getDeclaredField(name); f.setAccessible(true); return f.getInt(o); }
         catch (ReflectiveOperationException e) { return 1; }
@@ -234,6 +255,7 @@ public final class ArcanaForgeHost {
         if (type.equals("PassPriority")) { ok(you); return; }
         SpellAbility sa = offered.get(key(type, action.optString("cardId", action.optString("sourceId")), action.optString("abilityId")));
         if (sa == null) { error("You can't do that right now (not enough mana, or it's no longer available)."); scheduleEmit(); return; }
+        chosenAbilityId = sa.getId();
         Input input = you.getInputQueue().getActualInput(you);
         if (input == null || !input.selectAbility(sa)) { error("Forge did not accept " + sa); scheduleEmit(); }
     }
@@ -286,6 +308,7 @@ public final class ArcanaForgeHost {
             // no block, its suggested target) so the game never waits on a prompt the UI can't show yet.
             lastPrompted = input;
             defaultedPrompts.add("auto-answered " + input.getClass().getSimpleName());
+            autoSelectMinimum(input);
             ok(you);
             return;
         }
@@ -499,6 +522,11 @@ public final class ArcanaForgeHost {
                 case "getGameView": return gameView[0];
                 case "showPromptMessage": case "updateButtons": case "finishGame": case "afterGameEnd": scheduleEmit(); return null;
                 case "isUiSetToSkipPhase": return skipPhase((PhaseType) args[1]);
+                case "getAbilityToPlay": { // Forge asks which of the card's abilities: the one the player chose
+                    List<?> views = (List<?>) args[1];
+                    for (Object v : views) if (v instanceof forge.game.spellability.SpellAbilityView sv && sv.getId() == chosenAbilityId) return v;
+                    return views.isEmpty() ? null : views.get(0);
+                }
                 case "awaitInput": ((CountDownLatch) args[0]).await(); return null; // Forge's "wait for the player
                 case "isNetGame": case "isGamePaused": case "isSelecting": case "isLibgdxPort": return false;
                 case "equals": return proxy == args[0];
