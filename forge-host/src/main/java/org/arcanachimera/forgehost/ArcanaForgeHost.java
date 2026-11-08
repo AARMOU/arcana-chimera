@@ -118,13 +118,16 @@ public final class ArcanaForgeHost {
             sink.accept(new JSONObject().put("type", "gameStarted").put("players", started));
             match.startMatch(new GameRules(commander ? GameType.Commander : GameType.Constructed), null, players, players.get(0), guiGame());
         } catch (Throwable t) {
-            error("Forge could not start the game: " + t);
+            error("Forge could not start the game: " + describe(t));
             t.printStackTrace();
         }
     }
 
     public static synchronized void initForge(String assetsDir, ArcanaForgeHost owner) {
         if (forgeLoaded) return;
+        // Forge keeps prefs/caches under user.home; Android has no usable home folder, so use the app's own storage.
+        String home = System.getProperty("user.home");
+        if (home == null || home.isEmpty() || !new java.io.File(home).canWrite()) System.setProperty("user.home", assetsDir);
         GuiBase.setInterface(owner.guiBase(assetsDir));
         FModel.initialize(null, prefs -> { // phones: parse card scripts on demand instead of all ~30k at start
             prefs.setPref(forge.localinstance.properties.ForgePreferences.FPref.LOAD_CARD_SCRIPTS_LAZILY, lazyCards);
@@ -166,7 +169,7 @@ public final class ArcanaForgeHost {
     // ---------------------------------------------------------------- messages from the UI
 
     public void handle(JSONObject message) {
-        try { handleUnsafe(message); } catch (Exception e) { error("Forge host problem: " + e); }
+        try { handleUnsafe(message); } catch (Exception e) { error("Forge host problem: " + describe(e)); }
     }
 
     private void handleUnsafe(JSONObject message) throws Exception {
@@ -238,7 +241,7 @@ public final class ArcanaForgeHost {
     }
 
     private void emitSafely() {
-        try { emit(); } catch (Throwable t) { error("Forge host problem: " + t); t.printStackTrace(); }
+        try { emit(); } catch (Throwable t) { error("Forge host problem: " + describe(t)); t.printStackTrace(); }
     }
 
     private void emit() throws Exception {
@@ -425,6 +428,17 @@ public final class ArcanaForgeHost {
             case "UNTAP", "UPKEEP", "DRAW" -> "BEGINNING"; case "PRECOMBAT_MAIN" -> "PRECOMBAT_MAIN"; case "POSTCOMBAT_MAIN" -> "POSTCOMBAT_MAIN";
             case "END", "CLEANUP" -> "ENDING"; default -> "COMBAT";
         };
+    }
+
+    /** Exception with its root cause and first frames, for Arcana's diagnostic report. */
+    static String describe(Throwable t) {
+        Throwable root = t;
+        while (root.getCause() != null && root.getCause() != root) root = root.getCause();
+        StringBuilder b = new StringBuilder(t.toString());
+        if (root != t) b.append(" | root cause: ").append(root);
+        StackTraceElement[] st = root.getStackTrace();
+        for (int i = 0; i < Math.min(4, st.length); i++) b.append(" | at ").append(st[i]);
+        return b.toString();
     }
 
     private void error(String text) {
