@@ -39,6 +39,9 @@ patch("engine/OfflineGame.kt", [
     # Arcana's card registry still loads what Argentum knows (card display); the rest is Forge-only.
     ("val cards = library.load((supported + aiList + yourCommander + premade.commander + otherLists.flatMap { (d, l) -> l + d.commander }).toSet())",
      "val cards = library.load((supported + aiList + yourCommander + premade.commander + otherLists.flatMap { (d, l) -> l + d.commander }).filter { library.canonical(it) != null }.toSet())"),
+    # Forge plays its own version of every card, so Arcana's "using our own versions" note doesn't apply.
+    ("if (custom.isNotEmpty()) notes += ",
+     "if (false && custom.isNotEmpty()) notes += "),
     ("val ai = LocalSeat(aiName(premade.commander), filled(aiList, library.canonical(premade.commander)!!), library.canonical(premade.commander))",
      "val ai = LocalSeat(aiName(premade.commander), filled(aiList, library.canonical(premade.commander) ?: premade.commander), library.canonical(premade.commander) ?: premade.commander)"),
     ("val extras = otherLists.mapNotNull { (d, list) -> library.canonical(d.commander)?.let { cmd -> LocalSeat(aiName(cmd), filled(list, cmd), cmd) } }",

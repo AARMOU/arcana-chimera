@@ -33,9 +33,9 @@ public final class PromptScenarios {
     public static void main(String[] args) throws Exception {
         forgeDir = args.length > 0 ? args[0] : "../forge-gui/";
         List<String> failures = new ArrayList<>();
-        for (String name : List.of("A-ghalta-order", "B-combat-damage")) {
+        for (String name : List.of("A-ghalta-order", "B-combat-damage", "C-mulligan")) {
             String r;
-            try { r = name.startsWith("A") ? ghalta() : combatDamage(); }
+            try { r = name.startsWith("A") ? ghalta() : name.startsWith("B") ? combatDamage() : mulligan(); }
             catch (Throwable t) { t.printStackTrace(); r = "FAIL: " + t; }
             System.out.println("SCENARIO " + name + " " + r);
             if (!r.startsWith("PASS")) failures.add(name);
@@ -51,14 +51,29 @@ public final class PromptScenarios {
         JSONObject last;
         final List<String> notices = new ArrayList<>();
 
-        Session(String board, String marker) throws Exception {
+        final List<Integer> mulliganOffers = new ArrayList<>();
+        int bottomAsked = -1;
+
+        Session(String board, String marker) throws Exception { this(board, marker, 0); }
+
+        Session(String board, String marker, int mulligansWanted) throws Exception {
             ArcanaForgeHost.initForge(forgeDir, host);
             host.setStartBoardForTest(board);
             Map<String, Integer> forests = new LinkedHashMap<>(); forests.put("Forest", 60);
             new Thread(() -> { try { host.startGame(forests, forests); } catch (Exception e) { e.printStackTrace(); } }, "scenario-start").start();
             while (true) {
                 JSONObject m = next(60);
-                if (m.optString("type").equals("mulliganDecision")) { host.handle(new JSONObject().put("type", "keepHand")); continue; }
+                if (m.optString("type").equals("mulliganDecision")) {
+                    int count = m.optInt("mulliganCount");
+                    mulliganOffers.add(count);
+                    host.handle(new JSONObject().put("type", count < mulligansWanted ? "mulligan" : "keepHand")); continue;
+                }
+                if (m.optString("type").equals("chooseBottomCards")) {
+                    bottomAsked = m.optInt("cardsToPutOnBottom");
+                    JSONArray hand = m.getJSONArray("hand"), pick = new JSONArray();
+                    for (int i = 0; i < bottomAsked && i < hand.length(); i++) pick.put(hand.get(i));
+                    host.handle(new JSONObject().put("type", "chooseBottomCards").put("cardIds", pick)); continue;
+                }
                 if (interactive(m) && hasCard(m, marker)) { pushBack = m; return; } // the scenario board is in place
                 if (interactive(m) && m.optJSONObject("pendingDecision") == null) send(new JSONObject().put("type", "PassPriority").put("playerId", ArcanaForgeHost.HUMAN_ID));
             }
@@ -246,6 +261,24 @@ public final class PromptScenarios {
             return "replacement-order shape returned " + r + " (expected all items reversed in an OrderResult)";
         out.append(", replacement-order shape ok");
         return out.toString();
+    }
+
+    // ------------------------------------------------------------------ C. London mulligan (phone, Nov 8 11:31)
+
+    private static String mulligan() throws Exception {
+        Session s = new Session(null, "Forest", 1);
+        try {
+            JSONObject m = s.next(5);
+            int hand = -1;
+            for (Object o : m.getJSONObject("state").getJSONArray("players")) {
+                JSONObject p = (JSONObject) o;
+                if (p.optString("playerId").equals(ArcanaForgeHost.HUMAN_ID)) hand = p.optInt("handSize");
+            }
+            if (s.mulliganOffers.size() < 2 || s.mulliganOffers.get(1) != 1) return "FAIL: mulligan offers " + s.mulliganOffers + " (expected a second offer with count 1)";
+            if (s.bottomAsked != 1) return "FAIL: asked to put " + s.bottomAsked + " card(s) on the bottom (expected 1)";
+            if (hand != 6 && hand != 7) return "FAIL: hand " + hand + " after one mulligan";
+            return "PASS: mulliganed once (offers " + s.mulliganOffers + "), put 1 on the bottom, playing with " + hand + " cards in hand at v" + m.optInt("stateVersion");
+        } finally { s.close(); }
     }
 
     // ------------------------------------------------------------------ B. multi-block combat damage

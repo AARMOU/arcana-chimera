@@ -55,7 +55,8 @@ class LocalArgentumHost(
         if (from == HUMAN_ID) forge.handle(message)
     }
 
-    fun shutdown() { ForgeGameService.stop(app()); forge.shutdown() }
+    private val stopped = java.util.concurrent.atomic.AtomicBoolean()
+    fun shutdown() { if (stopped.compareAndSet(false, true)) ForgeGameService.stop(app()); forge.shutdown() }
 
     /** Wi-Fi two-person games aren't on Forge yet (later milestone): tell both sides plainly. */
     fun setGuest(seat: LocalSeat, guest: (JSONObject) -> Unit) = setGuest(AI_ID, seat, guest)

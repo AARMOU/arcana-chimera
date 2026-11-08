@@ -41,7 +41,22 @@ class ForgeGameService : Service() {
         private const val CHANNEL = "forge_game"
         private const val ID = 7301
 
-        fun start(context: Context) = runCatching { context.startForegroundService(Intent(context, ForgeGameService::class.java)) }
-        fun stop(context: Context) = runCatching { context.stopService(Intent(context, ForgeGameService::class.java)) }
+        /**
+         * Counted per open game: a new game is created before the old one is shut down, and the old game's stop
+         * must not switch off the new game's protection (phone, Nov 8 11:31: second game lost in the background).
+         */
+        private val openGames = java.util.concurrent.atomic.AtomicInteger()
+
+        fun start(context: Context) {
+            openGames.incrementAndGet()
+            runCatching { context.startForegroundService(Intent(context, ForgeGameService::class.java)) }
+        }
+
+        fun stop(context: Context) {
+            if (openGames.decrementAndGet() <= 0) {
+                openGames.set(0)
+                runCatching { context.stopService(Intent(context, ForgeGameService::class.java)) }
+            }
+        }
     }
 }
