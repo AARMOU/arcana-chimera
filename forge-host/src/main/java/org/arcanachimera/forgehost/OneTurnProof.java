@@ -36,6 +36,10 @@ public final class OneTurnProof {
             String type = m.optString("type");
             if (type.equals("error")) { System.out.println("PROOF host error: " + m.optString("message")); continue; }
             if (type.equals("gameOver")) { result = "FAIL: game ended early " + m; break; }
+            if (type.equals("mulliganDecision")) {
+                System.out.println("PROOF mulligan offer: " + m.getJSONArray("hand").length() + " cards -> keep");
+                host.handle(new JSONObject().put("type", "keepHand")); continue;
+            }
             if (!type.equals("stateUpdate")) { System.out.println("PROOF message " + type); continue; }
             updates++;
             JSONObject s = m.getJSONObject("state");
@@ -74,7 +78,7 @@ public final class OneTurnProof {
             host.handle(new JSONObject().put("type", "submitAction").put("action", choice.getJSONObject("action")));
         }
         System.out.println("PROOF updates received: " + updates);
-        System.out.println("PROOF prompts answered by default (to become player decisions): " + host.defaultedPrompts);
+        System.out.println("PROOF prompts answered by default (to become player decisions): " + new java.util.LinkedHashSet<>(host.defaultedPrompts));
         System.out.println("PROOF RESULT " + result);
         host.shutdown();
         System.exit(result.startsWith("PASS") ? 0 : 1);

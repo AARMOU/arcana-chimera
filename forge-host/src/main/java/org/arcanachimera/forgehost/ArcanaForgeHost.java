@@ -63,6 +63,8 @@ public final class ArcanaForgeHost {
     private volatile HostedMatch match;
     private volatile boolean gameOverSent;
     private volatile Input lastAutoPaid;
+    private volatile Input lastPrompted;
+    private volatile int mulligans = -1;
     private int version;
     /** Forge prompts answered with a default instead of the player (milestone 1 gap list). */
     public final List<String> defaultedPrompts = new ArrayList<>();
@@ -116,11 +118,33 @@ public final class ArcanaForgeHost {
         switch (message.optString("type")) {
             case "submitAction" -> submit(you, message.getJSONObject("action"));
             case "keepHand" -> you.selectButtonOk();
-            case "mulligan" -> you.selectButtonCancel();
+            case "mulligan" -> { mulligans++; you.selectButtonCancel(); }
+            case "chooseBottomCards" -> bottom(you, message.optJSONArray("cardIds"));
             case "concede" -> you.concede();
             case "requestResync" -> scheduleEmit();
             default -> { }
         }
+    }
+
+    private void bottom(PlayerControllerHuman you, JSONArray ids) {
+        Input input = you.getInputQueue().getActualInput(you);
+        if (input == null || ids == null) return;
+        for (int i = 0; i < ids.length(); i++)
+            for (Card c : you.getPlayer().getCardsIn(ZoneType.Hand))
+                if (cardId(c).equals(ids.getString(i))) input.selectCard(c, null, null);
+        you.selectButtonOk();
+    }
+
+    private JSONObject handMessage(String type, Player p) {
+        JSONArray hand = new JSONArray();
+        JSONObject cards = new JSONObject();
+        for (Card c : p.getCardsIn(ZoneType.Hand)) { hand.put(cardId(c)); cards.put(cardId(c), card(c, ZoneType.Hand)); }
+        return new JSONObject().put("type", type).put("hand", hand).put("cards", cards);
+    }
+
+    private static int intField(Object o, String name) {
+        try { java.lang.reflect.Field f = o.getClass().getDeclaredField(name); f.setAccessible(true); return f.getInt(o); }
+        catch (ReflectiveOperationException e) { return 1; }
     }
 
     private void submit(PlayerControllerHuman you, JSONObject action) {
@@ -152,6 +176,23 @@ public final class ArcanaForgeHost {
         if (input instanceof InputPayMana) { // Argentum default: auto-pay; if that can't pay, cancel instead of looping
             if (input != lastAutoPaid) { lastAutoPaid = input; you.selectButtonOk(); } else { you.selectButtonCancel(); error("Not enough mana."); }
             return;
+        }
+        if (input != null && input != lastPrompted) {
+            String kind = input.getClass().getSimpleName();
+            if (kind.equals("InputConfirm")) { // play or draw: Arcana's offline host doesn't ask; take the play
+                lastPrompted = input; defaultedPrompts.add("play or draw: play"); you.selectButtonOk(); return;
+            }
+            if (kind.equals("InputConfirmMulligan")) {
+                lastPrompted = input; mulligans = mulligans < 0 ? 0 : mulligans;
+                sink.accept(handMessage("mulliganDecision", you.getPlayer()).put("mulliganCount", mulligans)
+                        .put("cardsToPutOnBottom", 0).put("isOnThePlay", true));
+                return;
+            }
+            if (kind.equals("InputLondonMulligan")) {
+                lastPrompted = input;
+                sink.accept(handMessage("chooseBottomCards", you.getPlayer()).put("cardsToPutOnBottom", intField(input, "toReturn")));
+                return;
+            }
         }
         boolean priority = input instanceof InputPassPriority;
         JSONArray legal = new JSONArray();
@@ -319,7 +360,7 @@ public final class ArcanaForgeHost {
                 case "getGameView": return gameView[0];
                 case "showPromptMessage": case "updateButtons": case "finishGame": case "afterGameEnd": scheduleEmit(); return null;
                 case "isUiSetToSkipPhase": return skipPhase((PhaseType) args[1]);
-                case "isNetGame": case "isGamePaused": case "isSelecting": return false;
+                case "isNetGame": case "isGamePaused": case "isSelecting": case "isLibgdxPort": return false;
                 case "equals": return proxy == args[0];
                 case "hashCode": return System.identityHashCode(proxy);
                 case "toString": return "ArcanaForgeGui";
