@@ -26,6 +26,8 @@ import java.util.concurrent.atomic.AtomicReference;
  *  Every scenario fails on a timeout, a "can't show yet" notice, or a missing follow-up state.
  */
 public final class PromptScenarios {
+    private static final String LIBRARY = String.join(";", java.util.Collections.nCopies(20, "Forest"));
+
     private static String forgeDir;
 
     public static void main(String[] args) throws Exception {
@@ -127,6 +129,8 @@ public final class PromptScenarios {
     private static String ghalta() throws Exception {
         Session s = new Session(String.join("\n",
                 "activeplayer=human", "activephase=MAIN1", "removesummoningsickness=true",
+                // Forge sets an unlisted life to -1 (puzzle rule), and clears unlisted zones: list both.
+                "humanlife=20", "ailife=20", "humanlibrary=" + LIBRARY, "ailibrary=" + LIBRARY,
                 "humanbattlefield=Forest;Forest;Forest;Forest;Forest;Forest;Forest;Forest",
                 "humanhand=Ghalta, Stampede Tyrant;Grizzly Bears;Llanowar Elves",
                 "aibattlefield=", "aihand="), "Ghalta, Stampede Tyrant");
@@ -216,6 +220,8 @@ public final class PromptScenarios {
     private static String combatDamage() throws Exception {
         Session s = new Session(String.join("\n",
                 "activeplayer=human", "activephase=MAIN1", "removesummoningsickness=true",
+                // Forge sets an unlisted life to -1 (puzzle rule), and clears unlisted zones: list both.
+                "humanlife=20", "ailife=20", "humanlibrary=" + LIBRARY, "ailibrary=" + LIBRARY,
                 "humanbattlefield=Prized Unicorn",
                 "humanhand=Llanowar Elves",
                 "aibattlefield=Grizzly Bears;Grizzly Bears", "aihand="), "Prized Unicorn");
