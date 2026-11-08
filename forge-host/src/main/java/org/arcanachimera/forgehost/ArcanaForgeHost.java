@@ -268,6 +268,14 @@ public final class ArcanaForgeHost {
             }
         }
         boolean priority = input instanceof InputPassPriority;
+        if (input != null && !priority && input != lastPrompted) {
+            // Milestone 1 stand-in until combat/targets reach Arcana's screens: Forge's default (no attack,
+            // no block, its suggested target) so the game never waits on a prompt the UI can't show yet.
+            lastPrompted = input;
+            defaultedPrompts.add("auto-answered " + input.getClass().getSimpleName());
+            ok(you);
+            return;
+        }
         JSONArray legal = new JSONArray();
         offered.clear();
         if (priority) {
