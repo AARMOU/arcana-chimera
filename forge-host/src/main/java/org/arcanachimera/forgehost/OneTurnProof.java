@@ -15,6 +15,7 @@ import java.util.concurrent.TimeUnit;
  * Usage: java ... OneTurnProof &lt;forge-gui folder holding res/&gt;
  */
 public final class OneTurnProof {
+    private static final String CREATURE = "Gray Ogre";
     public static void main(String[] args) throws Exception {
         LinkedBlockingQueue<JSONObject> inbox = new LinkedBlockingQueue<>();
         ArcanaForgeHost host = new ArcanaForgeHost(inbox::add);
@@ -22,11 +23,11 @@ public final class OneTurnProof {
         ArcanaForgeHost.initForge(args.length > 0 ? args[0] : "../forge-gui/", host);
         System.out.println("PROOF forge loaded in " + (System.currentTimeMillis() - t0) + " ms");
 
-        Map<String, Integer> you = new LinkedHashMap<>(); you.put("Forest", 30); you.put("Grizzly Bears", 30);
+        Map<String, Integer> you = new LinkedHashMap<>(); you.put("Mountain", 26); you.put("Gray Ogre", 17); you.put("Shock", 17);
         Map<String, Integer> ai = new LinkedHashMap<>(); ai.put("Mountain", 30); ai.put("Hill Giant", 30);
         new Thread(() -> { try { host.startGame(you, ai); } catch (Exception e) { e.printStackTrace(); } }, "proof-start").start();
 
-        boolean landPlayed = false, creatureCast = false, aiTurnSeen = false;
+        boolean landPlayed = false, creatureCast = false, aiTurnSeen = false, shockCast = false;
         int myFirstTurn = -1, landTurn = -1, castTurn = -1, updates = 0, attacks = 0, decisions = 0, aiLife = 20;
         long deadline = System.currentTimeMillis() + TimeUnit.MINUTES.toMillis(8);
         String result = "FAIL: timed out";
@@ -64,11 +65,11 @@ public final class OneTurnProof {
                 continue;
             }
             if (active.equals(ArcanaForgeHost.HUMAN_ID) && myFirstTurn < 0) myFirstTurn = turn;
-            boolean bearsOut = battlefield(s, ArcanaForgeHost.HUMAN_ID).contains("Grizzly Bears");
-            if (creatureCast && !bearsOut && turn > castTurn) { result = "FAIL: cast Grizzly Bears on turn " + castTurn + " but it never reached the battlefield"; break; }
+            boolean bearsOut = battlefield(s, ArcanaForgeHost.HUMAN_ID).contains(CREATURE);
+            if (creatureCast && !bearsOut && turn > castTurn) { result = "FAIL: cast " + CREATURE + " on turn " + castTurn + " but it never reached the battlefield"; break; }
             aiLife = player(s, ArcanaForgeHost.AI_ID).optInt("life", aiLife);
-            if (aiTurnSeen && active.equals(ArcanaForgeHost.HUMAN_ID) && bearsOut && turn > castTurn && attacks > 0 && aiLife < 20) {
-                result = "PASS: attacked " + attacks + "x (AI life " + aiLife + "), answered " + decisions + " decision(s); played a land on turn " + landTurn + (creatureCast ? ", cast Grizzly Bears on turn " + castTurn : "")
+            if (aiTurnSeen && active.equals(ArcanaForgeHost.HUMAN_ID) && bearsOut && turn > castTurn && attacks > 0 && aiLife < 20 && decisions > 0) {
+                result = "PASS: attacked " + attacks + "x (AI life " + aiLife + "), answered " + decisions + " decision(s); played a land on turn " + landTurn + (creatureCast ? ", cast " + CREATURE + " on turn " + castTurn : "")
                         + ", Forge AI took a turn, priority back on turn " + turn + " (" + step + "); your battlefield "
                         + battlefield(s, ArcanaForgeHost.HUMAN_ID) + ", AI battlefield " + battlefield(s, ArcanaForgeHost.AI_ID);
                 break;
@@ -94,8 +95,10 @@ public final class OneTurnProof {
                 JSONObject spell = findAffordable(legal, "CastSpell");
                 if (land != null && player(s, ArcanaForgeHost.HUMAN_ID).optInt("landsPlayedThisTurn") == 0) {
                     choice = land; landPlayed = true; landTurn = turn;
-                } else if (spell != null && !creatureCast && true) {
-                    choice = spell; creatureCast = true; castTurn = turn;
+                } else if (!creatureCast && castable(legal, s, CREATURE) != null) {
+                    choice = castable(legal, s, CREATURE); creatureCast = true; castTurn = turn;
+                } else if (!shockCast && castable(legal, s, "Shock") != null) {
+                    choice = castable(legal, s, "Shock"); shockCast = true;
                 }
             }
             System.out.println("PROOF turn " + turn + " " + step + " active=" + active + " you=" + battlefield(s, ArcanaForgeHost.HUMAN_ID) + " -> " + choice.getString("actionType")
@@ -129,6 +132,18 @@ public final class OneTurnProof {
         return null;
     }
 
+    /** The affordable CastSpell action for the named card in hand, if any. */
+    private static JSONObject castable(JSONArray legal, JSONObject s, String name) {
+        JSONObject cards = s.getJSONObject("cards");
+        for (int i = 0; i < legal.length(); i++) {
+            JSONObject a = legal.getJSONObject(i);
+            if (!a.optString("actionType").equals("CastSpell") || !a.optBoolean("isAffordable", true)) continue;
+            JSONObject c = cards.optJSONObject(a.getJSONObject("action").optString("cardId"));
+            if (c != null && c.optString("name").equals(name)) return a;
+        }
+        return null;
+    }
+
     /** A legal default answer to any Argentum decision (picks the first options). */
     private static JSONObject answer(JSONObject d) {
         String id = d.optString("id");
@@ -144,6 +159,8 @@ public final class OneTurnProof {
             }
             case "ChooseTargetsDecision": {
                 JSONArray legal = d.getJSONObject("legalTargets").optJSONArray("0");
+                for (int i = 0; legal != null && i < legal.length(); i++)
+                    if (legal.optString(i).equals(ArcanaForgeHost.AI_ID)) return r.put("type", "TargetsResponse").put("selectedTargets", new JSONObject().put("0", new JSONArray().put(ArcanaForgeHost.AI_ID)));
                 return r.put("type", "TargetsResponse").put("selectedTargets", new JSONObject().put("0",
                         legal == null || legal.length() == 0 ? new JSONArray() : new JSONArray().put(legal.get(0))));
             }
