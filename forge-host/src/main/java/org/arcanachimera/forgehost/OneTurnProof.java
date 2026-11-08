@@ -37,7 +37,7 @@ public final class OneTurnProof {
             if (type.equals("error")) { System.out.println("PROOF host error: " + m.optString("message")); continue; }
             if (type.equals("gameOver")) { result = "FAIL: game ended early " + m; break; }
             if (type.equals("mulliganDecision")) {
-                System.out.println("PROOF mulligan offer: " + m.getJSONArray("hand").length() + " cards -> keep");
+                System.out.println("PROOF mulligan offer: " + m.getJSONArray("hand").length() + " cards (zone " + m.optInt("forgeHandZone") + ", library " + m.optInt("forgeLibrary") + ") -> keep");
                 host.handle(new JSONObject().put("type", "keepHand")); continue;
             }
             if (!type.equals("stateUpdate")) { System.out.println("PROOF message " + type); continue; }

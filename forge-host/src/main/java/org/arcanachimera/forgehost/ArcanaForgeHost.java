@@ -117,13 +117,24 @@ public final class ArcanaForgeHost {
         if (you == null) return;
         switch (message.optString("type")) {
             case "submitAction" -> submit(you, message.getJSONObject("action"));
-            case "keepHand" -> you.selectButtonOk();
-            case "mulligan" -> { mulligans++; you.selectButtonCancel(); }
+            case "keepHand" -> ok(you);
+            case "mulligan" -> { mulligans++; cancel(you); }
             case "chooseBottomCards" -> bottom(you, message.optJSONArray("cardIds"));
             case "concede" -> you.concede();
             case "requestResync" -> scheduleEmit();
             default -> { }
         }
+    }
+
+    /** Presses Forge's OK/Cancel on the live input (the controller's own relay lags behind headless). */
+    private static void ok(PlayerControllerHuman you) {
+        Input input = you.getInputQueue().getActualInput(you);
+        if (input != null) input.selectButtonOK();
+    }
+
+    private static void cancel(PlayerControllerHuman you) {
+        Input input = you.getInputQueue().getActualInput(you);
+        if (input != null) input.selectButtonCancel();
     }
 
     private void bottom(PlayerControllerHuman you, JSONArray ids) {
@@ -132,14 +143,15 @@ public final class ArcanaForgeHost {
         for (int i = 0; i < ids.length(); i++)
             for (Card c : you.getPlayer().getCardsIn(ZoneType.Hand))
                 if (cardId(c).equals(ids.getString(i))) input.selectCard(c, null, null);
-        you.selectButtonOk();
+        ok(you);
     }
 
     private JSONObject handMessage(String type, Player p) {
         JSONArray hand = new JSONArray();
         JSONObject cards = new JSONObject();
         for (Card c : p.getCardsIn(ZoneType.Hand)) { hand.put(cardId(c)); cards.put(cardId(c), card(c, ZoneType.Hand)); }
-        return new JSONObject().put("type", type).put("hand", hand).put("cards", cards);
+        return new JSONObject().put("type", type).put("hand", hand).put("cards", cards)
+                .put("forgeHandZone", p.getZone(ZoneType.Hand).size()).put("forgeLibrary", p.getCardsIn(ZoneType.Library).size());
     }
 
     private static int intField(Object o, String name) {
@@ -149,7 +161,7 @@ public final class ArcanaForgeHost {
 
     private void submit(PlayerControllerHuman you, JSONObject action) {
         String type = action.optString("type");
-        if (type.equals("PassPriority")) { you.selectButtonOk(); return; }
+        if (type.equals("PassPriority")) { ok(you); return; }
         SpellAbility sa = offered.get(key(type, action.optString("cardId", action.optString("sourceId")), action.optString("abilityId")));
         if (sa == null) { error("That action is no longer available."); scheduleEmit(); return; }
         Input input = you.getInputQueue().getActualInput(you);
@@ -174,13 +186,13 @@ public final class ArcanaForgeHost {
         PlayerControllerHuman you = humanController();
         Input input = you == null ? null : you.getInputQueue().getActualInput(you);
         if (input instanceof InputPayMana) { // Argentum default: auto-pay; if that can't pay, cancel instead of looping
-            if (input != lastAutoPaid) { lastAutoPaid = input; you.selectButtonOk(); } else { you.selectButtonCancel(); error("Not enough mana."); }
+            if (input != lastAutoPaid) { lastAutoPaid = input; ok(you); } else { cancel(you); error("Not enough mana."); }
             return;
         }
         if (input != null && input != lastPrompted) {
             String kind = input.getClass().getSimpleName();
             if (kind.equals("InputConfirm")) { // play or draw: Arcana's offline host doesn't ask; take the play
-                lastPrompted = input; defaultedPrompts.add("play or draw: play"); you.selectButtonOk(); return;
+                lastPrompted = input; defaultedPrompts.add("play or draw: play"); ok(you); return;
             }
             if (kind.equals("InputConfirmMulligan")) {
                 lastPrompted = input; mulligans = mulligans < 0 ? 0 : mulligans;
