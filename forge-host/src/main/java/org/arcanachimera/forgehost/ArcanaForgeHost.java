@@ -727,7 +727,7 @@ public final class ArcanaForgeHost {
         if (combatInput) legal.put(inputKind.equals("InputAttack") ? attackAction(input, you.getPlayer()) : blockAction(input, you.getPlayer()));
         if (priority) {
             Player me = you.getPlayer();
-            legal.put(action("PassPriority", "Pass priority", new JSONObject().put("type", "PassPriority").put("playerId", me)));
+            legal.put(action("PassPriority", "Pass priority", new JSONObject().put("type", "PassPriority").put("playerId", this.me)));
             for (ZoneType z : new ZoneType[]{ZoneType.Hand, ZoneType.Battlefield, ZoneType.Command, ZoneType.Graveyard, ZoneType.Exile}) {
                 for (Card c : me.getCardsIn(z)) {
                     for (SpellAbility sa : c.getAllPossibleAbilities(me, true)) {
@@ -736,7 +736,7 @@ public final class ArcanaForgeHost {
                         String type = sa.isLandAbility() ? "PlayLand" : sa.isSpell() ? "CastSpell" : "ActivateAbility";
                         String cardId = cardId(c);
                         String abilityId = type.equals("ActivateAbility") ? "sa" + sa.getId() : "";
-                        JSONObject a = new JSONObject().put("type", type).put("playerId", me);
+                        JSONObject a = new JSONObject().put("type", type).put("playerId", this.me);
                         if (type.equals("ActivateAbility")) a.put("sourceId", cardId).put("abilityId", abilityId); else a.put("cardId", cardId);
                         boolean affordable = sa.isLandAbility() || sa.isManaAbility() || asksWhilePricing(sa)
                                 || forge.ai.ComputerUtilMana.canPayManaCost(sa, me, 0, false);
@@ -1497,7 +1497,7 @@ public final class ArcanaForgeHost {
             for (forge.game.GameEntity d : combat.getDefenders()) if (forge.game.combat.CombatUtil.canAttack(c, d)) targets.put(d instanceof Card dc ? cardId(dc) : idOf(d));
             if (targets.length() > 0) { valid.put(cardId(c)); byAttacker.put(cardId(c), targets); }
         }
-        return action("DeclareAttackers", "Declare attackers", new JSONObject().put("type", "DeclareAttackers").put("playerId", me).put("attackers", new JSONObject()))
+        return action("DeclareAttackers", "Declare attackers", new JSONObject().put("type", "DeclareAttackers").put("playerId", this.me).put("attackers", new JSONObject()))
                 .put("validAttackers", valid).put("mandatoryAttackers", new JSONArray()).put("attackTargetsByAttacker", byAttacker).put("validAttackTargets", generic);
     }
 
@@ -1506,7 +1506,7 @@ public final class ArcanaForgeHost {
         JSONArray valid = new JSONArray();
         JSONObject maxBlocks = new JSONObject();
         for (Card c : me.getCreaturesInPlay()) if (forge.game.combat.CombatUtil.canBlock(c, combat)) { valid.put(cardId(c)); maxBlocks.put(cardId(c), 1); }
-        return action("DeclareBlockers", "Declare blockers", new JSONObject().put("type", "DeclareBlockers").put("playerId", me).put("blockers", new JSONObject()))
+        return action("DeclareBlockers", "Declare blockers", new JSONObject().put("type", "DeclareBlockers").put("playerId", this.me).put("blockers", new JSONObject()))
                 .put("validBlockers", valid).put("blockerMaxBlockCounts", maxBlocks).put("mandatoryBlockerAssignments", new JSONObject());
     }
 
