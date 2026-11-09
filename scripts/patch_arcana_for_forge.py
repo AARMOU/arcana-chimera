@@ -86,19 +86,17 @@ patch("DeckBuilderScreen.kt", [
 
 # Hand drawer with a Studio hand design (owner, Nov 9: "used to auto resize the cards when dragging the hand drawer").
 # Arcana's Studio canvas scaled the design to the screen width only, so dragging the drawer changed nothing inside it,
-# and the dragged height wasn't kept. In play, the design now scales to fit the drawer (width and height, proportions
-# kept, centred; buttons still grow to 44dp), and the drawer remembers its height per screen size.
+# and the dragged height wasn't kept. In play, the cards are fitted to the drawer (buttons keep their designed size;
+# ChimeraHandFit), and the drawer remembers its height per screen size.
 patch("StudioHandCanvas.kt", [
     ("onResize: (String,Float,Float) -> Unit = { _,_,_ -> }) {",
      "onResize: (String,Float,Float) -> Unit = { _,_,_ -> }, fitHeight: androidx.compose.ui.unit.Dp = androidx.compose.ui.unit.Dp.Unspecified) {"),
-    ("val scale = maxWidth.value / layout.canvasWidth.takeIf {it.isFinite()}?.coerceIn(240f,2000f).let {it ?: 412f}",
-     "val canvasW = layout.canvasWidth.takeIf {it.isFinite()}?.coerceIn(240f,2000f) ?: 412f\n        val widthScale = maxWidth.value / canvasW"),
-    ("val extent = ((renderElements.maxOfOrNull { it.y+it.h } ?: origin)-origin).coerceIn(44f,4000f)",
-     "val extent = ((renderElements.maxOfOrNull { it.y+it.h } ?: origin)-origin).coerceIn(44f,4000f)\n"
-     "        val scale = if (!editing && fitHeight != androidx.compose.ui.unit.Dp.Unspecified && fitHeight.value > 0f)\n"
-     "            minOf(widthScale, fitHeight.value / extent).coerceAtLeast(widthScale * 0.3f) else widthScale"),
-    ('Box(Modifier.fillMaxWidth().height((extent*scale).dp).testTag("studio-hand-canvas")) {',
-     'Box(Modifier.fillMaxWidth().height((extent*scale).dp).padding(start = ((maxWidth.value - canvasW*scale)/2f).coerceAtLeast(0f).dp).testTag("studio-hand-canvas")) {'),
+    # Owner, Nov 9 14:24: only the cards follow the drawer; buttons keep their designed size (ChimeraHandFit).
+    ("        val extent = ((renderElements.maxOfOrNull { it.y+it.h } ?: origin)-origin).coerceIn(44f,4000f)",
+     "        val fitted = if (!editing && fitHeight != androidx.compose.ui.unit.Dp.Unspecified && fitHeight.value > 0f)\n"
+     "            ChimeraHandFit.fit(renderElements, state.cards.size, fitHeight.value / scale, origin) else renderElements\n"
+     "        val extent = ((fitted.maxOfOrNull { it.y+it.h } ?: origin)-origin).coerceIn(44f,4000f)"),
+    ("            renderElements.forEach { e ->", "            fitted.forEach { e ->"),
 ])
 patch("TableBoardViews.kt", [
     ("onPreview = { selectedId = it.id; onPreview(it) })\n        }\n        return",
