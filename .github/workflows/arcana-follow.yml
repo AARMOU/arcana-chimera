@@ -1,0 +1,107 @@
+name: Follow Arcana
+# Owner (Nov 8, 2026): "updates from the main arcana get mirrored to it going forward".
+# Every 30 minutes this checks the Arcana branch Chimera follows (AARMOU/arcana_table, read-only). When Arcana has a new
+# commit, it builds Arcana + Forge at that commit; if the build passes, it moves Chimera's pin (ARCANA_SHA in
+# scripts/build_arcana_forge_apk.sh on the Chimera branch) to it and uploads that APK (1-day artifact). If the build
+# fails, the pin stays where it was and an issue titled "Follow Arcana: build failed" says which commit and why.
+# Settings: .github/arcana-follow.env on main. Nothing is ever written to Arcana. Free public runner.
+on:
+  schedule:
+    - cron: '13,43 * * * *'
+  workflow_dispatch:
+permissions:
+  contents: write
+  issues: write
+concurrency:
+  group: follow-arcana
+  cancel-in-progress: false
+jobs:
+  follow:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 75
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: settings
+          sparse-checkout: .github/arcana-follow.env
+          sparse-checkout-cone-mode: false
+      - name: What to follow
+        id: what
+        run: |
+          set -euo pipefail
+          . settings/.github/arcana-follow.env
+          # The first Arcana branch that exists wins (e.g. the Studio branch until it is merged, then the integration branch).
+          for ref in $ARCANA_REFS; do
+            sha=$(git ls-remote https://github.com/AARMOU/arcana_table.git "refs/heads/$ref" | cut -f1)
+            if [ -n "$sha" ]; then echo "ref=$ref" >> "$GITHUB_OUTPUT"; echo "sha=$sha" >> "$GITHUB_OUTPUT"; break; fi
+          done
+          echo "branch=$CHIMERA_BRANCH" >> "$GITHUB_OUTPUT"
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.what.outputs.branch }}
+          path: chimera
+          fetch-depth: 0
+      - name: Already on it?
+        id: pin
+        working-directory: chimera
+        run: |
+          set -euo pipefail
+          [ -n "${{ steps.what.outputs.sha }}" ] || { echo "None of the Arcana branches exist"; exit 1; }
+          current=$(sed -nE 's/^ARCANA_SHA="\$\{ARCANA_SHA:-([0-9a-f]{40})\}"$/\1/p' scripts/build_arcana_forge_apk.sh)
+          [ -n "$current" ] || { echo "Could not read ARCANA_SHA from the build script"; exit 1; }
+          echo "current=$current" >> "$GITHUB_OUTPUT"
+          if [ "$current" = "${{ steps.what.outputs.sha }}" ]; then echo "same=true" >> "$GITHUB_OUTPUT"; echo "Chimera is on Arcana $current already."
+          else echo "same=false" >> "$GITHUB_OUTPUT"; echo "Arcana ${{ steps.what.outputs.ref }} moved: $current -> ${{ steps.what.outputs.sha }}"; fi
+      - uses: actions/setup-java@v4
+        if: steps.pin.outputs.same == 'false'
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Android SDK packages (preinstalled SDK)
+        if: steps.pin.outputs.same == 'false'
+        run: yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" 'platforms;android-36' 'build-tools;36.0.0' > /dev/null
+      - name: Build Arcana + Forge at the new Arcana commit
+        id: build
+        if: steps.pin.outputs.same == 'false'
+        working-directory: chimera
+        env:
+          ARCANA_SHA: ${{ steps.what.outputs.sha }}
+        run: |
+          set -o pipefail
+          bash scripts/build_arcana_forge_apk.sh 2>&1 | tee "$RUNNER_TEMP/build.log"
+      - name: Move Chimera's pin
+        if: steps.pin.outputs.same == 'false' && steps.build.outcome == 'success'
+        working-directory: chimera
+        run: |
+          set -euo pipefail
+          new=${{ steps.what.outputs.sha }}
+          git config user.name "github-actions[bot]"; git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          for attempt in 1 2 3; do
+            git fetch -q origin "${{ steps.what.outputs.branch }}" && git reset -q --hard FETCH_HEAD
+            sed -i -E "s/^ARCANA_SHA=\"\\\$\{ARCANA_SHA:-[0-9a-f]{40}\}\"$/ARCANA_SHA=\"\${ARCANA_SHA:-$new}\"/" scripts/build_arcana_forge_apk.sh
+            git diff --quiet && { echo "Pin already moved"; exit 0; }
+            git commit -qam "Follow Arcana ${{ steps.what.outputs.ref }} to ${new:0:8}" -m "Built and checked by the Follow Arcana workflow (run ${{ github.run_id }}). Previous pin: ${{ steps.pin.outputs.current }}."
+            git push -q origin "HEAD:${{ steps.what.outputs.branch }}" && exit 0
+            sleep 10
+          done
+          exit 1
+      - uses: actions/upload-artifact@v4
+        if: steps.pin.outputs.same == 'false' && steps.build.outcome == 'success'
+        with:
+          name: arcana-forge-debug-apk-${{ steps.what.outputs.sha }}
+          path: ${{ env.APK }}
+          retention-days: 1
+          if-no-files-found: warn
+      - name: Report a failed build
+        if: failure() && steps.build.outcome == 'failure'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          title="Follow Arcana: build failed"
+          body=$(printf 'Arcana `%s` at `%s` does not build with Forge. Chimera stays on `%s`.\n\nRun: %s/%s/actions/runs/%s\n\n```\n%s\n```\n' \
+            "${{ steps.what.outputs.ref }}" "${{ steps.what.outputs.sha }}" "${{ steps.pin.outputs.current }}" \
+            "$GITHUB_SERVER_URL" "$GITHUB_REPOSITORY" "${{ github.run_id }}" "$(tail -60 "$RUNNER_TEMP/build.log" 2>/dev/null)")
+          n=$(gh api "repos/$GITHUB_REPOSITORY/issues?state=open&per_page=100" --jq ".[] | select(.title==\"$title\") | .number" | head -1)
+          if [ -n "$n" ]; then gh api "repos/$GITHUB_REPOSITORY/issues/$n/comments" -f body="$body" > /dev/null
+          else gh api "repos/$GITHUB_REPOSITORY/issues" -f title="$title" -f body="$body" > /dev/null; fi
