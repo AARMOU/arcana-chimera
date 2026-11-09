@@ -76,6 +76,14 @@ patch("TableOverlays.kt", [
      '"",\n                    color = Muted, fontSize = 1.sp, modifier = Modifier\n                )\n                com.arcanatable.engine.ChimeraLoadingBar(barColor = Mint, trackColor = Panel, textColor = Muted)'),
 ])
 
+# Deck builder (owner, Nov 9: "a lot of cards aren't showing up"): the library list stopped at 400 matches, fine for
+# Argentum's pool, but with Forge's ~33k cards most of the alphabet was out of reach without a search. The list is
+# lazy (draws only what's on screen), so it shows every match; names are made unique for its keys.
+patch("DeckBuilderScreen.kt", [
+    ('result = withContext(Dispatchers.Default) { lib.search(baseQuery, filters, limit = 400) }',
+     'result = withContext(Dispatchers.Default) { lib.search(baseQuery, filters, limit = Int.MAX_VALUE).let { r -> r.copy(cards = r.cards.distinctBy { it.name }) } }'),
+])
+
 # Import-time "not in Argentum" messages: Argentum no longer runs the game, so don't report against it.
 patch("DeckSupport.kt", [
     ('''        append("Argentum check: $argentumCopies in Argentum")
