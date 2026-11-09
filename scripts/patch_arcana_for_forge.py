@@ -114,6 +114,27 @@ patch("TableOverlays.kt", [
      '                                        if (!studioFrame) optionPrefs.edit().putFloat("hand_sheet_height_fraction"'),
 ])
 
+# Change art (owner, Nov 9): a card's menu in the deck builder opens every printing's artwork (ChimeraArt); your
+# choice shows on your cards on the table, in hand and on the mulligan screen (the host also sends it to everyone).
+patch("DeckBuilderScreen.kt", [
+    ("onReplace: () -> Unit, onPreview: () -> Unit) {\n    var menu by remember { mutableStateOf(false) }",
+     "onReplace: () -> Unit, onPreview: () -> Unit) {\n    var menu by remember { mutableStateOf(false) }\n"
+     "    var chimeraArt by remember { mutableStateOf(false) }\n"
+     "    if (chimeraArt) ChimeraArtPicker(line.name) { chimeraArt = false }"),
+    ('"Remove all copies") }, onClick = { menu = false; onCount(0) })',
+     '"Remove all copies") }, onClick = { menu = false; onCount(0) })\n'
+     '                androidx.compose.material3.DropdownMenuItem(text = { androidx.compose.material3.Text("Change art") }, onClick = { menu = false; chimeraArt = true })'),
+])
+patch("ArgentumBackend.kt", [
+    ('imageUrl = card.optString("imageUri").takeUnless { it.isBlank() || it == "null" } ?: artByName(card.optString("name"), card.optBoolean("isToken")),',
+     'imageUrl = (if (card.optString("ownerId") == state.optString("viewingPlayerId") && !card.optBoolean("isToken")) ChimeraArt.get(card.optString("name")) else null)\n'
+     '                            ?: card.optString("imageUri").takeUnless { it.isBlank() || it == "null" } ?: artByName(card.optString("name"), card.optBoolean("isToken")),'),
+])
+patch("TableArgentum.kt", [
+    ('imageUrl = detail.optString("imageUri").takeUnless { it.isBlank() || it == "null" },\n                    manaCost = detail.optString("manaCost")',
+     'imageUrl = ChimeraArt.get(detail.optString("name")) ?: detail.optString("imageUri").takeUnless { it.isBlank() || it == "null" },\n                    manaCost = detail.optString("manaCost")'),
+])
+
 # Import-time "not in Argentum" messages: Argentum no longer runs the game, so don't report against it.
 patch("DeckSupport.kt", [
     ('''        append("Argentum check: $argentumCopies in Argentum")

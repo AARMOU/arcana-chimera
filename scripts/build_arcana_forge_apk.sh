@@ -68,6 +68,7 @@ cp "$ROOT/arcana-overlay/app/src/main/java/com/arcanatable/ChimeraDeckImport.kt"
 cp "$ROOT/arcana-overlay/app/src/main/java/com/arcanatable/engine/ForgeGameService.kt" "$APP/src/main/java/com/arcanatable/engine/"
 cp "$ROOT/arcana-overlay/app/src/main/java/com/arcanatable/engine/ChimeraPictures.kt" "$APP/src/main/java/com/arcanatable/engine/"
 cp "$ROOT/arcana-overlay/app/src/main/java/com/arcanatable/engine/ChimeraLoading.kt" "$APP/src/main/java/com/arcanatable/engine/"
+cp "$ROOT/arcana-overlay/app/src/main/java/com/arcanatable/ChimeraArt.kt" "$APP/src/main/java/com/arcanatable/"
 # Foreground service: keeps the Forge game alive while the player is in another app.
 python3 - "$APP/src/main/AndroidManifest.xml" <<'PY'
 import sys; p = sys.argv[1]; s = open(p).read()

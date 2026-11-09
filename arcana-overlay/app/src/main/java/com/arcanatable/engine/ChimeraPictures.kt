@@ -12,6 +12,7 @@ import java.util.concurrent.ConcurrentHashMap
  * Scryfall's lookup by name, which Arcana's picture loader already resolves. A deck's chosen art (Change art) wins.
  */
 object ChimeraPictures {
+    private const val HOST_SEAT = "offline-you"
     @Volatile private var map: Map<String, String>? = null
     @Volatile private var loading = false
 
@@ -47,6 +48,7 @@ object ChimeraPictures {
     fun picture(name: String, seatId: String?): String? {
         val key = name.lowercase(Locale.ROOT)
         seatId?.let { chosen[it]?.get(key)?.let { url -> return url } }
+        if (seatId == HOST_SEAT) com.arcanatable.ChimeraArt.get(name)?.let { return it } // your Change art choice
         val m = map
         return m?.get(key) ?: m?.get(key.substringBefore(" // ")) ?: com.arcanatable.artByName(name, false)
     }

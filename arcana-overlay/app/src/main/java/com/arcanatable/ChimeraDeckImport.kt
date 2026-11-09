@@ -63,6 +63,12 @@ object ChimeraDeckImport {
         section("Commander", commander); section("Companion", companion); section("Deck", main); section("Sideboard", side)
     }.also { if (commander.isEmpty() && main.isEmpty()) error("no cards found in that deck") }
 
+    /** The deck's printing becomes the card's art (Change art), as on the site the deck came from. */
+    private fun keepPrinting(name: String, set: String?, number: String?) {
+        if (!set.isNullOrBlank() && !number.isNullOrBlank() && !name.equals("null", true))
+            runCatching { ChimeraArt.set(name, ChimeraArt.printingLink(set, number)) }
+    }
+
     /** archidekt.com/api/decks/{id}/: cards[].quantity, cards[].card.oracleCard.name, cards[].categories; categories[].includedInDeck. */
     private fun archidekt(id: String): String {
         val o = JSONObject(get("https://archidekt.com/api/decks/$id/"))
@@ -75,6 +81,7 @@ object ChimeraDeckImport {
             val card = e.optJSONObject("card") ?: continue
             val name = card.optJSONObject("oracleCard")?.optString("name")?.ifBlank { null } ?: card.optString("name").ifBlank { null } ?: continue
             val qty = e.optInt("quantity", 1)
+            keepPrinting(name, card.optJSONObject("edition")?.optString("editioncode"), card.optString("collectorNumber"))
             val cats = (e.optJSONArray("categories") ?: JSONArray()).let { a -> (0 until a.length()).map { a.optString(it).lowercase(Locale.ROOT) } }
             when {
                 "commander" in cats -> d.commander += qty to name
@@ -98,6 +105,7 @@ object ChimeraDeckImport {
                 val e = cards.optJSONObject(k) ?: continue
                 val name = e.optJSONObject("card")?.optString("name")?.ifBlank { null } ?: continue
                 into += e.optInt("quantity", 1) to name
+                e.optJSONObject("card")?.let { c -> keepPrinting(name, c.optString("set"), c.optString("cn")) }
             }
         }
         board("commanders", d.commander); board("companions", d.companion); board("mainboard", d.main); board("sideboard", d.side)
