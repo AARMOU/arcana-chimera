@@ -65,3 +65,10 @@ Owner: fetch the latest Arcana Studio updates and integrate them into Chimera. A
 Owner: take the two good parts of #19 and add an end-step stop; and fix the deck import and editor, "severely hobbled by the Argentum restrictions".
 - Arcana's catalog (deck import, editor search, deck checks, card details) reads a build-time `forge-cards.jsonl` / `.index.tsv` from `ForgeCatalogExport`: Forge's cards that Arcana's library lacks, in Arcana's library-line shape, without an Argentum script. Argentum's engine never reads it. Labels say "Forge" instead of "Argentum library" / "Not in Argentum".
 - From #19: Forge's option and fixed-choice dialogs become real choices, and a pass is refused unless Forge is offering one. Not taken: always stopping at every phase (Forge already gives priority for anything on the stack; the gap was empty-stack windows, now an AI end-step stop when you can act), and freezing the game on an unknown prompt.
+
+## 2026-11-08 19:45 — Same Arcana build, mirrored going forward
+Owner: "update that so it's on the same build, and that updates from the main arcana get mirrored to it going forward."
+- `.github/workflows/arcana-follow.yml` on `main` (scheduled workflows only run from the default branch), settings in `.github/arcana-follow.env`. Every 30 minutes it reads the head of the Arcana branch Chimera follows: `claude/arcana-studio-ux-20261106`, or `gpt/arcana-integration-next` once that branch no longer exists.
+- On a new Arcana commit it builds Arcana + Forge at that commit. If the build passes, it moves `ARCANA_SHA` here (a "Follow Arcana …" commit by github-actions) and uploads the APK as a 1-day artifact. If it fails, the pin stays and an issue "Follow Arcana: build failed" has the commit and the log tail. That usually means a Forge patch in `scripts/patch_arcana_for_forge.py` or an overlay file no longer fits Arcana.
+- First run moved the pin `3d9fce0d` → `a5c428ad` (Studio: the battlefield keeps its Background when the first card is played; UI only, no file the Forge patches touch).
+- Work on this branch: fetch before pushing, because the bot may have moved the pin.
