@@ -14,6 +14,7 @@ import tarfile
 import tempfile
 import time
 import urllib.request
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 API = "https://mtgjson.com/api/v5"
@@ -139,27 +140,74 @@ def build(archive: Path, sets: Path, cutoff: str) -> dict:
                               d["setName"].casefold(), d["name"].casefold(), d["id"]))
     return {"schemaVersion": 1, "decks": decks}
 
+def build_remote(index: Path, sets: Path, cutoff: str, folder: Path,
+                 fetcher=download) -> dict:
+    """Download only Commander products; the full archive is hundreds of MB."""
+    listing = json.loads(index.read_text("utf-8"))["data"]
+    if isinstance(listing, dict):
+        listing = list(listing.values())
+    selected = [row for row in listing if isinstance(row, dict)
+                and row.get("type") in TYPES
+                and (not row.get("releaseDate") or row["releaseDate"] <= cutoff)]
+    if not 100 <= len(selected) <= 400:
+        raise ValueError(f"Suspicious Commander catalog size: {len(selected)}")
+    if len({row["fileName"] for row in selected}) != len(selected):
+        raise ValueError("Duplicate MTGJSON index filenames")
+    names = set_names(sets)
+
+    def one(row: dict) -> dict | None:
+        file = row["fileName"]
+        if not re.fullmatch(r"[A-Za-z0-9_-]+", file):
+            raise ValueError(f"Unexpected MTGJSON filename: {file}")
+        local = folder / (file + ".json")
+        fetcher(f"{API}/decks/{file}.json", local, 8_000_000)
+        payload = json.loads(local.read_text("utf-8"))
+        raw = payload.get("data", payload)
+        if raw.get("name") != row["name"] or raw.get("code") != row["code"]:
+            raise ValueError(f"Deck index/source mismatch: {file}")
+        return make_deck(raw, names, file, cutoff)
+
+    # Bounded concurrency; 4 modest requests, no server-side bulk extraction.
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        entries = list(pool.map(one, selected))
+    decks = [entry for entry in entries if entry is not None]
+    missing = SIX - {entry["name"] for entry in decks}
+    if missing:
+        raise ValueError(f"Official original six missing: {sorted(missing)}")
+    if len(decks) < 100:
+        raise ValueError(f"Only {len(decks)} complete Commander precons")
+    decks.sort(key=lambda d: (-int(d["releaseDate"][:4] or "0"),
+                              d["setName"].casefold(), d["name"].casefold(), d["id"]))
+    return {"schemaVersion": 1, "decks": decks}
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--archive", type=Path)
+    parser.add_argument("--archive", type=Path, help="Offline tar fixture or legacy archive")
     parser.add_argument("--sets", type=Path)
     parser.add_argument("--out", type=Path, required=True)
     parser.add_argument("--as-of", default=dt.date.today().isoformat())
     args = parser.parse_args()
     with tempfile.TemporaryDirectory(prefix="chimera-precon-") as folder:
         tmp = Path(folder)
-        archive, archive_sha = ((args.archive, sha(args.archive)) if args.archive
-                                else verified("AllDeckFiles.tar.gz", tmp))
         sets, sets_sha = ((args.sets, sha(args.sets)) if args.sets
                           else verified("SetList.json", tmp))
-        catalog = build(archive, sets, args.as_of)
+        if args.archive:
+            catalog = build(args.archive, sets, args.as_of)
+            source_sha = sha(args.archive)
+            source_file = "AllDeckFiles.tar.gz"
+        else:
+            index, source_sha = verified("DeckList.json", tmp)
+            catalog = build_remote(index, sets, args.as_of, tmp)
+            source_file = "DeckList.json"
         catalog["source"] = {"provider": "MTGJSON", "license": "MIT - https://mtgjson.com/license/",
-                             "allDeckFilesSha256": archive_sha, "setListSha256": sets_sha,
-                             "asOf": args.as_of}
+                             "catalogIndex": source_file, "indexSha256": source_sha,
+                             "setListSha256": sets_sha, "asOf": args.as_of}
         args.out.parent.mkdir(parents=True, exist_ok=True)
         args.out.write_text(json.dumps(catalog, ensure_ascii=False, separators=(",", ":")) + "\n",
                             encoding="utf-8")
         print(f"WOTC COMMANDER PRECONS: {len(catalog['decks'])} bundled (original six included)")
+
 
 def sha(path: Path) -> str:
     with path.open("rb") as reader:
