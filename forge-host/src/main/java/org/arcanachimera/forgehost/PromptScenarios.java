@@ -33,9 +33,9 @@ public final class PromptScenarios {
     public static void main(String[] args) throws Exception {
         forgeDir = args.length > 0 ? args[0] : "../forge-gui/";
         List<String> failures = new ArrayList<>();
-        for (String name : List.of("A-ghalta-order", "B-combat-damage", "C-mulligan", "D-trample-short", "E-stack", "F-mana-convoke", "G-you-lose", "H-end-step", "I-may-pay", "J-ayula-fight-1", "J-ayula-fight-2")) {
+        for (String name : List.of("A-ghalta-order", "B-combat-damage", "C-mulligan", "D-trample-short", "E-stack", "F-mana-convoke", "G-you-lose", "H-end-step", "I-may-pay", "J-ayula-fight-0", "J-ayula-fight-1", "J-ayula-fight-2")) {
             String r;
-            try { r = name.startsWith("A") ? ghalta() : name.startsWith("B") ? combatDamage() : name.startsWith("C") ? mulligan() : name.startsWith("D") ? trampleShort() : name.startsWith("E") ? stack() : name.startsWith("F") ? manaAndConvoke() : name.startsWith("G") ? youLose() : name.startsWith("H") ? endStep() : name.startsWith("I") ? mayPay() : ayulaFight(name.endsWith("2") ? 2 : 1); }
+            try { r = name.startsWith("A") ? ghalta() : name.startsWith("B") ? combatDamage() : name.startsWith("C") ? mulligan() : name.startsWith("D") ? trampleShort() : name.startsWith("E") ? stack() : name.startsWith("F") ? manaAndConvoke() : name.startsWith("G") ? youLose() : name.startsWith("H") ? endStep() : name.startsWith("I") ? mayPay() : ayulaFight(name.charAt(name.length() - 1) - '0'); }
             catch (Throwable t) { t.printStackTrace(); r = "FAIL: " + t; }
             System.out.println("SCENARIO " + name + " " + r);
             if (!r.startsWith("PASS")) failures.add(name);
@@ -719,7 +719,7 @@ public final class PromptScenarios {
                 "activeplayer=human", "activephase=MAIN1", "removesummoningsickness=true",
                 "humanlife=20", "ailife=20", "humanlibrary=" + LIBRARY, "ailibrary=" + LIBRARY,
                 "humanbattlefield=Ayula, Queen Among Bears;Forest;Forest", "humanhand=Bear Cub",
-                "aibattlefield=" + (aiCreatures == 1 ? "Hill Giant" : "Hill Giant;Gray Ogre"), "aihand="), "Bear Cub");
+                "aibattlefield=" + (aiCreatures == 0 ? "" : aiCreatures == 1 ? "Hill Giant" : "Hill Giant;Gray Ogre"), "aihand="), "Bear Cub");
         try {
             boolean cast = false; List<String> decisions = new ArrayList<>(); List<String> modes = new ArrayList<>();
             long end = System.currentTimeMillis() + 60_000;
@@ -752,6 +752,7 @@ public final class PromptScenarios {
                     int giantDamage = -1;
                     for (String id : battlefield(state, ArcanaForgeHost.AI_ID, "Hill Giant")) giantDamage = state.getJSONObject("cards").getJSONObject(id).optInt("damage", 0);
                     String summary = "modes " + modes + "; " + decisions + "; Ayula alive=" + ayulaAlive + ", Hill Giant damage=" + giantDamage;
+                    if (aiCreatures == 0) return "PASS (info, no AI creatures): " + summary; // what Forge offers and does with nothing to fight
                     // Ayula (2/2) fights Hill Giant (3/3): Ayula dies, the Giant has 2 damage
                     return !ayulaAlive && giantDamage == 2 ? "PASS: fight happened. " + summary : "FAIL: no fight. " + summary;
                 }
