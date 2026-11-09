@@ -910,7 +910,7 @@ public final class ArcanaForgeHost {
         // The picture: Arcana's mulligan screen shows only this field, and the table otherwise looks every card up
         // on Scryfall one at a time (owner, Nov 8 23:06: blank cards, no art on the mulligan screen).
         if (!card.optBoolean("isFaceDown") || c.getController() == youPlayer()) {
-            String img = picture(c.getName());
+            String img = picture(c.getName(), c.getOwner() == null ? null : playerId(c.getOwner()));
             if (img != null) card.put("imageUri", img);
         }
         return fill(card, "card");
@@ -920,12 +920,13 @@ public final class ArcanaForgeHost {
      * Card name -> picture link, set by the app (Arcana's bundled card data, which the build fills for Forge's cards
      * too). Null: no pictures from the bridge.
      */
-    public static volatile java.util.function.Function<String, String> pictures;
+    public static volatile java.util.function.BiFunction<String, String, String> pictures;
 
-    private static String picture(String name) {
-        java.util.function.Function<String, String> f = pictures;
+    /** {@code ownerSeat}: whose deck the card is from, for the art chosen in that deck (Change art). */
+    private static String picture(String name, String ownerSeat) {
+        java.util.function.BiFunction<String, String, String> f = pictures;
         if (f == null || name == null || name.isBlank()) return null;
-        try { String url = f.apply(name); return url == null || url.isBlank() ? null : url; } catch (RuntimeException e) { return null; }
+        try { String url = f.apply(name, ownerSeat); return url == null || url.isBlank() ? null : url; } catch (RuntimeException e) { return null; }
     }
 
     private Player youPlayer() { PlayerControllerHuman y = humanController(); return y == null ? null : y.getPlayer(); }

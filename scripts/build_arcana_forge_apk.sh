@@ -60,8 +60,11 @@ javac --release 17 -encoding UTF-8 -nowarn -d "$WORK/jvm/classes" -cp "$LIBS/*:$
   org.arcanachimera.forgehost.ForgeCatalogExport "$FORGE/forge-gui/" "$APP/src/main/assets/argentum" "images=$WORK/scryfall-images.tsv" \
   "$APP/src/main/assets/argentum/all-cards.index.tsv" "$APP/src/main/assets/argentum/custom-cards.index.tsv")
 wc -l "$APP/src/main/assets/argentum/forge-cards.index.tsv"
+echo "== One small name -> picture file for games (mulligan screen, table)"
+python3 "$ROOT/scripts/chimera_pictures.py" "$APP/src/main/assets/argentum"
 cp "$ROOT/arcana-overlay/app/src/main/java/com/arcanatable/ChimeraDeckImport.kt" "$APP/src/main/java/com/arcanatable/"
 cp "$ROOT/arcana-overlay/app/src/main/java/com/arcanatable/engine/ForgeGameService.kt" "$APP/src/main/java/com/arcanatable/engine/"
+cp "$ROOT/arcana-overlay/app/src/main/java/com/arcanatable/engine/ChimeraPictures.kt" "$APP/src/main/java/com/arcanatable/engine/"
 # Foreground service: keeps the Forge game alive while the player is in another app.
 python3 - "$APP/src/main/AndroidManifest.xml" <<'PY'
 import sys; p = sys.argv[1]; s = open(p).read()
