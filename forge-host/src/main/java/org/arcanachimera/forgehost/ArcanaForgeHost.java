@@ -1078,6 +1078,12 @@ public final class ArcanaForgeHost {
         Game game = match == null ? null : match.getGame();
         PlayerControllerHuman you = humanController();
         if (d == null || game == null || you == null) return;
+        // Forge asks opening-hand questions (Leylines, Chancellors: "Choose cards to activate from opening hand") after
+        // everyone has kept, before turn 1: the mulligan is over, so close Arcana's opening-hand screen first (soak 506).
+        if (inMulligan) {
+            inMulligan = false;
+            sink.accept(new JSONObject().put("type", "mulliganComplete").put("finalHandSize", you.getPlayer().getCardsIn(ZoneType.Hand).size()));
+        }
         sink.accept(fill(new JSONObject().put("type", "stateUpdate").put("state", state(game, you.getPlayer()))
                 .put("legalActions", new JSONArray()).put("pendingDecision", d.json()).put("stateVersion", ++version)
                 .put("interactive", true).put("interactionEpoch", "forge-" + version).put("priorityMode", "auto"), "top"));
