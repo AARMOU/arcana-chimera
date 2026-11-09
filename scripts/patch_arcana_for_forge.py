@@ -71,6 +71,33 @@ patch("CardImages.kt", [
 patch("DeckBuilderScreen.kt", [
     ('if (card.custom) "Arcana custom card" else "Argentum library"', 'if (card.custom) "Arcana custom card" else "Forge library"'),
 ])
+# Deck import (owner, Nov 8): colons in card names ("Ultimate Magic: Meteor"), CSV from any site, looser text,
+# and deck links (Archidekt, Moxfield, ManaBox) through ChimeraDeckImport (Chimera overlay).
+patch("DeckImportParser.kt", [
+    ("""        if (name.contains(':') && !name.contains(" // ")) {""",
+     """        if (false && name.contains(':')) { // Forge build: real card names have colons (Ultimate Magic: Meteor)"""),
+    ("""    val rows = mutableListOf<ImportRow>()
+    val errors = mutableListOf<DeckImportDiagnostic>()""",
+     """    @Suppress("NAME_SHADOWING") val raw = ChimeraDeckImport.normalize(raw) // CSV and looser text (Chimera)
+    val rows = mutableListOf<ImportRow>()
+    val errors = mutableListOf<DeckImportDiagnostic>()"""),
+])
+patch("TableController.kt", [
+    ("""        val initial = parseDeckListDetailed(text)
+        if (initial.gameBlockers.isNotEmpty()) {""",
+     """        if (ChimeraDeckImport.isUrl(text)) { // a deck link: fetch it, show the list, then import it
+            importing = true; importError = null
+            ChimeraDeckImport.fetchInto(text, { list -> importing = false; importText = list; importDeck(list, saveAsMine) },
+                { e -> importing = false; importError = e })
+            return
+        }
+        val initial = parseDeckListDetailed(text)
+        if (initial.gameBlockers.isNotEmpty()) {"""),
+])
+patch("DeckBuilderScreen.kt", [
+    ("""onClick = { pendingImport = importText; importing = false; editing = "" }""",
+     """onClick = { ChimeraDeckImport.fetchInto(importText, { list -> pendingImport = list; importing = false; editing = "" }, { e -> importText = importText + "\n// " + e }) }"""),
+])
 patch("TableController.kt", [
     ("if (supportReport != null && supportReport.unsupportedCopies > 0) {\n                    val names = supportReport.unsupportedNames",
      "if (supportReport != null && supportReport.unsupportedCopies > 0 && System.getProperty(\"arcana.argentumCardCheck\") != null) { // Forge build: no Argentum card check\n                    val names = supportReport.unsupportedNames"),
