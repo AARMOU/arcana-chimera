@@ -10,6 +10,7 @@ on:
       soak_ai: { description: 'Soak: Forge AI strength OFF/LITE/MAX', default: 'OFF' }
       soak_humans: { description: 'Soak: people per game (1, or e.g. 2-4 for multiplayer)', default: '1' }
       multi_games: { description: 'Multiplayer soak: number of games', default: '6' }
+      multi_seed: { description: 'Multiplayer soak: first seed', default: '500' }
   pull_request:
     paths:
       - 'forge-host/**'
@@ -37,3 +38,4 @@ jobs:
           SOAK_AI: ${{ inputs.soak_ai || 'OFF' }}
           SOAK_HUMANS: ${{ inputs.soak_humans || '1' }}
           MULTI_GAMES: ${{ inputs.multi_games || '6' }}
+          MULTI_SEED: ${{ inputs.multi_seed || '500' }}

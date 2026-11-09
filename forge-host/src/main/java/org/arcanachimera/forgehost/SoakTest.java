@@ -311,6 +311,7 @@ public final class SoakTest {
             for (String d : host.defaultedPrompts) if (!d.startsWith("play or draw")) defaulted.add(d);
             if (!defaulted.isEmpty()) return "FAIL DEFAULTED " + defaulted;
             if (!guard.clean()) return "FAIL PROTOCOL " + guard.failures();
+            for (Game g : guests) if (!g.guard.clean()) return "FAIL PROTOCOL (seat " + g.me + ") " + g.guard.failures();
             return null;
         }
 

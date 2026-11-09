@@ -30,7 +30,11 @@ public final class ProtocolGuard {
         // Arcana shows the opening hand only until the first state: none may arrive mid-mulligan (phone, Nov 8 11:31).
         if (type.equals("mulliganDecision") || type.equals("chooseBottomCards")) mulliganOpen = true;
         if (type.equals("mulliganComplete")) mulliganOpen = false;
-        if (type.equals("stateUpdate") && mulliganOpen) fail("state update sent during the mulligan (v" + message.optInt("stateVersion") + ")");
+        if (type.equals("stateUpdate") && mulliganOpen) {
+            JSONObject d = message.optJSONObject("pendingDecision"), st = message.optJSONObject("state");
+            fail("state update sent during the mulligan (v" + message.optInt("stateVersion") + ", turn " + (st == null ? "?" : st.optInt("turnNumber"))
+                    + (d == null ? ", no question" : ", question " + d.optString("type") + ": " + d.optString("prompt")) + ")");
+        }
         // The same answer refused over and over without the game moving (phone, Nov 8 11:45; Goose's check, PR #17).
         if (type.equals("error") && refusal(message.optString("message")) && ++rejections >= 3) fail("3 refusals in a row without progress (" + rejectionState + "): " + message.optString("message"));
         if (!"stateUpdate".equals(type)) return;
