@@ -38,7 +38,8 @@ object ChimeraDeckImport {
         return when {
             host.endsWith("archidekt.com") -> archidekt(path.getOrNull(path.indexOf("decks") + 1)?.takeWhile(Char::isDigit) ?: error("no deck number in the link"))
             host.endsWith("moxfield.com") -> moxfield(path.getOrNull(path.indexOf("decks") + 1) ?: error("no deck id in the link"))
-            else -> anyPage(url) // ManaBox and other deck pages
+            host.endsWith("manabox.app") -> manabox(url)
+            else -> anyPage(url) // other deck pages
         }
     }
 
@@ -104,7 +105,57 @@ object ChimeraDeckImport {
     }
 
     /**
-     * ManaBox and other deck pages: the page's embedded data (or a JSON reply) is searched for card entries with a
+     * manabox.app/decks/{id} (owner's link, Nov 9): the page shows each card as separate elements, the quantity, then
+     * the name, then an optional foil "F" and mana symbols, under headings (Commander, Creatures 33, ...); the whole
+     * list appears twice (grid and list views). Mirrored by scripts/manabox_check.py, which the APK build runs on a
+     * real deck.
+     */
+    private fun manabox(url: String): String {
+        val body = get(url, json = false)
+        manaboxText(body)?.let { return it }
+        return anyPage(url) // a page that changed shape: the general reader's best effort
+    }
+
+    internal fun manaboxText(html: String): String? {
+        val lines = html.replace(Regex("(?s)<(script|style|svg)[^>]*>.*?</\\1>"), "\n")
+            .replace(Regex("<[^>]+>"), "\n")
+            .replace("&amp;", "&").replace("&#x27;", "'").replace("&#39;", "'").replace("&quot;", "\"").replace("&nbsp;", " ")
+            .lines().map { it.trim() }.filter { it.isNotEmpty() }
+        val heading = Regex("""^(Commanders?|Companions?|Planeswalkers?|Creatures?|Instants?|Sorcery|Sorceries|Artifacts?|Enchantments?|Lands?|Battles?|Other|Sideboard|Maybeboard|Mainboard|Deck)(\s*\(?\d+\)?)?$""", RegexOption.IGNORE_CASE)
+        val d = Deck()
+        val seen = HashSet<String>()
+        var section = ""
+        var i = 0
+        while (i < lines.size) {
+            val line = lines[i]
+            heading.matchEntire(line)?.let { section = it.groupValues[1].lowercase(Locale.ROOT); i++; continue }
+            val qty = line.toIntOrNull()
+            if (qty != null && qty in 1..99 && i + 1 < lines.size) {
+                val name = lines[i + 1]
+                val looksLikeName = name.length > 1 && name.toIntOrNull() == null && heading.matchEntire(name) == null && name.any { it.isLetter() }
+                if (looksLikeName) {
+                    if (section.startsWith("commander") && name.lowercase(Locale.ROOT) in seen && d.commander.none { it.second.equals(name, true) }) {
+                        d.main.removeAll { it.second.equals(name, true) } // named earlier (page header): it's the commander
+                        d.commander += qty to name
+                    } else if (seen.add(name.lowercase(Locale.ROOT))) { // the second copy of the list adds nothing
+                        when {
+                            section.startsWith("commander") -> d.commander += qty to name
+                            section.startsWith("companion") -> d.companion += qty to name
+                            section == "sideboard" -> d.side += qty to name
+                            section == "maybeboard" -> {}
+                            else -> d.main += qty to name
+                        }
+                    }
+                    i += 2; continue
+                }
+            }
+            i++
+        }
+        return if (d.main.size + d.commander.size >= 5) d.text() else null
+    }
+
+    /**
+     * Other deck pages: the page's embedded data (or a JSON reply) is searched for card entries with a
      * name and a quantity; if there is none, its text is read as a deck list.
      */
     private fun anyPage(url: String): String {

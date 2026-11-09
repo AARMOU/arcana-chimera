@@ -60,6 +60,8 @@ javac --release 17 -encoding UTF-8 -nowarn -d "$WORK/jvm/classes" -cp "$LIBS/*:$
   org.arcanachimera.forgehost.ForgeCatalogExport "$FORGE/forge-gui/" "$APP/src/main/assets/argentum" "images=$WORK/scryfall-images.tsv" \
   "$APP/src/main/assets/argentum/all-cards.index.tsv" "$APP/src/main/assets/argentum/custom-cards.index.tsv")
 wc -l "$APP/src/main/assets/argentum/forge-cards.index.tsv"
+echo "== ManaBox deck link reader on the owner's deck (informational)"
+python3 "$ROOT/scripts/manabox_check.py" "https://manabox.app/decks/AaEEwuDaehSDHbcRSSDwBw" || true
 echo "== One small name -> picture file for games (mulligan screen, table)"
 python3 "$ROOT/scripts/chimera_pictures.py" "$APP/src/main/assets/argentum"
 cp "$ROOT/arcana-overlay/app/src/main/java/com/arcanatable/ChimeraDeckImport.kt" "$APP/src/main/java/com/arcanatable/"
