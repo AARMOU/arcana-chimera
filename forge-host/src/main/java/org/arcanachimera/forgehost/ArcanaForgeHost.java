@@ -886,7 +886,32 @@ public final class ArcanaForgeHost {
                 .put("activePlayerId", ph.getPlayerTurn() == null ? JSONObject.NULL : playerId(ph.getPlayerTurn()))
                 .put("priorityPlayerId", ph.getPriorityPlayer() == null ? JSONObject.NULL : playerId(ph.getPriorityPlayer()))
                 .put("turnNumber", ph.getTurn()).put("isGameOver", game.isGameOver()).put("winnerId", game.isGameOver() ? winnerId(game) : JSONObject.NULL)
-                .put("combat", JSONObject.NULL).put("gameLog", new JSONArray()), "state");
+                .put("combat", JSONObject.NULL).put("gameLog", gameLog(game, viewer)), "state");
+    }
+
+    private static final java.util.Set<forge.game.GameLogEntryType> LOGGED = forge.game.GameLogVerbosity.MEDIUM.getIncludedTypes();
+
+    /**
+     * Forge's game log for Arcana's (owner, Nov 9: "the game log doesn't appear to be recording the game"; the bridge
+     * sent it empty). Forge's medium detail: turns, spells and abilities, what resolves, combat, damage, life, lands,
+     * discards, cards changing zones; no mana or phase lines. Oldest first, the last 200. Your lines are marked yours.
+     */
+    private JSONArray gameLog(Game game, Player viewer) throws Exception {
+        JSONArray out = new JSONArray();
+        java.util.List<forge.game.GameLogEntry> all = game.getGameLog().getAllEntries();
+        java.util.List<forge.game.GameLogEntry> shown = new ArrayList<>();
+        for (forge.game.GameLogEntry e : all) if (e != null && LOGGED.contains(e.type()) && e.message() != null && !e.message().isBlank()) shown.add(e);
+        int from = Math.max(0, shown.size() - 200);
+        for (int i = from; i < shown.size(); i++) {
+            forge.game.GameLogEntry e = shown.get(i);
+            JSONObject line = new JSONObject().put("description", plain(e.message()))
+                    .put("type", e.type() == forge.game.GameLogEntryType.TURN ? "turnChanged" : e.type().name().toLowerCase(java.util.Locale.ROOT))
+                    .put("eventIndex", i);
+            if (viewer != null && e.sourceCard() != null && e.sourceCard().getController() != null)
+                line.put("isYours", e.sourceCard().getController().getId() == viewer.getId());
+            out.put(line);
+        }
+        return out;
     }
 
     private static JSONObject fillPlayer(JSONObject p) throws Exception { return fill(p, "player"); }

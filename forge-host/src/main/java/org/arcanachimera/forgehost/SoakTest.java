@@ -277,6 +277,9 @@ public final class SoakTest {
                     if (broken != null) return broken;
                     String leak = privacy(m, st);
                     if (leak != null) return leak;
+                    // Arcana's game log comes from state.gameLog (Nov 9: it was always empty)
+                    if (turn >= 3 && st.optJSONArray("gameLog") != null && st.getJSONArray("gameLog").length() == 0)
+                        return "FAIL LOG game log still empty on turn " + turn;
                     for (Object o : st.getJSONArray("players")) {
                         JSONObject p = (JSONObject) o;
                         if (p.optString("playerId").equals(me) && p.optBoolean("hasLost")) youLost = true;
