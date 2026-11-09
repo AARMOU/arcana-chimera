@@ -33,9 +33,9 @@ public final class PromptScenarios {
     public static void main(String[] args) throws Exception {
         forgeDir = args.length > 0 ? args[0] : "../forge-gui/";
         List<String> failures = new ArrayList<>();
-        for (String name : List.of("A-ghalta-order", "B-combat-damage", "C-mulligan", "D-trample-short", "E-stack", "F-mana-convoke", "G-you-lose", "H-end-step", "I-may-pay")) {
+        for (String name : List.of("A-ghalta-order", "B-combat-damage", "C-mulligan", "D-trample-short", "E-stack", "F-mana-convoke", "G-you-lose", "H-end-step", "I-may-pay", "J-ayula-fight-1", "J-ayula-fight-2")) {
             String r;
-            try { r = name.startsWith("A") ? ghalta() : name.startsWith("B") ? combatDamage() : name.startsWith("C") ? mulligan() : name.startsWith("D") ? trampleShort() : name.startsWith("E") ? stack() : name.startsWith("F") ? manaAndConvoke() : name.startsWith("G") ? youLose() : name.startsWith("H") ? endStep() : mayPay(); }
+            try { r = name.startsWith("A") ? ghalta() : name.startsWith("B") ? combatDamage() : name.startsWith("C") ? mulligan() : name.startsWith("D") ? trampleShort() : name.startsWith("E") ? stack() : name.startsWith("F") ? manaAndConvoke() : name.startsWith("G") ? youLose() : name.startsWith("H") ? endStep() : name.startsWith("I") ? mayPay() : ayulaFight(name.endsWith("2") ? 2 : 1); }
             catch (Throwable t) { t.printStackTrace(); r = "FAIL: " + t; }
             System.out.println("SCENARIO " + name + " " + r);
             if (!r.startsWith("PASS")) failures.add(name);
@@ -708,6 +708,56 @@ public final class PromptScenarios {
                 if (attacked && state.optString("currentStep").equals("POSTCOMBAT_MAIN")) return "FAIL: no Robot after attacking (discardShown=" + discardOk + ", payAsked=" + payAsked + ") notices " + s.notices;
                 s.send(new JSONObject().put("type", "PassPriority").put("playerId", ArcanaForgeHost.HUMAN_ID));
             }
+        } finally { s.close(); }
+    }
+
+    // ------------------------------------------------------------------ J. Ayula's fight mode (phone, Nov 8 19:00)
+
+    /** Bear Cub enters; choose Ayula's fight mode, Ayula as your Bear: the fight must happen (1 or 2 AI creatures). */
+    private static String ayulaFight(int aiCreatures) throws Exception {
+        Session s = new Session(String.join("\n",
+                "activeplayer=human", "activephase=MAIN1", "removesummoningsickness=true",
+                "humanlife=20", "ailife=20", "humanlibrary=" + LIBRARY, "ailibrary=" + LIBRARY,
+                "humanbattlefield=Ayula, Queen Among Bears;Forest;Forest", "humanhand=Bear Cub",
+                "aibattlefield=" + (aiCreatures == 1 ? "Hill Giant" : "Hill Giant;Gray Ogre"), "aihand="), "Bear Cub");
+        try {
+            boolean cast = false; List<String> decisions = new ArrayList<>(); List<String> modes = new ArrayList<>();
+            long end = System.currentTimeMillis() + 60_000;
+            while (System.currentTimeMillis() < end) {
+                JSONObject m = s.next(30);
+                if (!interactive(m)) continue;
+                JSONObject d = m.optJSONObject("pendingDecision");
+                if (d != null && !s.fresh(d)) continue;
+                if (d != null) {
+                    String type = d.optString("type");
+                    decisions.add(type + ": " + d.optString("prompt"));
+                    if (type.equals("ChooseOptionDecision")) {
+                        JSONArray o = d.getJSONArray("options"); int pick = 0;
+                        for (int i = 0; i < o.length(); i++) { modes.add(o.getString(i)); if (o.getString(i).toLowerCase().contains("fight")) pick = i; }
+                        s.answer(d, new JSONObject().put("type", "OptionChosenResponse").put("optionIndex", pick));
+                    } else if (type.equals("ChooseTargetsDecision")) {
+                        JSONArray legal = d.getJSONObject("legalTargets").getJSONArray("0"); String chosen = null;
+                        JSONObject cards = m.getJSONObject("state").getJSONObject("cards");
+                        for (int i = 0; i < legal.length(); i++) { JSONObject c = cards.optJSONObject(legal.getString(i)); if (c != null && (c.optString("name").startsWith("Ayula") || c.optString("name").equals("Hill Giant"))) chosen = legal.getString(i); }
+                        if (chosen == null) chosen = legal.getString(0);
+                        decisions.add("  targets offered " + legal.length() + ", chose " + chosen);
+                        s.answer(d, new JSONObject().put("type", "TargetsResponse").put("selectedTargets", new JSONObject().put("0", new JSONArray().put(chosen))));
+                    } else s.answer(d, new JSONObject().put("type", "YesNoResponse").put("choice", true));
+                    continue;
+                }
+                JSONObject state = m.getJSONObject("state");
+                if (!cast) { JSONObject cub = castAction(m, "Bear Cub"); if (cub == null) return "FAIL: Bear Cub not castable"; cast = true; s.send(cub); continue; }
+                if (battlefield(state, ArcanaForgeHost.HUMAN_ID, "Bear Cub").size() == 1 && decisions.stream().anyMatch(x -> x.startsWith("ChooseTargets"))) {
+                    boolean ayulaAlive = !battlefield(state, ArcanaForgeHost.HUMAN_ID, "Ayula, Queen Among Bears").isEmpty();
+                    int giantDamage = -1;
+                    for (String id : battlefield(state, ArcanaForgeHost.AI_ID, "Hill Giant")) giantDamage = state.getJSONObject("cards").getJSONObject(id).optInt("damage", 0);
+                    String summary = "modes " + modes + "; " + decisions + "; Ayula alive=" + ayulaAlive + ", Hill Giant damage=" + giantDamage;
+                    // Ayula (2/2) fights Hill Giant (3/3): Ayula dies, the Giant has 2 damage
+                    return !ayulaAlive && giantDamage == 2 ? "PASS: fight happened. " + summary : "FAIL: no fight. " + summary;
+                }
+                s.send(new JSONObject().put("type", "PassPriority").put("playerId", ArcanaForgeHost.HUMAN_ID));
+            }
+            return "FAIL: timed out; decisions " + decisions;
         } finally { s.close(); }
     }
 }
