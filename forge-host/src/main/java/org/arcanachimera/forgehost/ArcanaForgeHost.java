@@ -379,6 +379,7 @@ public final class ArcanaForgeHost {
     private void submit(PlayerControllerHuman you, JSONObject action) throws Exception {
         String type = action.optString("type");
         if (type.equals("SubmitDecision")) { answer(action.optJSONObject("response") == null ? new JSONObject() : action.getJSONObject("response")); return; }
+        if (pending != null) { error("Answer the pending Forge decision before taking another action."); return; }
         if (type.equals("DeclareAttackers") || type.equals("DeclareBlockers")) { declareCombat(you, action); return; }
         if (type.equals("PassPriority")) {
             Input now = you.getInputQueue().getActualInput(you);
