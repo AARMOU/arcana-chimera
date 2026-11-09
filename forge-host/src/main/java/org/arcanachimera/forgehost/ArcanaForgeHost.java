@@ -135,7 +135,7 @@ public final class ArcanaForgeHost {
                     .put("vsAi", true).put("players", lobby));
             sink.accept(new JSONObject().put("type", "gameStarted").put("players", started));
             applyStartBoard(match);
-        match.startMatch(new GameRules(commander ? GameType.Commander : GameType.Constructed), null, players, players.get(0), guiGame());
+        match.startMatch(rules(commander), null, players, players.get(0), guiGame());
         } catch (Throwable t) {
             error("Forge could not start the game: " + describe(t));
             t.printStackTrace();
@@ -173,7 +173,18 @@ public final class ArcanaForgeHost {
                 .put(new JSONObject().put("playerId", HUMAN_ID).put("isYou", true))
                 .put(new JSONObject().put("playerId", AI_ID).put("isYou", false))));
         applyStartBoard(match);
-        match.startMatch(new GameRules(commanderRulesForTest ? GameType.Commander : GameType.Constructed), null, players, you, guiGame());
+        match.startMatch(rules(commanderRulesForTest), null, players, you, guiGame());
+    }
+
+    /**
+     * Forge's Commander rules (the command-zone choice when your commander dies, CR 903.9a; losing to 21 commander
+     * damage, 704.6c) check the Commander *variant*, which Forge's own lobby adds; the game type alone doesn't
+     * (phone, Nov 8 19:07: Ayula died and stayed in the graveyard, no question asked).
+     */
+    private static GameRules rules(boolean commander) {
+        GameRules r = new GameRules(commander ? GameType.Commander : GameType.Constructed);
+        if (commander) r.addAppliedVariant(GameType.Commander);
+        return r;
     }
 
     private volatile boolean commanderRulesForTest;
