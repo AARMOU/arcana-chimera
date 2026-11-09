@@ -1550,6 +1550,14 @@ public final class ArcanaForgeHost {
         Map<String, Object> entities = new LinkedHashMap<>();
         for (Player p : game.getPlayers()) entities.put(playerId(p), p);
         for (Card c : game.getCardsIn(ZoneType.Battlefield)) entities.put(cardId(c), c);
+        // Each declaration replaces the last: Forge keeps a rejected declaration's creatures in its combat, so a block it
+        // refused (Szarekh needs more blockers) stayed and every later try, even "no blocks", failed again (soak 213).
+        Player mine = you.getPlayer();
+        if (action.optString("type").equals("DeclareAttackers")) {
+            for (Card c : new ArrayList<>(combat.getAttackers())) if (c.getController() == mine) combat.removeFromCombat(c);
+        } else {
+            for (Card c : new ArrayList<>(combat.getAllBlockers())) if (c.getController() == mine) combat.undoBlockingAssignment(c);
+        }
         if (action.optString("type").equals("DeclareAttackers")) {
             JSONObject attackers = action.optJSONObject("attackers");
             if (attackers != null) for (String a : keys(attackers))
