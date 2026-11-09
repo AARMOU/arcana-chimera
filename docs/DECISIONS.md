@@ -57,3 +57,6 @@ Staged read-only at `63edcb77` (head of AARMOU/arcana_table#1013, `claude/arcana
 Owner: "I want the argentum card check gone. Verifying being able to utilize all cards in the forge engine is priority 1."
 - `scripts/patch_arcana_for_forge.py` patches the staged Arcana at build time (nothing committed to arcana_table): offline decks keep every card (no Argentum filter, no basic-land fill for Argentum-missing cards), AI decks are not filtered by Argentum, and import no longer reports "not in Argentum". Forge reports any card it doesn't have when the game starts.
 - `AllCardsCheck` (proof workflow) builds every unique card in Forge's database into a game object and looks up named cards.
+
+## 2026-11-08 17:27 — Latest Arcana Studio
+Owner: fetch the latest Arcana Studio updates and integrate them into Chimera. Arcana is now staged read-only at `3d9fce0d` (head of arcana_table#1013, still versionCode 142): 7 Studio commits since `63edcb77` (per-player IDs, Fill it up, presets, Light palette, game options in Studio, two-finger scroll, Show me, clear boards, Pass copies, Background setting). UI only; no engine-file changes, and the Forge build patches apply unchanged.
