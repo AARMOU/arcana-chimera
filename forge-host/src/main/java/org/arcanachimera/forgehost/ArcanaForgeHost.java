@@ -190,6 +190,8 @@ public final class ArcanaForgeHost {
     private volatile boolean commanderRulesForTest;
     /** Test-only: play {@link #startGame} under Commander rules (command zone, commander SBA) with a fixed board. */
     public void setCommanderRulesForTest(boolean on) { commanderRulesForTest = on; }
+    /** Test-only: the running Forge game, for rules checks in the soak test (read-only). */
+    public Game gameForTest() { return match == null ? null : match.getGame(); }
 
     private static PaperCard card(String name) {
         PaperCard pc = FModel.getMagicDb().getCommonCards().getCard(name);
@@ -1322,8 +1324,11 @@ public final class ArcanaForgeHost {
             String prompt = field(input, "message") instanceof String m ? m : "Confirm";
             Object opts = field(input, "options");
             List<?> labels = opts instanceof List<?> l && l.size() > 1 ? l : null;
-            JSONObject d = decisionBase("YesNoDecision", prompt)
-                    .put("yesText", labels == null ? "Yes" : String.valueOf(labels.get(0))).put("noText", labels == null ? "No" : String.valueOf(labels.get(1)));
+            String yes = labels == null ? "Yes" : String.valueOf(labels.get(0)), no = labels == null ? "No" : String.valueOf(labels.get(1));
+            // CR 903.9a: Forge's prompt is the rule's full text; say it the way a player would (owner, Nov 8)
+            java.util.regex.Matcher cz = java.util.regex.Pattern.compile("^(.+?): If a commander is in a graveyard or in exile").matcher(prompt);
+            if (cz.find()) { prompt = "Return " + cz.group(1) + " to the command zone?"; yes = "Command zone"; no = "Leave it"; }
+            JSONObject d = decisionBase("YesNoDecision", prompt).put("yesText", yes).put("noText", no);
             openForInput(d, Map.of(), r -> { if (r.optBoolean("choice")) ok(you); else cancel(you); });
             return true;
         }

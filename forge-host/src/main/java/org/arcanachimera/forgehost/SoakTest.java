@@ -28,6 +28,11 @@ import java.util.concurrent.TimeUnit;
  *   HOST_ERROR  "Forge host problem" (an exception inside the bridge)
  *   PROTOCOL    ProtocolGuard findings (malformed messages, a state mid-mulligan, 3 refusals in a row)
  *   NO_GAMEOVER the player lost but Arcana wasn't told
+ *   RULES       Forge's rules aren't what the game needs: a Commander game without Forge's Commander variant; a
+ *               player at 0 life, 10 poison or 21 commander damage who hasn't lost; your commander put in the
+ *               graveyard or exile without the command-zone question (the Nov 8 Ayula bug: the bridge was fine,
+ *               the rules were silently off, so only a rules check could see it)
+ *   RAW_TEXT    a prompt or choice with Forge's unfilled placeholders (%d, %s, {0}) or untranslated keys (lblXxx)
  * A game that reaches the turn limit without ending is fine (counted, not failed).
  *
  * Every game has its own seed; a failure prints it, and `seed=<n> games=1` replays that game.
@@ -35,6 +40,70 @@ import java.util.concurrent.TimeUnit;
  */
 public final class SoakTest {
     record Deck(String name, String commander, List<String> cards) { }
+
+    /**
+     * Rules-level checks: things the bridge can't report as an error because Forge never asked anything. Each one
+     * is a player-visible rules mistake (a missing question, a player who should have lost).
+     */
+    static final class RulesWatch {
+        private static final java.util.regex.Pattern RAW = java.util.regex.Pattern.compile("%[ds]|\\{\\d\\}|\\blbl[A-Z]");
+        boolean variantChecked;
+        boolean askedCommandZone;          // a command-zone question since your commander last left play
+        final Set<String> declinedCommander = new HashSet<>(); // you said "leave it": staying put is right
+        String lastPrompt = "";
+        int lethalStates, unaskedStates;
+
+        String check(ArcanaForgeHost host, JSONObject m, JSONObject st, List<ArcanaForgeHost.Seat> seats) {
+            if (!variantChecked && host.gameForTest() != null) {
+                variantChecked = true;
+                boolean commanderGame = seats.stream().allMatch(x -> x.commander() != null && !x.commander().isEmpty());
+                if (commanderGame && !host.gameForTest().getRules().hasCommander())
+                    return "FAIL RULES Commander game started without Forge's Commander variant (no command-zone return, no 21-damage loss)";
+            }
+            JSONObject d = m.optJSONObject("pendingDecision");
+            if (d != null) {
+                StringBuilder text = new StringBuilder(d.optString("prompt"));
+                for (String k : new String[]{"options", "yesText", "noText"}) if (d.has(k)) text.append(' ').append(d.opt(k));
+                java.util.regex.Matcher raw = RAW.matcher(text);
+                if (raw.find()) return "FAIL RAW_TEXT \"" + raw.group() + "\" in " + d.optString("type") + ": " + text;
+                if (d.optString("prompt").contains("command zone")) askedCommandZone = true;
+                lastPrompt = d.optString("prompt");
+            }
+            JSONObject cards = st.getJSONObject("cards");
+            boolean unasked = false;
+            for (Object z : st.getJSONArray("zones")) {
+                JSONObject zone = (JSONObject) z;
+                JSONObject id = zone.getJSONObject("zoneId");
+                if (!ArcanaForgeHost.HUMAN_ID.equals(id.optString("ownerId"))) continue;
+                String type = id.optString("zoneType");
+                for (Object cid : zone.getJSONArray("cardIds")) {
+                    JSONObject c = cards.optJSONObject(String.valueOf(cid));
+                    if (c == null || !c.optBoolean("isCommander")) continue;
+                    if (type.equals("Battlefield") || type.equals("Command")) { askedCommandZone = false; declinedCommander.remove(String.valueOf(cid)); continue; }
+                    if (!type.equals("Graveyard") && !type.equals("Exile") || declinedCommander.contains(String.valueOf(cid))) continue;
+                    if (askedCommandZone) { declinedCommander.add(String.valueOf(cid)); continue; }
+                    // a state can slip out between the move and Forge's question: fail only if it never comes
+                    if (d == null && ++unaskedStates >= 3)
+                        return "FAIL RULES your commander " + c.optString("name") + " went to the " + type + " without the command-zone question";
+                    unasked = true;
+                }
+            }
+            if (!unasked) unaskedStates = 0;
+            // lethal but still playing: allow a moment (Forge checks state-based actions when a player would get priority)
+            boolean lethal = false; String who = "";
+            for (Object o : st.getJSONArray("players")) {
+                JSONObject p = (JSONObject) o;
+                if (p.optBoolean("hasLost")) continue;
+                boolean dead = p.optInt("life", 1) <= 0 || p.optInt("poisonCounters") >= 10;
+                JSONArray cd = p.optJSONArray("commanderDamage");
+                if (cd != null) for (Object e : cd) if (((JSONObject) e).optInt("amount") >= 21) dead = true;
+                if (dead) { lethal = true; who = p.optString("name") + " (life " + p.optInt("life") + ", poison " + p.optInt("poisonCounters") + ", commander damage " + cd + ")"; }
+            }
+            lethalStates = lethal && m.optBoolean("interactive") ? lethalStates + 1 : 0;
+            if (lethalStates >= 3) return "FAIL RULES " + who + " should have lost but is still playing";
+            return null;
+        }
+    }
 
     public static void main(String[] args) throws Exception {
         String forgeDir = args[0];
@@ -129,6 +198,8 @@ public final class SoakTest {
                         case "stateUpdate" -> {
                             JSONObject st = m.getJSONObject("state");
                             turn = st.optInt("turnNumber");
+                            String broken = rules.check(host, m, st, seats);
+                            if (broken != null) return broken;
                             for (Object o : st.getJSONArray("players")) {
                                 JSONObject p = (JSONObject) o;
                                 if (p.optString("playerId").equals(ArcanaForgeHost.HUMAN_ID) && p.optBoolean("hasLost")) youLost = true;
@@ -148,6 +219,8 @@ public final class SoakTest {
                 return "FAIL STALL game took over 15 minutes";
             } finally { host.shutdown(); }
         }
+
+        final RulesWatch rules = new RulesWatch();
 
         /** Checks that apply at the end of any game. Null if clean. */
         String verdict(ArcanaForgeHost host) {

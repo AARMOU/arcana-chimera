@@ -31,6 +31,8 @@ A bot plays seat 0; Forge AIs play the others. A game **fails** on:
 | `PROTOCOL` | A `ProtocolGuard` finding |
 | `NO_GAMEOVER` | The player lost but Arcana was never told |
 | `BOT_ERROR` | The soak bot itself failed (fix `SoakTest`, not the bridge) |
+| `RULES` | Forge's rules are silently off: a Commander game without Forge's Commander variant; a player at 0 life, 10 poison or 21 commander damage still playing; your commander in the graveyard/exile without the command-zone question |
+| `RAW_TEXT` | A prompt with unfilled placeholders (`%d`, `%s`, `{0}`) or untranslated `lblXxx` keys |
 
 A game that reaches the turn limit is fine. The summary line counts finished, turn-limited and failed games.
 
