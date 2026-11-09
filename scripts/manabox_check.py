@@ -17,7 +17,7 @@ def manabox_text(html):
     for a, b in (("&amp;", "&"), ("&#x27;", "'"), ("&#39;", "'"), ("&quot;", '"'), ("&nbsp;", " ")):
         html = html.replace(a, b)
     lines = [l.strip() for l in html.splitlines() if l.strip()]
-    commander, main, seen, section, i = [], [], set(), "", 0
+    entries, section, i = [], "", 0
     while i < len(lines):
         line = lines[i]
         m = HEADING.match(line)
@@ -26,18 +26,21 @@ def manabox_text(html):
         if line.isdigit() and 1 <= int(line) <= 99 and i + 1 < len(lines):
             name = lines[i + 1]
             if len(name) > 1 and not name.isdigit() and not HEADING.match(name) and any(c.isalpha() for c in name):
-                q = int(line)
-                if section.startswith("commander") and name.lower() in seen and not any(n.lower() == name.lower() for _, n in commander):
-                    main[:] = [(x, n) for x, n in main if n.lower() != name.lower()]
-                    commander.append((q, name))
-                elif name.lower() not in seen:
-                    seen.add(name.lower())
-                    if section.startswith("commander"):
-                        commander.append((q, name))
-                    elif section not in ("sideboard", "maybeboard") and not section.startswith("companion"):
-                        main.append((q, name))
-                i += 2; continue
+                entries.append((section, int(line), name)); i += 2; continue
         i += 1
+    lst = entries
+    for skip in range(4):
+        rest = entries[skip:]
+        if len(rest) >= 2 and len(rest) % 2 == 0 and rest[:len(rest) // 2] == rest[len(rest) // 2:]:
+            lst = rest[:len(rest) // 2]; break
+    totals = {}
+    for sec, q, name in lst:
+        where = ("commander" if sec.startswith("commander") else "companion" if sec.startswith("companion")
+                 else "side" if sec == "sideboard" else "maybe" if sec == "maybeboard" else "main")
+        totals[(where, name)] = totals.get((where, name), 0) + q
+    cmd = {n.lower() for (w, n) in totals if w == "commander"}
+    commander = [(q, n) for (w, n), q in totals.items() if w == "commander"]
+    main = [(q, n) for (w, n), q in totals.items() if w == "main" and n.lower() not in cmd]
     return commander, main
 
 

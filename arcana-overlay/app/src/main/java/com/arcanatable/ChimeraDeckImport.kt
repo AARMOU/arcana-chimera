@@ -130,8 +130,10 @@ object ChimeraDeckImport {
             .replace("&amp;", "&").replace("&#x27;", "'").replace("&#39;", "'").replace("&quot;", "\"").replace("&nbsp;", " ")
             .lines().map { it.trim() }.filter { it.isNotEmpty() }
         val heading = Regex("""^(Commanders?|Companions?|Planeswalkers?|Creatures?|Instants?|Sorcery|Sorceries|Artifacts?|Enchantments?|Lands?|Battles?|Other|Sideboard|Maybeboard|Mainboard|Deck)(\s*\(?\d+\)?)?$""", RegexOption.IGNORE_CASE)
-        val d = Deck()
-        val seen = HashSet<String>()
+        // Every entry in page order; the same card can appear more than once (different printings: "1 Swamp",
+        // "3 Swamp F"), so the page's second copy of the list is found as a repeat of the whole sequence.
+        data class E(val section: String, val qty: Int, val name: String)
+        val entries = ArrayList<E>()
         var section = ""
         var i = 0
         while (i < lines.size) {
@@ -140,24 +142,35 @@ object ChimeraDeckImport {
             val qty = line.toIntOrNull()
             if (qty != null && qty in 1..99 && i + 1 < lines.size) {
                 val name = lines[i + 1]
-                val looksLikeName = name.length > 1 && name.toIntOrNull() == null && heading.matchEntire(name) == null && name.any { it.isLetter() }
-                if (looksLikeName) {
-                    if (section.startsWith("commander") && name.lowercase(Locale.ROOT) in seen && d.commander.none { it.second.equals(name, true) }) {
-                        d.main.removeAll { it.second.equals(name, true) } // named earlier (page header): it's the commander
-                        d.commander += qty to name
-                    } else if (seen.add(name.lowercase(Locale.ROOT))) { // the second copy of the list adds nothing
-                        when {
-                            section.startsWith("commander") -> d.commander += qty to name
-                            section.startsWith("companion") -> d.companion += qty to name
-                            section == "sideboard" -> d.side += qty to name
-                            section == "maybeboard" -> {}
-                            else -> d.main += qty to name
-                        }
-                    }
-                    i += 2; continue
+                if (name.length > 1 && name.toIntOrNull() == null && heading.matchEntire(name) == null && name.any { it.isLetter() }) {
+                    entries += E(section, qty, name); i += 2; continue
                 }
             }
             i++
+        }
+        var list: List<E> = entries
+        for (skip in 0..3) { // a commander shown in the page header comes before the list itself
+            val rest = entries.drop(skip)
+            if (rest.size >= 2 && rest.size % 2 == 0 && rest.subList(0, rest.size / 2) == rest.subList(rest.size / 2, rest.size)) {
+                list = rest.subList(0, rest.size / 2); break
+            }
+        }
+        val d = Deck()
+        val totals = LinkedHashMap<Pair<String, String>, Int>()
+        for (e in list) {
+            val where = when {
+                e.section.startsWith("commander") -> "commander"; e.section.startsWith("companion") -> "companion"
+                e.section == "sideboard" -> "side"; e.section == "maybeboard" -> "maybe"; else -> "main"
+            }
+            totals.merge(where to e.name, e.qty, Int::plus)
+        }
+        val commanders = totals.keys.filter { it.first == "commander" }.map { it.second.lowercase(Locale.ROOT) }.toSet()
+        for ((k, n) in totals) when (k.first) {
+            "commander" -> d.commander += n to k.second
+            "companion" -> d.companion += n to k.second
+            "side" -> d.side += n to k.second
+            "maybe" -> {}
+            else -> if (k.second.lowercase(Locale.ROOT) !in commanders) d.main += n to k.second
         }
         return if (d.main.size + d.commander.size >= 5) d.text() else null
     }
