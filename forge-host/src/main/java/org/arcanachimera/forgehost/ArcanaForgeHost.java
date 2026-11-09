@@ -173,8 +173,12 @@ public final class ArcanaForgeHost {
                 .put(new JSONObject().put("playerId", HUMAN_ID).put("isYou", true))
                 .put(new JSONObject().put("playerId", AI_ID).put("isYou", false))));
         applyStartBoard(match);
-        match.startMatch(new GameRules(GameType.Constructed), null, players, you, guiGame());
+        match.startMatch(new GameRules(commanderRulesForTest ? GameType.Commander : GameType.Constructed), null, players, you, guiGame());
     }
+
+    private volatile boolean commanderRulesForTest;
+    /** Test-only: play {@link #startGame} under Commander rules (command zone, commander SBA) with a fixed board. */
+    public void setCommanderRulesForTest(boolean on) { commanderRulesForTest = on; }
 
     private static PaperCard card(String name) {
         PaperCard pc = FModel.getMagicDb().getCommonCards().getCard(name);
