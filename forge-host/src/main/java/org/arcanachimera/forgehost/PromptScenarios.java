@@ -60,8 +60,11 @@ public final class PromptScenarios {
 
         Session(String board, String marker) throws Exception { this(board, marker, 0); }
 
-        Session(String board, String marker, int mulligansWanted) throws Exception {
+        Session(String board, String marker, int mulligansWanted) throws Exception { this(board, marker, mulligansWanted, false); }
+
+        Session(String board, String marker, int mulligansWanted, boolean commanderRules) throws Exception {
             ArcanaForgeHost.initForge(forgeDir, host);
+            host.setCommanderRulesForTest(commanderRules);
             host.setStartBoardForTest(board);
             Map<String, Integer> forests = new LinkedHashMap<>(); forests.put("Forest", 60);
             new Thread(() -> { try { host.startGame(forests, forests); } catch (Exception e) { e.printStackTrace(); } }, "scenario-start").start();
@@ -769,7 +772,7 @@ public final class PromptScenarios {
         Session s = new Session(String.join("\n",
                 "activeplayer=human", "activephase=MAIN1", "removesummoningsickness=true",
                 "humanlife=20", "ailife=20", "humanlibrary=" + LIBRARY, "ailibrary=" + LIBRARY,
-                "humanbattlefield=Ayula, Queen Among Bears|IsCommander;Mountain;Forest;Forest;Forest;Forest;Forest", "humanhand=Shock", "aibattlefield=", "aihand="), "Shock");
+                "humanbattlefield=Ayula, Queen Among Bears|IsCommander;Mountain;Forest;Forest;Forest;Forest;Forest", "humanhand=Shock", "aibattlefield=", "aihand="), "Shock", 0, true);
         try {
             boolean cast = false; List<String> decisions = new ArrayList<>();
             long end = System.currentTimeMillis() + 60_000;
