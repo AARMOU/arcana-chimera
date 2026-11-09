@@ -103,5 +103,21 @@ class CommanderPreconTests(unittest.TestCase):
         self.assertIn('build_wotc_commander_precons.py', build)
         self.assertIn('patch_commander_precons.py', build)
 
+class PreconDuplicateTests(unittest.TestCase):
+    """Owner, Nov 9: one entry per precon; a Collector's Edition goes when its regular edition is listed."""
+
+    def test_collector_and_reprint_duplicates_removed(self):
+        import importlib.util
+        spec = importlib.util.spec_from_file_location("precon_builder", Path(__file__).resolve().parents[1] / "scripts/build_wotc_commander_precons.py")
+        b = importlib.util.module_from_spec(spec); spec.loader.exec_module(b)
+        d = lambda i, n, c, r: {"id": i, "name": n, "commander": c, "releaseDate": r, "setName": "S"}
+        kept = b.dedupe([d("a", "Limit Break (FINAL FANTASY VII)", "Cloud, Ex-SOLDIER", "2025-06-13"),
+                         d("b", "Limit Break Collector's Edition (FINAL FANTASY VII)", "Cloud, Ex-SOLDIER", "2025-06-13"),
+                         d("c", "Mind Seize", "Nekusar, the Mindrazer", "2013-11-01"),
+                         d("d", "Mind Seize", "Nekusar, the Mindrazer", "2023-01-01"),
+                         d("e", "Only Collector's Edition", "X", "2024-01-01")])
+        self.assertEqual(sorted(x["id"] for x in kept), ["a", "c", "e"])
+
+
 if __name__ == "__main__":
     unittest.main()

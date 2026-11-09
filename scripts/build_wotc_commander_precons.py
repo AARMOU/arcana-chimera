@@ -122,6 +122,34 @@ def make_deck(raw: dict, names: dict[str, str], file: str, cutoff: str) -> dict 
             "releaseDate": release, "commander": commander[0][0], "colors": color,
             "decklist": "\n".join(lines) + "\n"}
 
+COLLECTOR = re.compile(r"\s*\bcollector'?s?\s+edition\b\s*", re.I)
+
+def base_name(title: str) -> str:
+    """'Limit Break Collector's Edition (FINAL FANTASY VII)' -> 'limit break (final fantasy vii)'."""
+    return re.sub(r"\s+", " ", COLLECTOR.sub(" ", title)).strip().casefold()
+
+def dedupe(decks: list[dict]) -> list[dict]:
+    """Owner, Nov 9: one entry per precon. A Collector's Edition goes when its regular edition is listed, and the same
+    deck (name and commander) sold in more than one product is kept once (non-collector first, then the earliest)."""
+    def rank(d: dict) -> tuple:
+        return (bool(COLLECTOR.search(d["name"])), d.get("releaseDate") or "9999", d["id"])
+    keep: dict[tuple, dict] = {}
+    for d in sorted(decks, key=rank):
+        key = (base_name(d["name"]), d["commander"].casefold())
+        if key in keep:
+            print(f"WOTC COMMANDER PRECONS: removed duplicate {d['name']} ({d['setName']}), kept {keep[key]['name']} ({keep[key]['setName']})")
+            continue
+        keep[key] = d
+    # a Collector's Edition whose regular edition has a different commander printing is still the same deck by name
+    regular = {base_name(d["name"]) for d in keep.values() if not COLLECTOR.search(d["name"])}
+    out = []
+    for d in keep.values():
+        if COLLECTOR.search(d["name"]) and base_name(d["name"]) in regular:
+            print(f"WOTC COMMANDER PRECONS: removed {d['name']} ({d['setName']}): the regular edition is listed")
+            continue
+        out.append(d)
+    return out
+
 def build(archive: Path, sets: Path, cutoff: str) -> dict:
     names = set_names(sets)
     decks = []
@@ -146,6 +174,7 @@ def build(archive: Path, sets: Path, cutoff: str) -> dict:
             entry = make_deck(raw, names, filename, cutoff)
             if entry is not None:
                 decks.append(entry)
+    decks = dedupe(decks)
     missing = SIX - {x["name"] for x in decks}
     if missing:
         raise ValueError(f"Missing original six official decklists: {sorted(missing)}")
@@ -187,7 +216,7 @@ def build_remote(index: Path, sets: Path, cutoff: str, folder: Path,
     # Bounded concurrency; 4 modest requests, no server-side bulk extraction.
     with ThreadPoolExecutor(max_workers=4) as pool:
         entries = list(pool.map(one, selected))
-    decks = [entry for entry in entries if entry is not None]
+    decks = dedupe([entry for entry in entries if entry is not None])
     missing = SIX - {entry["name"] for entry in decks}
     if missing:
         raise ValueError(f"Official original six missing: {sorted(missing)}")
