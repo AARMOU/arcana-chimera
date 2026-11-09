@@ -524,7 +524,12 @@ public final class ArcanaForgeHost {
                 lastPrompted = input;
                 String cost = String.valueOf(field(input, "manaCost")).trim();
                 String source = paidFor.getHostCard() == null ? "an ability" : paidFor.getHostCard().getName();
-                if (!asksWhilePricing(paidFor) && !forge.ai.ComputerUtilMana.canPayManaCost(paidFor, you.getPlayer(), 0, false)) {
+                // check the cost being asked for ("unless you pay {1}"), not the trigger's own cost, which is nothing
+                // (soak seeds 118/130, Nov 8: Rhystic Study / Overencumbered looked payable with no mana open)
+                boolean payable = field(input, "manaCost") instanceof forge.game.mana.ManaCostBeingPaid mc
+                        ? forge.ai.ComputerUtilMana.canPayManaCost(mc, paidFor, you.getPlayer(), Boolean.TRUE.equals(field(input, "effect")))
+                        : forge.ai.ComputerUtilMana.canPayManaCost(paidFor, you.getPlayer(), 0, false);
+                if (!asksWhilePricing(paidFor) && !payable) {
                     error("You can't pay " + cost + " for " + source + " right now, so it was skipped.");
                     cancel(you);
                     return;
@@ -536,7 +541,8 @@ public final class ArcanaForgeHost {
                 });
                 return;
             }
-            if (optionalTrigger && input == lastPrompted) return; // waiting for the answer
+            // waiting for the answer; once you said "pay" and it still isn't paid, cancel below instead of waiting forever
+            if (optionalTrigger && input == lastPrompted && input != lastAutoPaid) return;
             // Spells and abilities you chose: auto-pay (Argentum's default); if that can't pay, cancel instead of looping
             if (input != lastAutoPaid) { lastAutoPaid = input; ok(you); } else { cancel(you); error("Not enough mana for that, so it was cancelled."); }
             return;
