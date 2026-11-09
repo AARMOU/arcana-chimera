@@ -11,12 +11,16 @@ import kotlin.math.min
  * cards move down to make room), and the cards are laid out again in the area your card slots span, as large as the
  * drawer allows and never smaller than the slots you designed. Design units throughout (the canvas scales them to
  * the screen width).
+ *
+ * [style] (owner, Nov 9): "grid" (above), "row" (one row, overlapping when the hand is wide), or "fan" / "catalogue",
+ * which get one region element ([REGION]) the canvas fills with [ChimeraHandCards].
  */
 internal object ChimeraHandFit {
     private const val GAP = 8f
+    const val REGION = "cards-region"
 
     /** [availableHeight]: the drawer's room for the design, in design units. */
-    fun fit(elements: List<StudioElement>, cardCount: Int, availableHeight: Float, origin: Float): List<StudioElement> {
+    fun fit(elements: List<StudioElement>, cardCount: Int, availableHeight: Float, origin: Float, style: String = "grid"): List<StudioElement> {
         val cards = elements.filter { it.kind == "card" }
         if (cards.isEmpty() || cardCount <= 0 || !availableHeight.isFinite() || availableHeight <= 0f) return elements
         val template = cards.minBy { it.binding.removePrefix("card").toIntOrNull() ?: Int.MAX_VALUE }
@@ -30,6 +34,27 @@ internal object ChimeraHandFit {
         val extent = (elements.maxOf { it.y + it.h } - origin).coerceAtLeast(1f)
         val forCards = availableHeight - (extent - (bottom - top)) // the drawer's room minus the buttons' own room
         val aspect = template.w / template.h
+
+        fun below(newBottom: Float) = others.map { if (it.y >= bottom - 1f) it.copy(y = it.y + (newBottom - bottom)) else it }
+
+        when (style) {
+            "fan", "catalogue" -> {
+                val h = max(forCards, template.h)
+                val region = template.copy(id = REGION, kind = REGION, binding = REGION, x = left, y = top, w = regionW, h = h)
+                return below(top + h) + region
+            }
+            "row" -> {
+                val h = max(min(forCards, regionW / aspect), template.h)
+                val w = h * aspect
+                val step = if (cardCount <= 1) 0f else min(w + GAP, (regionW - w) / (cardCount - 1)).coerceAtLeast(w * 0.18f)
+                val total = w + step * (cardCount - 1)
+                val x0 = left + max(0f, (regionW - total) / 2f)
+                val laid = (0 until cardCount).map { i ->
+                    template.copy(id = "fit$i", binding = "card$i", x = x0 + i * step, y = top, w = w, h = h)
+                }
+                return below(top + h) + laid
+            }
+        }
 
         var w = 0f
         var cols = 1
@@ -49,8 +74,6 @@ internal object ChimeraHandFit {
         val laid = (0 until cardCount).map { i ->
             template.copy(id = "fit$i", binding = "card$i", x = x0 + (i % cols) * (w + GAP), y = top + (i / cols) * (h + GAP), w = w, h = h)
         }
-        val dy = (top + rows * (h + GAP) - GAP) - bottom
-        val moved = others.map { if (it.y >= bottom - 1f) it.copy(y = it.y + dy) else it }
-        return moved + laid
+        return below(top + rows * (h + GAP) - GAP) + laid
     }
 }

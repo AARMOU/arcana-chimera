@@ -865,7 +865,7 @@ public final class ArcanaForgeHost {
                     .put("graveyardSize", p.getCardsIn(ZoneType.Graveyard).size()).put("exileSize", p.getCardsIn(ZoneType.Exile).size())
                     .put("landsPlayedThisTurn", p.getLandsPlayedThisTurn()).put("hasLost", p.hasLost()).put("poisonCounters", p.getPoisonCounters())
                     .put("maxHandSize", p.getMaxHandSize()).put("commanderDamage", commanderDamage(p)).put("activeEffects", new JSONArray())
-                    .put("manaPool", manaPool(p))));
+                    .put("manaPool", manaPool(p)).put("commanderTax", commanderTax(p))));
         }
         JSONArray stack = new JSONArray();
         List<forge.game.spellability.SpellAbilityStackInstance> items = new ArrayList<>();
@@ -900,7 +900,11 @@ public final class ArcanaForgeHost {
         JSONArray out = new JSONArray();
         java.util.List<forge.game.GameLogEntry> all = game.getGameLog().getAllEntries();
         java.util.List<forge.game.GameLogEntry> shown = new ArrayList<>();
-        for (forge.game.GameLogEntry e : all) if (e != null && LOGGED.contains(e.type()) && e.message() != null && !e.message().isBlank()) shown.add(e);
+        java.util.List<Integer> at = new ArrayList<>(); // each shown entry's place in the full log
+        for (int k = 0; k < all.size(); k++) {
+            forge.game.GameLogEntry e = all.get(k);
+            if (e != null && LOGGED.contains(e.type()) && e.message() != null && !e.message().isBlank()) { shown.add(e); at.add(k); }
+        }
         int from = Math.max(0, shown.size() - 200);
         for (int i = from; i < shown.size(); i++) {
             forge.game.GameLogEntry e = shown.get(i);
@@ -909,6 +913,15 @@ public final class ArcanaForgeHost {
                     .put("eventIndex", i);
             if (viewer != null && e.sourceCard() != null && e.sourceCard().getController() != null)
                 line.put("isYours", e.sourceCard().getController().getId() == viewer.getId());
+            // Owner, Nov 9: medium detail in the list, full detail on tap. Everything Forge logged from this entry up to
+            // the next shown one (mana, phases, damage, zone moves...), at most 30 lines.
+            int end = i + 1 < shown.size() ? at.get(i + 1) : all.size();
+            JSONArray details = new JSONArray();
+            for (int k = at.get(i) + 1; k < end && details.length() < 30; k++) {
+                forge.game.GameLogEntry d = all.get(k);
+                if (d != null && d.message() != null && !d.message().isBlank()) details.put(plain(d.message()));
+            }
+            if (details.length() > 0) line.put("details", details);
             out.put(line);
         }
         return out;
@@ -920,6 +933,13 @@ public final class ArcanaForgeHost {
         JSONArray out = new JSONArray();
         for (Map.Entry<Card, Integer> e : p.getCommanderDamage())
             if (e.getValue() > 0) out.put(new JSONObject().put("commanderId", cardId(e.getKey())).put("commanderName", e.getKey().getName()).put("amount", e.getValue()));
+        return out;
+    }
+
+    /** Chimera (owner, Nov 9: Commander button): each commander's tax, by card id (2 per earlier cast from the command zone). */
+    private JSONObject commanderTax(Player p) throws Exception {
+        JSONObject out = new JSONObject();
+        for (Card c : p.getCommanders()) if (c != null) out.put(String.valueOf(cardId(c)), 2 * p.getCommanderCast(c));
         return out;
     }
 

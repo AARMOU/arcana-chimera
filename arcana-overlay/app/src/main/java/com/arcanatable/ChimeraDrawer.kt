@@ -70,12 +70,22 @@ object ChimeraDrawerPicture {
             val old = path
             prefs?.edit()?.putString(KEY, target.absolutePath)?.apply()
             path = target.absolutePath; problem = null
-            old?.let { java.io.File(it).takeIf { f -> f.absolutePath != target.absolutePath }?.delete() }
+            old?.takeIf { !ChimeraBackdrops.isBuiltIn(it) }?.let { java.io.File(it).takeIf { f -> f.absolutePath != target.absolutePath }?.delete() }
         }.onFailure { problem = it.message ?: "Couldn't use that picture." }
     }
 
+    /** A built-in background (ChimeraBackdrops) as the drawer picture. */
+    fun setBuiltIn(context: Context, id: String) {
+        runCatching { ChimeraBackdrops.ensureDrawer(context, id) }.onSuccess { p ->
+            val old = path
+            prefs?.edit()?.putString(KEY, p)?.apply()
+            path = p; problem = null
+            old?.takeIf { it != p && !ChimeraBackdrops.isBuiltIn(it) }?.let { java.io.File(it).delete() }
+        }.onFailure { problem = it.message ?: "Couldn't draw that background." }
+    }
+
     fun clear() {
-        path?.let { java.io.File(it).delete() }
+        path?.takeIf { !ChimeraBackdrops.isBuiltIn(it) }?.let { java.io.File(it).delete() }
         prefs?.edit()?.remove(KEY)?.apply()
         path = null
     }
@@ -163,6 +173,13 @@ internal fun ChimeraDrawerControls() {
             pick.launch(androidx.activity.result.PickVisualMediaRequest(androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia.ImageOnly))
         }
         if (ChimeraDrawerPicture.path != null) StudioChip("Remove picture", true, "chimera-drawer-picture-remove") { ChimeraDrawerPicture.clear() }
+    }
+    androidx.compose.foundation.layout.Row(androidx.compose.ui.Modifier.horizontalScroll(androidx.compose.foundation.rememberScrollState())) {
+        ChimeraBackdrops.ALL.forEach { (id, name) ->
+            StudioChip(name, true, "chimera-drawer-builtin-$id", selected = ChimeraDrawerPicture.path?.endsWith("builtin-$id.jpg") == true) {
+                scope.launch(kotlinx.coroutines.Dispatchers.IO) { ChimeraDrawerPicture.setBuiltIn(context, id) }
+            }
+        }
     }
     ChimeraDrawerPicture.problem?.let { androidx.compose.material3.Text(it, color = androidx.compose.ui.graphics.Color(0xFFE9978B), fontSize = androidx.compose.ui.unit.TextUnit(12f, androidx.compose.ui.unit.TextUnitType.Sp)) }
 }
