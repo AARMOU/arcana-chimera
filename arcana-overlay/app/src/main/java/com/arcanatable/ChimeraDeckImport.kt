@@ -120,8 +120,41 @@ object ChimeraDeckImport {
      */
     private fun manabox(url: String): String {
         val body = get(url, json = false)
+        manaboxData(body)?.let { return it }
         manaboxText(body)?.let { return it }
         return anyPage(url) // a page that changed shape: the general reader's best effort
+    }
+
+    /**
+     * The deck as ManaBox embeds it in the page (HTML-escaped data, one entry per printing): internalId, name,
+     * quantity, boardCategory (0 commander, 3 main deck; others kept as sideboard so nothing is lost or added),
+     * imageUrlNormal (the printing's art, kept for Change art). Checked on the owner's deck: 100 cards, 98 entries.
+     */
+    internal fun manaboxData(html: String): String? {
+        val text = html.replace("&quot;", "\"").replace("&amp;", "&").replace("&#39;", "'").replace("&#x27;", "'")
+        val starts = Regex(""""internalId":\[0,(\d+)\]""").findAll(text).map { it.range.first }.toList()
+        fun field(chunk: String, key: String): String? =
+            Regex(""""$key":\[0,"((?:[^"\\]|\\.)*)"\]""").find(chunk)?.groupValues?.get(1)?.let { runCatching { org.json.JSONArray("[\"$it\"]").getString(0) }.getOrDefault(it) }
+        fun number(chunk: String, key: String): Int? = Regex(""""$key":\[0,(\d+)\]""").find(chunk)?.groupValues?.get(1)?.toIntOrNull()
+        val seen = HashSet<Int>()
+        val d = Deck()
+        for ((i, s) in starts.withIndex()) {
+            val chunk = text.substring(s, if (i + 1 < starts.size) starts[i + 1] else minOf(text.length, s + 6000))
+            val id = number(chunk, "internalId") ?: continue
+            val name = field(chunk, "name") ?: continue
+            val qty = number(chunk, "quantity") ?: continue
+            if (!seen.add(id) || qty !in 1..99) continue
+            when (number(chunk, "boardCategory")) {
+                0 -> d.commander += qty to name
+                3, null -> d.main += qty to name
+                else -> d.side += qty to name
+            }
+            field(chunk, "imageUrlNormal")?.takeIf { it.startsWith("https://") }?.let { img -> runCatching { ChimeraArt.set(name, img) } }
+        }
+        if (d.main.size + d.commander.size < 5) return null
+        fun merge(l: MutableList<Pair<Int, String>>) { val m = LinkedHashMap<String, Int>(); l.forEach { (n, c) -> m.merge(c, n, Int::plus) }; l.clear(); m.forEach { (c, n) -> l += n to c } }
+        merge(d.commander); merge(d.main); merge(d.side)
+        return d.text()
     }
 
     internal fun manaboxText(html: String): String? {
