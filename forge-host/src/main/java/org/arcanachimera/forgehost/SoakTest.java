@@ -32,7 +32,7 @@ import java.util.concurrent.TimeUnit;
  *               player at 0 life, 10 poison or 21 commander damage who hasn't lost; your commander put in the
  *               graveyard or exile without the command-zone question (the Nov 8 Ayula bug: the bridge was fine,
  *               the rules were silently off, so only a rules check could see it)
- *   RAW_TEXT    a prompt or choice with Forge's unfilled placeholders (%d, %s, {0}) or untranslated keys (lblXxx)
+ *   RAW_TEXT    a prompt or choice with Forge's unfilled placeholders (%d, %s, %1$s) or untranslated keys (lblXxx)
  * A game that reaches the turn limit without ending is fine (counted, not failed).
  *
  * Every game has its own seed; a failure prints it, and `seed=<n> games=1` replays that game.
@@ -46,7 +46,7 @@ public final class SoakTest {
      * is a player-visible rules mistake (a missing question, a player who should have lost).
      */
     static final class RulesWatch {
-        private static final java.util.regex.Pattern RAW = java.util.regex.Pattern.compile("%[ds]|\\{\\d\\}|\\blbl[A-Z]");
+        private static final java.util.regex.Pattern RAW = java.util.regex.Pattern.compile("%[ds]|%\\d\\$|\\blbl[A-Z]");
         boolean variantChecked;
         boolean askedCommandZone;          // a command-zone question since your commander last left play
         final Set<String> declinedCommander = new HashSet<>(); // you said "leave it": staying put is right
