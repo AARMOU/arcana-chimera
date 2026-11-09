@@ -33,9 +33,9 @@ public final class PromptScenarios {
     public static void main(String[] args) throws Exception {
         forgeDir = args.length > 0 ? args[0] : "../forge-gui/";
         List<String> failures = new ArrayList<>();
-        for (String name : List.of("A-ghalta-order", "B-combat-damage", "C-mulligan", "D-trample-short", "E-stack", "F-mana-convoke", "G-you-lose", "H-end-step")) {
+        for (String name : List.of("A-ghalta-order", "B-combat-damage", "C-mulligan", "D-trample-short", "E-stack", "F-mana-convoke", "G-you-lose", "H-end-step", "I-may-pay")) {
             String r;
-            try { r = name.startsWith("A") ? ghalta() : name.startsWith("B") ? combatDamage() : name.startsWith("C") ? mulligan() : name.startsWith("D") ? trampleShort() : name.startsWith("E") ? stack() : name.startsWith("F") ? manaAndConvoke() : name.startsWith("G") ? youLose() : endStep(); }
+            try { r = name.startsWith("A") ? ghalta() : name.startsWith("B") ? combatDamage() : name.startsWith("C") ? mulligan() : name.startsWith("D") ? trampleShort() : name.startsWith("E") ? stack() : name.startsWith("F") ? manaAndConvoke() : name.startsWith("G") ? youLose() : name.startsWith("H") ? endStep() : mayPay(); }
             catch (Throwable t) { t.printStackTrace(); r = "FAIL: " + t; }
             System.out.println("SCENARIO " + name + " " + r);
             if (!r.startsWith("PASS")) failures.add(name);
@@ -653,6 +653,59 @@ public final class PromptScenarios {
                     continue;
                 }
                 if (life(m.getJSONObject("state"), ArcanaForgeHost.AI_ID) == 18) return "PASS: stopped at the AI's end step (Shock in hand), cast it there, AI at 18";
+                s.send(new JSONObject().put("type", "PassPriority").put("playerId", ArcanaForgeHost.HUMAN_ID));
+            }
+        } finally { s.close(); }
+    }
+
+    // ------------------------------------------------------------------ I. "you may pay" on a trigger (phone, Nov 8 18:28)
+
+    /**
+     * Ultron attacks and connives: the discard prompt shows its count (it said "Discard %d card(s)"), then
+     * "you may pay {1}" for a Robot is asked (it was auto-paid, or "Not enough mana" when it couldn't be).
+     */
+    private static String mayPay() throws Exception {
+        Session s = new Session(String.join("\n",
+                "activeplayer=human", "activephase=MAIN1", "removesummoningsickness=true",
+                "humanlife=20", "ailife=20", "humanlibrary=" + LIBRARY, "ailibrary=" + LIBRARY,
+                "humanbattlefield=Ultron, Unlimited;Island", "humanhand=Grizzly Bears", "aibattlefield=", "aihand="), "Ultron, Unlimited");
+        try {
+            boolean attacked = false, discardOk = false, payAsked = false;
+            while (true) {
+                JSONObject m = s.next(60);
+                if (!interactive(m)) continue;
+                JSONObject d = m.optJSONObject("pendingDecision");
+                if (d != null && !s.fresh(d)) continue;
+                if (d != null) {
+                    String type = d.optString("type"), prompt = d.optString("prompt");
+                    if (type.equals("SelectCardsDecision")) {
+                        if (prompt.contains("%d")) return "FAIL: prompt not filled in: " + prompt;
+                        discardOk = true;
+                        s.answer(d, new JSONObject().put("type", "CardsSelectedResponse").put("selectedCards", new JSONArray().put(d.getJSONArray("options").get(0))));
+                    } else if (type.equals("YesNoDecision") && prompt.startsWith("Pay ")) {
+                        payAsked = true;
+                        s.answer(d, new JSONObject().put("type", "YesNoResponse").put("choice", true));
+                    } else if (type.equals("YesNoDecision")) {
+                        s.answer(d, new JSONObject().put("type", "YesNoResponse").put("choice", true));
+                    } else return "FAIL: unexpected decision " + type + " (" + prompt + ")";
+                    continue;
+                }
+                JSONObject state = m.getJSONObject("state");
+                JSONArray legal = m.getJSONArray("legalActions");
+                JSONObject attack = null;
+                for (int i = 0; i < legal.length(); i++) if (legal.getJSONObject(i).optString("actionType").equals("DeclareAttackers")) attack = legal.getJSONObject(i);
+                if (attack != null && !attacked) {
+                    attacked = true;
+                    s.send(new JSONObject(attack.getJSONObject("action").toString()).put("attackers", new JSONObject().put(battlefield(state, ArcanaForgeHost.HUMAN_ID, "Ultron, Unlimited").get(0), ArcanaForgeHost.AI_ID)));
+                    continue;
+                }
+                List<String> robots = new ArrayList<>();
+                for (String id : state.getJSONObject("cards").keySet()) { JSONObject c = state.getJSONObject("cards").getJSONObject(id); if (c.optString("name").contains("Robot") && c.optBoolean("isToken")) robots.add(id); }
+                if (!robots.isEmpty()) {
+                    if (!discardOk || !payAsked) return "FAIL: Robot made but discardShown=" + discardOk + ", payAsked=" + payAsked;
+                    return "PASS: connive discard prompt filled in; \"pay {1}?\" asked and paid; Robot token created";
+                }
+                if (attacked && state.optString("currentStep").equals("POSTCOMBAT_MAIN")) return "FAIL: no Robot after attacking (discardShown=" + discardOk + ", payAsked=" + payAsked + ") notices " + s.notices;
                 s.send(new JSONObject().put("type", "PassPriority").put("playerId", ArcanaForgeHost.HUMAN_ID));
             }
         } finally { s.close(); }

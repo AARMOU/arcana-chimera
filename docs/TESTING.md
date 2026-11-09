@@ -62,6 +62,7 @@ java -Xmx4g -Djava.awt.headless=true -cp "$OUT/classes:$CP" org.arcanachimera.fo
 | F Mana + Convoke | Tap sources yourself and float mana; Convoke choice; the Convoke cost check that froze the bridge (Nov 8) |
 | G You lose | Game over reaches Arcana after Forge drops your seat (Nov 8) |
 | H End step | A stop at the AI's end step when you can act (Goose's PR #19 concern); option dialogs are real choices; a stray pass can't answer a question (Nov 8) |
+| I May pay | "You may pay {1}" on a trigger is asked, not auto-paid; connive's discard prompt shows its count (Nov 8) |
 
 ## Rules for changes
 

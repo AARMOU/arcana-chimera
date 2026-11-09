@@ -496,7 +496,31 @@ public final class ArcanaForgeHost {
         long buildStart = System.nanoTime();
         PlayerControllerHuman you = humanController();
         Input input = you == null ? null : you.getInputQueue().getActualInput(you);
-        if (input instanceof InputPayMana) { // Argentum default: auto-pay; if that can't pay, cancel instead of looping
+        if (input instanceof InputPayMana) {
+            if (pending != null) { emitDecision(); return; }
+            SpellAbility paidFor = field(input, "saPaidFor") instanceof SpellAbility sa ? sa : null;
+            boolean optionalTrigger = paidFor != null && (paidFor.isTrigger() || paidFor.getRootAbility().isTrigger());
+            if (optionalTrigger && input != lastAutoPaid && input != lastPrompted) {
+                // "You may pay {1}" on a trigger (phone, Nov 8: Ultron's Robot): Forge's payment prompt is the choice
+                // itself, so ask instead of paying automatically; if it can't be paid, say so and skip it.
+                final Input payInput = input;
+                lastPrompted = input;
+                String cost = String.valueOf(field(input, "manaCost")).trim();
+                String source = paidFor.getHostCard() == null ? "an ability" : paidFor.getHostCard().getName();
+                if (!asksWhilePricing(paidFor) && !forge.ai.ComputerUtilMana.canPayManaCost(paidFor, you.getPlayer(), 0, false)) {
+                    error("You can't pay " + cost + " for " + source + " right now, so it was skipped.");
+                    cancel(you);
+                    return;
+                }
+                JSONObject d = decisionBase("YesNoDecision", "Pay " + cost + " for " + source + "? " + paidFor.getStackDescription())
+                        .put("yesText", "Pay " + cost).put("noText", "Don't pay");
+                openForInput(d, Map.of(), r -> {
+                    if (r.optBoolean("choice")) { lastAutoPaid = payInput; ok(you); } else cancel(you);
+                });
+                return;
+            }
+            if (optionalTrigger && input == lastPrompted) return; // waiting for the answer
+            // Spells and abilities you chose: auto-pay (Argentum's default); if that can't pay, cancel instead of looping
             if (input != lastAutoPaid) { lastAutoPaid = input; ok(you); } else { cancel(you); error("Not enough mana for that, so it was cancelled."); }
             return;
         }
@@ -1246,6 +1270,7 @@ public final class ArcanaForgeHost {
             JSONArray options = new JSONArray(); JSONObject info = new JSONObject();
             if (choices instanceof Iterable<?> it) for (Object o : it) { String id = idOf(o); if (id != null) { objects.put(id, o); options.put(id); info.put(id, cardInfo(o)); } }
             String prompt = field(input, "message") instanceof String m ? m : "Choose";
+            if (prompt.contains("%d")) prompt = prompt.replace("%d", String.valueOf(min == max ? min : max)); // Forge formats it on display
             JSONObject d = decisionBase("SelectCardsDecision", prompt).put("options", options)
                     .put("minSelections", Math.min(min, options.length())).put("maxSelections", Math.min(max, options.length())).put("cardInfo", info);
             boolean cancellable = Boolean.TRUE.equals(field(input, "allowCancel"));
