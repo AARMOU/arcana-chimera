@@ -167,6 +167,58 @@ patch("HandLayout.kt", [
      "        }\n"),
 ])
 
+# Arcana Studio selection (owner, Nov 9: "tap and hold ... automatically selects multiple buttons. I just want to tap
+# and hold on a button to enter a selection mode"). Holding an item now selects just it and turns on selection mode;
+# taps then add or remove items; holding the selected item again (or closing the selection) ends it. Selecting
+# everything like an item stays available as a "Select all N like it" button in the side panel. Same in the hand editor.
+patch("StudioControls.kt", [
+    ("    var group by mutableStateOf<Set<String>>(emptySet())\n",
+     "    var group by mutableStateOf<Set<String>>(emptySet())\n"
+     "    /** Chimera (owner, Nov 9): selection mode, entered by holding one item; taps then add or remove items. */\n"
+     "    var picking by mutableStateOf(false)\n"),
+    ("var selected:String? get()=lead;set(v){lead=v;group=emptySet();if(v!=null)tablePicked=false}",
+     "var selected:String? get()=lead;set(v){lead=v;group=emptySet();if(v!=null)tablePicked=false else picking=false}"),
+    ("    fun holdSelect(id:String) {\n",
+     "    fun holdSelect(id:String) {\n"
+     "        if(controls[id]==null)return\n"
+     "        if(picking && lead==id){picking=false;group=emptySet();StudioLog.add(\"Selection mode off\");return}\n"
+     "        lead=id;group=emptySet();tablePicked=false;picking=true;panelOpen=true\n"
+     "        StudioLog.add(\"Selection mode: ${title(id)}; tap items to add them\")\n"
+     "    }\n"
+     "    /** Arcana's Nov 7 hold: select the item and everything like it (now the side panel's \"Select all like it\"). */\n"
+     "    fun selectAllLike(id:String) {\n        picking=true\n"),
+])
+patch("StudioEditorShell.kt", [
+    ("hit!=null && runtime.group.isNotEmpty()->runtime.toggleMember(hit)",
+     "hit!=null && (runtime.group.isNotEmpty() || runtime.picking)->runtime.toggleMember(hit)"),
+    ("    var handGroup by remember{mutableStateOf(emptySet<String>())}\n    val pickHand:(String?)->Unit={handSelected=it;handGroup=emptySet()}",
+     "    var handGroup by remember{mutableStateOf(emptySet<String>())}\n    var handPicking by remember{mutableStateOf(false)}\n"
+     "    val pickHand:(String?)->Unit={handSelected=it;handGroup=emptySet();if(it==null)handPicking=false}"),
+    ("        if(handSelected==id && handGroup.isNotEmpty())handGroup=emptySet()\n"
+     "        else {handSelected=id;handGroup=l.elements.filter{it.id!=id && it.kind==kind && it.visible}.map{it.id}.toSet()}\n"
+     "        StudioLog.add(\"Hand: selected ${handGroup.size+1} like $id\")",
+     "        if(kind!=null && handPicking && handSelected==id){handPicking=false;handGroup=emptySet()}\n"
+     "        else if(kind!=null){handSelected=id;handGroup=emptySet();handPicking=true}\n"
+     "        StudioLog.add(if(handPicking)\"Hand: selection mode, $id\" else \"Hand: selection mode off\")"),
+    ("group=handGroup,onHold=holdHand,onToggle=toggleHand,",
+     "group=handGroup,onHold=holdHand,onToggle=toggleHand,picking=handPicking,"),
+])
+patch("StudioHandEditor.kt", [
+    ("intercept:Boolean,snap:Boolean,outlines:Boolean,group:Set<String> = emptySet(),onHold:(String)->Unit={},onToggle:(String)->Unit={},",
+     "intercept:Boolean,snap:Boolean,outlines:Boolean,group:Set<String> = emptySet(),onHold:(String)->Unit={},onToggle:(String)->Unit={},picking:Boolean=false,"),
+    ("    val currentGroup by rememberUpdatedState(group)\n",
+     "    val currentGroup by rememberUpdatedState(group)\n    val currentPicking by rememberUpdatedState(picking)\n"),
+    ("hit!=null && currentGroup.isNotEmpty()->toggle(hit)",
+     "hit!=null && (currentGroup.isNotEmpty() || currentPicking)->toggle(hit)"),
+])
+patch("StudioInspector.kt", [
+    ('                    if(runtime.group.isEmpty() && like>0)Text("Hold it to pick all ${like+1} like it",color=darkTableColors.muted,fontSize=10.sp,maxLines=1)\n'
+     '                    else if(runtime.group.isNotEmpty())Text("Tap items to add or remove · hold to go back to one",color=darkTableColors.muted,fontSize=10.sp,maxLines=1)\n',
+     '                    if(runtime.picking || runtime.group.isNotEmpty())Text("Selection mode: tap items to add or remove · hold to finish",color=darkTableColors.muted,fontSize=10.sp,maxLines=1)\n'
+     '                    else Text("Hold it to select several",color=darkTableColors.muted,fontSize=10.sp,maxLines=1)\n'
+     '                    if(like>0 && runtime.group.size<like)StudioChip("Select all ${like+1} like it",true,"studio-select-like"){runtime.selectAllLike(control.id)}\n'),
+])
+
 # Import-time "not in Argentum" messages: Argentum no longer runs the game, so don't report against it.
 patch("DeckSupport.kt", [
     ('''        append("Argentum check: $argentumCopies in Argentum")
