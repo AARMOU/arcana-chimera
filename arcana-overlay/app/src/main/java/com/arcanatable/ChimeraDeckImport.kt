@@ -164,7 +164,7 @@ object ChimeraDeckImport {
         fun col(vararg names: String) = header.indexOfFirst { it in names }
         val qty = col("quantity", "count", "qty", "amount", "#", "number of cards")
         val zone = col("board", "zone", "section", "category", "categories", "deck", "type")
-        val set = col("set code", "set", "edition code", "set_code", "setcode")
+        val set = col("set code", "set", "edition", "edition code", "set_code", "setcode")
         val number = col("collector number", "collector_number", "collectornumber", "cn", "card number")
         val d = Deck()
         text.lines().drop(text.lines().indexOfFirst { it.isNotBlank() } + 1).forEach { line ->

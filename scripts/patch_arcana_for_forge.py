@@ -96,7 +96,7 @@ patch("TableController.kt", [
 ])
 patch("DeckBuilderScreen.kt", [
     ("""onClick = { pendingImport = importText; importing = false; editing = "" }""",
-     """onClick = { ChimeraDeckImport.fetchInto(importText, { list -> pendingImport = list; importing = false; editing = "" }, { e -> importText = importText + "\n// " + e }) }"""),
+     """onClick = { ChimeraDeckImport.fetchInto(importText, { list -> pendingImport = list; importing = false; editing = "" }, { e -> importText = importText + System.lineSeparator() + "// " + e }) }"""),
 ])
 patch("TableController.kt", [
     ("if (supportReport != null && supportReport.unsupportedCopies > 0) {\n                    val names = supportReport.unsupportedNames",
