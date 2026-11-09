@@ -135,6 +135,16 @@ patch("TableArgentum.kt", [
      'imageUrl = ChimeraArt.get(detail.optString("name")) ?: detail.optString("imageUri").takeUnless { it.isBlank() || it == "null" },\n                    manaCost = detail.optString("manaCost")'),
 ])
 
+# "Pass to my turn" (owner, Nov 9 12:10: "sometimes it passes through my first main straight to combat"): the loop
+# waited 300 ms and then decided from the state it had before waiting; when your turn arrived during the wait it
+# passed anyway, from your new main phase. After the wait it now steps aside if a newer state has arrived (the next
+# round decides from that one).
+patch("TableEffects.kt", [
+    ("delay(300) // let a burst of updates settle before answering\n",
+     "delay(300) // let a burst of updates settle before answering\n"
+     "        if (argentumSnapshot !== snapshot || argentumAwaitingUpdate) return@LaunchedEffect // decide from the newest state only\n"),
+])
+
 # Import-time "not in Argentum" messages: Argentum no longer runs the game, so don't report against it.
 patch("DeckSupport.kt", [
     ('''        append("Argentum check: $argentumCopies in Argentum")

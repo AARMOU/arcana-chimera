@@ -1102,6 +1102,15 @@ public final class ArcanaForgeHost {
         catch (Exception ignored) { }
     }
 
+    /**
+     * Forge telling you something (the AI's choice of a creature type or color, a reveal): shown as a note, not an
+     * error (owner, Nov 9: "Offline AI picked Bear" arrived as an error). Arcana shows LINK_NOTE messages plainly.
+     */
+    private void note(String text) {
+        try { sink.accept(new JSONObject().put("type", "error").put("code", "LINK_NOTE").put("message", plain(text))); }
+        catch (Exception ignored) { }
+    }
+
     /** Forge's combat rule messages, the way a player says them (and without Forge's object numbers). */
     static String plain(String text) {
         String t = text.replaceAll(" \\(\\d+\\)", "").trim();
@@ -1672,6 +1681,7 @@ public final class ArcanaForgeHost {
                         String kind = y == null ? "" : inputClassName(y.getInputQueue().getActualInput(y));
                         // while you're declaring attackers or blockers, Forge's message is why your declaration was refused
                         if (kind.equals("InputBlock") || kind.equals("InputAttack")) reject(String.valueOf(args[0]));
+                        else if (name.equals("message")) note(String.valueOf(args[0])); // e.g. "Offline AI picked Bear": news, not a problem
                         else error(String.valueOf(args[0]));
                     }
                     scheduleEmit(); return null;
