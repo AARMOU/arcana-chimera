@@ -10,7 +10,7 @@ the PR in the **Forge host proof** workflow (`.github/workflows/forge-host-proof
 |---|---|---|---|
 | 1 | `ProtocolGuardSelfTest` | The message checker itself rejects bad messages | `PROTOCOL GUARD RESULT` |
 | 2 | `OneTurnProof` | A real 1v1 game: land, creature, targeted spell, attack, AI turn, a second game in the same session | `PROOF RESULT` |
-| 3 | `PromptScenarios` A–G | Fixed boards for each bug found so far (below) | `SCENARIO …`, `SCENARIOS RESULT` |
+| 3 | `PromptScenarios` A–K | Fixed boards for each bug found so far (below) | `SCENARIO …`, `SCENARIOS RESULT` |
 | 4 | `FourSeatProof` | 4 Commander seats: opening hand → AI turns → back to you, with an explicit cleanup discard | `FOUR-SEAT ADAPTER RESULT` |
 | 5 | `AllCardsCheck` | Every Forge card (33,612) builds; every card in Arcana's bundled decks (1,544) resolves to a Forge card | `ALLCARDS RESULT` |
 | 6 | `SoakTest` | **Random play**: whole games on Arcana's bundled decks, 2–4 seats, random legal actions and random valid answers | `SOAK RESULT` |
@@ -63,6 +63,8 @@ java -Xmx4g -Djava.awt.headless=true -cp "$OUT/classes:$CP" org.arcanachimera.fo
 | G You lose | Game over reaches Arcana after Forge drops your seat (Nov 8) |
 | H End step | A stop at the AI's end step when you can act (Goose's PR #19 concern); option dialogs are real choices; a stray pass can't answer a question (Nov 8) |
 | I May pay | "You may pay {1}" on a trigger is asked, not auto-paid; connive's discard prompt shows its count (Nov 8) |
+| J Ayula fight | Fight mode with 0, 1 and 2 opposing creatures (0 is info only: Forge offers the mode and the fight does nothing) (Nov 8) |
+| K Commander dies | Commander games apply Forge's Commander variant: you're asked to return a dead commander to the command zone and can recast it (Nov 8) |
 
 ## Rules for changes
 
