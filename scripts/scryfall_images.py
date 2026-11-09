@@ -50,7 +50,11 @@ try:
     if raw[:2] == b"\x1f\x8b":
         import gzip
         raw = gzip.decompress(raw)
-    cards = json.loads(raw)
+    text = raw.decode("utf-8").strip()
+    if text.startswith("["):
+        cards = json.loads(text)
+    else:  # JSON Lines: one card per line (Scryfall's .jsonl.gz, Nov 2026)
+        cards = [json.loads(line) for line in text.splitlines() if line.strip().startswith("{")]
     for c in cards:
         if c.get("layout") in ("art_series",):
             continue
