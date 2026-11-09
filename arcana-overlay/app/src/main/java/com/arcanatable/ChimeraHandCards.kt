@@ -100,6 +100,7 @@ private fun ChimeraCatalogueHand(cards: List<GameCard>, playable: Set<Int>, sele
         val cardW = cardH * 0.716f
         val step = cardW * 0.6f
         val stepPx = with(LocalDensity.current) { step.toPx() }.coerceAtLeast(1f)
+        val centre = (maxWidth - cardW) / 2
         Column(Modifier.fillMaxSize()) {
             Box(Modifier.fillMaxWidth().height(cardH).clipToBounds().pointerInput(n, stepPx) {
                 detectHorizontalDragGestures(
@@ -107,7 +108,6 @@ private fun ChimeraCatalogueHand(cards: List<GameCard>, playable: Set<Int>, sele
                     onDragCancel = { scope.launch { pos.animateTo(pos.value.roundToInt().coerceIn(0, n - 1).toFloat()) } },
                     onHorizontalDrag = { change, dx -> change.consume(); scope.launch { pos.snapTo((pos.value - dx / stepPx).coerceIn(0f, n - 1f)) } })
             }) {
-                val centre = (maxWidth - cardW) / 2
                 cards.withIndex().sortedByDescending { abs(it.index - pos.value) }.forEach { (i, card) ->
                     val d = i - pos.value
                     if (abs(d) > 4f) return@forEach
