@@ -42,6 +42,12 @@ cp "$ROOT/forge-host/src/main/java/org/arcanachimera/forgehost/ArcanaForgeHost.j
 cp "$LIBS"/*.jar "$APP/libs/forge/"
 cp "$WORK/forge-res.zip" "$APP/src/main/assets/forge-res.zip"
 python3 "$ROOT/scripts/patch_arcana_for_forge.py" "$APP" # owner: no Argentum card check; Forge decides
+echo "== Chimera official WotC Commander decklists (bundled offline; no Arcana writes)"
+mkdir -p "$APP/src/main/assets/precons"
+python3 "$ROOT/scripts/build_wotc_commander_precons.py" --out "$APP/src/main/assets/precons/wotc-commander-precons.json"
+cp "$ROOT/arcana-overlay/app/src/main/java/com/arcanatable/ChimeraPrecons.kt" "$APP/src/main/java/com/arcanatable/"
+cp "$ROOT/arcana-overlay/app/src/main/java/com/arcanatable/ChimeraPreconTree.kt" "$APP/src/main/java/com/arcanatable/"
+python3 "$ROOT/scripts/patch_commander_precons.py" "$APP"
 echo "== Forge's cards for Arcana's deck import and editor (ForgeCatalogExport)"
 (cd "$FORGE" && mvn -B -q dependency:copy -Dartifact=org.json:json:20240303 -DoutputDirectory="$WORK/jvm")
 mkdir -p "$WORK/jvm/classes"
