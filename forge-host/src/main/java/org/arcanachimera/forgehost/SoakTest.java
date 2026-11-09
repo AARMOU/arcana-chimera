@@ -176,6 +176,8 @@ public final class SoakTest {
         final List<Game> guests = new ArrayList<>();
         boolean gone, gameOverSeen;
         final RulesWatch rules = new RulesWatch();
+        String lastError = "";
+        int movesThisStep;
         long lostAt;
 
         Game(long seed, Random rng, List<Deck> decks, int turnLimit, ArcanaForgeHost.AiStrength ai, String forgeDir) {
@@ -237,6 +239,7 @@ public final class SoakTest {
             switch (type) {
                 case "error" -> {
                     String text = m.optString("message");
+                    lastError = text;
                     if (text.contains("can't show yet")) return "FAIL UNBRIDGED " + text;
                     if (text.startsWith("Forge host problem")) return "FAIL HOST_ERROR " + text;
                 }
@@ -279,6 +282,14 @@ public final class SoakTest {
                     }
                     if (m.optBoolean("interactive") && turn <= turnLimit) {
                         try { act(host, m, st); }
+                        catch (IllegalStateException loop) {
+                            if (!"LOOP".equals(loop.getMessage())) throw loop;
+                            JSONArray legal = m.optJSONArray("legalActions");
+                            List<String> kinds = new ArrayList<>();
+                            if (legal != null) for (int i = 0; i < legal.length(); i++) kinds.add(legal.getJSONObject(i).optString("description"));
+                            return "FAIL LOOP 100 moves in " + stepKey + " without progress; Forge input " + m.optString("forgeInput")
+                                    + "; last error: " + lastError + "; offered " + kinds + "\n" + stacks();
+                        }
                         catch (RuntimeException bot) { bot.printStackTrace(); return "FAIL BOT_ERROR (the soak bot, not the bridge) " + bot; }
                     }
                 }
@@ -329,7 +340,9 @@ public final class SoakTest {
             JSONArray legal = m.optJSONArray("legalActions");
             if (legal == null || legal.length() == 0) return;
             String key = st.optInt("turnNumber") + "/" + st.optString("currentStep");
-            if (!key.equals(stepKey)) { stepKey = key; actionsThisStep = 0; }
+            if (!key.equals(stepKey)) { stepKey = key; actionsThisStep = 0; movesThisStep = 0; }
+            // the game isn't moving: every move is refused or changes nothing (a stuck input, not a slow AI)
+            if (++movesThisStep > 100) throw new IllegalStateException("LOOP");
             JSONObject chosen = null;
             for (int i = 0; i < legal.length(); i++) {
                 JSONObject a = legal.getJSONObject(i);
