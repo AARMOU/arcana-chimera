@@ -62,6 +62,8 @@ class LocalArgentumHost(
                     ArcanaForgeHost.pictures = java.util.function.Function { name ->
                         kotlinx.coroutines.runBlocking { com.arcanatable.CardImages.bundledImage(app, name) }
                             ?: kotlinx.coroutines.runBlocking { com.arcanatable.CardImages.bundledImage(app, name.substringBefore(" // ")) }
+                            // no bundled link: Scryfall's lookup by name, which Arcana's picture loader resolves
+                            ?: com.arcanatable.artByName(name, false)
                     }
                 }
             }, "arcana-pictures").start()

@@ -12,6 +12,7 @@ Usage: scryfall_images.py <out.tsv>
 """
 import json
 import sys
+import urllib.error
 import urllib.request
 
 UA = {"User-Agent": "ArcanaChimera-build/1.0", "Accept": "application/json"}
@@ -24,8 +25,13 @@ def get(url):
 
 rows = {}
 try:
-    meta = json.load(get("https://api.scryfall.com/bulk-data/oracle-cards"))
-    cards = json.load(get(meta["download_uri"]))
+    listing = json.load(get("https://api.scryfall.com/bulk-data"))
+    entries = listing.get("data", []) if isinstance(listing, dict) else []
+    uri = next((e.get("download_uri") for e in entries if e.get("type") == "oracle_cards"), None)
+    if not uri:
+        raise RuntimeError("no oracle_cards in Scryfall's bulk listing: " + json.dumps(listing)[:400])
+    print(f"scryfall_images: downloading {uri}")
+    cards = json.load(get(uri))
     for c in cards:
         if c.get("layout") in ("art_series",):
             continue
@@ -41,8 +47,10 @@ try:
             img = (f.get("image_uris") or {}).get("normal")
             if img and f.get("name"):
                 rows.setdefault(f["name"].lower(), (f["name"], img))
+except urllib.error.HTTPError as e:  # say what Scryfall answered, then keep building
+    print(f"scryfall_images: skipped (HTTP {e.code}: {e.read()[:300]!r})", file=sys.stderr)
 except Exception as e:  # no network or Scryfall changed: keep building
-    print(f"scryfall_images: skipped ({e})", file=sys.stderr)
+    print(f"scryfall_images: skipped ({type(e).__name__}: {e})", file=sys.stderr)
 
 with open(out, "w", encoding="utf-8") as fh:
     for key, (name, img) in rows.items():
