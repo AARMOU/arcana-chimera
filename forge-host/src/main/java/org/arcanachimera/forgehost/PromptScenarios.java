@@ -33,9 +33,9 @@ public final class PromptScenarios {
     public static void main(String[] args) throws Exception {
         forgeDir = args.length > 0 ? args[0] : "../forge-gui/";
         List<String> failures = new ArrayList<>();
-        for (String name : List.of("A-ghalta-order", "B-combat-damage", "C-mulligan", "D-trample-short", "E-stack", "F-mana-convoke", "G-you-lose", "H-end-step", "I-may-pay", "J-ayula-fight-0", "J-ayula-fight-1", "J-ayula-fight-2")) {
+        for (String name : List.of("A-ghalta-order", "B-combat-damage", "C-mulligan", "D-trample-short", "E-stack", "F-mana-convoke", "G-you-lose", "H-end-step", "I-may-pay", "J-ayula-fight-0", "J-ayula-fight-1", "J-ayula-fight-2", "K-commander-dies")) {
             String r;
-            try { r = name.startsWith("A") ? ghalta() : name.startsWith("B") ? combatDamage() : name.startsWith("C") ? mulligan() : name.startsWith("D") ? trampleShort() : name.startsWith("E") ? stack() : name.startsWith("F") ? manaAndConvoke() : name.startsWith("G") ? youLose() : name.startsWith("H") ? endStep() : name.startsWith("I") ? mayPay() : ayulaFight(name.charAt(name.length() - 1) - '0'); }
+            try { r = name.startsWith("A") ? ghalta() : name.startsWith("B") ? combatDamage() : name.startsWith("C") ? mulligan() : name.startsWith("D") ? trampleShort() : name.startsWith("E") ? stack() : name.startsWith("F") ? manaAndConvoke() : name.startsWith("G") ? youLose() : name.startsWith("H") ? endStep() : name.startsWith("I") ? mayPay() : name.startsWith("J") ? ayulaFight(name.charAt(name.length() - 1) - '0') : commanderDies(); }
             catch (Throwable t) { t.printStackTrace(); r = "FAIL: " + t; }
             System.out.println("SCENARIO " + name + " " + r);
             if (!r.startsWith("PASS")) failures.add(name);
@@ -755,6 +755,49 @@ public final class PromptScenarios {
                     if (aiCreatures == 0) return "PASS (info, no AI creatures): " + summary; // what Forge offers and does with nothing to fight
                     // Ayula (2/2) fights Hill Giant (3/3): Ayula dies, the Giant has 2 damage
                     return !ayulaAlive && giantDamage == 2 ? "PASS: fight happened. " + summary : "FAIL: no fight. " + summary;
+                }
+                s.send(new JSONObject().put("type", "PassPriority").put("playerId", ArcanaForgeHost.HUMAN_ID));
+            }
+            return "FAIL: timed out; decisions " + decisions;
+        } finally { s.close(); }
+    }
+
+    // ------------------------------------------------------------------ K. your commander dies (phone, Nov 8 19:10)
+
+    /** Your commander (Ayula) is Shocked: you must be asked to move it to the command zone, and be able to recast it. */
+    private static String commanderDies() throws Exception {
+        Session s = new Session(String.join("\n",
+                "activeplayer=human", "activephase=MAIN1", "removesummoningsickness=true",
+                "humanlife=20", "ailife=20", "humanlibrary=" + LIBRARY, "ailibrary=" + LIBRARY,
+                "humanbattlefield=Ayula, Queen Among Bears|IsCommander;Mountain;Forest;Forest;Forest;Forest;Forest", "humanhand=Shock", "aibattlefield=", "aihand="), "Shock");
+        try {
+            boolean cast = false; List<String> decisions = new ArrayList<>();
+            long end = System.currentTimeMillis() + 60_000;
+            while (System.currentTimeMillis() < end) {
+                JSONObject m = s.next(30);
+                if (!interactive(m)) continue;
+                JSONObject d = m.optJSONObject("pendingDecision");
+                if (d != null && !s.fresh(d)) continue;
+                JSONObject state = m.getJSONObject("state");
+                if (d != null) {
+                    decisions.add(d.optString("type") + ": " + d.optString("prompt").replace("\n", " "));
+                    if (d.optString("type").equals("ChooseTargetsDecision")) {
+                        String ayula = battlefield(state, ArcanaForgeHost.HUMAN_ID, "Ayula, Queen Among Bears").get(0);
+                        s.answer(d, new JSONObject().put("type", "TargetsResponse").put("selectedTargets", new JSONObject().put("0", new JSONArray().put(ayula))));
+                    } else s.answer(d, new JSONObject().put("type", "YesNoResponse").put("choice", true));
+                    continue;
+                }
+                if (!cast) { JSONObject shock = castAction(m, "Shock"); if (shock == null) return "FAIL: Shock not castable"; cast = true; s.send(shock); continue; }
+                if (battlefield(state, ArcanaForgeHost.HUMAN_ID, "Ayula, Queen Among Bears").isEmpty()) {
+                    String where = "nowhere";
+                    for (Object z : state.getJSONArray("zones")) {
+                        JSONObject zone = (JSONObject) z;
+                        if (!zone.getJSONObject("zoneId").optString("ownerId").equals(ArcanaForgeHost.HUMAN_ID)) continue;
+                        for (Object id : zone.getJSONArray("cardIds")) if (state.getJSONObject("cards").getJSONObject(String.valueOf(id)).optString("name").startsWith("Ayula")) where = zone.getJSONObject("zoneId").optString("zoneType");
+                    }
+                    JSONObject recast = castAction(m, "Ayula, Queen Among Bears");
+                    String summary = "Ayula now in " + where + "; recast offered=" + (recast != null) + "; decisions " + decisions;
+                    return where.equalsIgnoreCase("COMMAND") && recast != null ? "PASS: " + summary : "FAIL: " + summary;
                 }
                 s.send(new JSONObject().put("type", "PassPriority").put("playerId", ArcanaForgeHost.HUMAN_ID));
             }
