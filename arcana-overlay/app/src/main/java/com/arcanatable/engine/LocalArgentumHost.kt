@@ -52,6 +52,20 @@ class LocalArgentumHost(
             AiDifficulty.NORMAL -> ArcanaForgeHost.AiStrength.LITE
             else -> ArcanaForgeHost.AiStrength.MAX
         }
+        // Card pictures for the table and the mulligan screen: Arcana's own bundled links (all-cards, custom-cards and
+        // the build's forge-cards with Scryfall links). Read once in the background; until then, Arcana's own fallback.
+        if (ArcanaForgeHost.pictures == null) {
+            val app = app()
+            Thread({
+                runCatching {
+                    kotlinx.coroutines.runBlocking { com.arcanatable.CardImages.bundledImage(app, "Island") }
+                    ArcanaForgeHost.pictures = java.util.function.Function { name ->
+                        kotlinx.coroutines.runBlocking { com.arcanatable.CardImages.bundledImage(app, name) }
+                            ?: kotlinx.coroutines.runBlocking { com.arcanatable.CardImages.bundledImage(app, name.substringBefore(" // ")) }
+                    }
+                }
+            }, "arcana-pictures").start()
+        }
         forge.prepare(seats) { forgeAssetsDir() } // unpacked on Forge's start thread, not the UI thread
         ForgeGameService.start(app())
     }

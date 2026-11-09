@@ -898,7 +898,7 @@ public final class ArcanaForgeHost {
         JSONObject card = new JSONObject().put("id", cardId(c)).put("name", c.getName())
                 .put("manaCost", c.getManaCost() == null ? "" : c.getManaCost().getShortString()).put("manaValue", c.getCMC())
                 .put("typeLine", c.getType().toString()).put("cardTypes", types).put("subtypes", new JSONArray(new ArrayList<>(c.getType().getSubtypes())))
-                .put("colors", new JSONArray()).put("oracleText", c.getOracleText())
+                .put("colors", new JSONArray()).put("oracleText", text(c))
                 .put("power", c.isCreature() ? c.getNetPower() : JSONObject.NULL).put("toughness", c.isCreature() ? c.getNetToughness() : JSONObject.NULL)
                 .put("isTapped", c.isTapped()).put("hasSummoningSickness", c.hasSickness())
                 .put("controllerId", playerId(c.getController())).put("ownerId", playerId(c.getOwner()))
@@ -907,7 +907,34 @@ public final class ArcanaForgeHost {
                 .put("isAttacking", stateCombat != null && stateCombat.isAttacking(c)).put("isBlocking", stateCombat != null && stateCombat.isBlocking(c))
                 .put("attackingTarget", stateCombat != null && stateCombat.isAttacking(c) ? idOrNull(stateCombat.getDefenderByAttacker(c)) : JSONObject.NULL);
         cardDetails(card, c);
+        // The picture: Arcana's mulligan screen shows only this field, and the table otherwise looks every card up
+        // on Scryfall one at a time (owner, Nov 8 23:06: blank cards, no art on the mulligan screen).
+        if (!card.optBoolean("isFaceDown") || c.getController() == youPlayer()) {
+            String img = picture(c.getName());
+            if (img != null) card.put("imageUri", img);
+        }
         return fill(card, "card");
+    }
+
+    /**
+     * Card name -> picture link, set by the app (Arcana's bundled card data, which the build fills for Forge's cards
+     * too). Null: no pictures from the bridge.
+     */
+    public static volatile java.util.function.Function<String, String> pictures;
+
+    private static String picture(String name) {
+        java.util.function.Function<String, String> f = pictures;
+        if (f == null || name == null || name.isBlank()) return null;
+        try { String url = f.apply(name); return url == null || url.isBlank() ? null : url; } catch (RuntimeException e) { return null; }
+    }
+
+    private Player youPlayer() { PlayerControllerHuman y = humanController(); return y == null ? null : y.getPlayer(); }
+
+    /** The card's rules text; Forge's printed text when the live card has none (e.g. a card not yet fully loaded). */
+    private static String text(Card c) {
+        String t = c.getOracleText();
+        if ((t == null || t.isBlank()) && c.getRules() != null) t = c.getRules().getOracleText();
+        return t == null ? "" : t.replace("\\n", "\n");
     }
 
     /** Fields Arcana's table draws that the base card leaves at their defaults (audit, Nov 8). */

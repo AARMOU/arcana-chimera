@@ -31,11 +31,22 @@ public final class ForgeCatalogExport {
         ArcanaForgeHost.initForge(args[0], null);
         Path out = Path.of(args[1]);
         Set<String> known = new HashSet<>();
-        for (int i = 2; i < args.length; i++)
+        java.util.Map<String, String> images = new java.util.HashMap<>(); // name -> Scryfall picture (scryfall_images.py)
+        for (int i = 2; i < args.length; i++) {
+            if (args[i].startsWith("images=")) {
+                Path f = Path.of(args[i].substring(7));
+                if (Files.exists(f)) for (String line : Files.readAllLines(f)) {
+                    String[] kv = line.split("\t", 2);
+                    if (kv.length == 2) images.putIfAbsent(kv[0].toLowerCase(Locale.ROOT), kv[1].trim());
+                }
+                continue;
+            }
             for (String line : Files.readAllLines(Path.of(args[i]))) {
                 String name = line.split("\t", 2)[0].trim();
                 if (!name.isEmpty()) { known.add(name.toLowerCase(Locale.ROOT)); known.add(front(name).toLowerCase(Locale.ROOT)); }
             }
+        }
+        int pictured = 0;
         Predicate<PaperCard> commanderLegal = null;
         try { commanderLegal = FModel.getFormats().get("Commander").getFilterRules(); } catch (Exception ignored) { }
 
@@ -56,8 +67,13 @@ public final class ForgeCatalogExport {
                 if (main.getPower() != null && main.getToughness() != null)
                     b.append(",\"creatureStats\":{\"power\":").append(stat(main.getPower())).append(",\"toughness\":").append(stat(main.getToughness())).append('}');
                 if (pc.getEdition() != null) b.append(",\"setCode\":").append(JSONObject.quote(pc.getEdition()));
+                String img = images.get(key);
+                if (img == null) img = images.get(front(name).toLowerCase(Locale.ROOT));
                 b.append(",\"metadata\":{\"collectorNumber\":").append(JSONObject.quote(String.valueOf(pc.getCollectorNumber())))
-                        .append(",\"rarity\":\"").append(rarity(pc)).append("\"}");
+                        .append(",\"rarity\":\"").append(rarity(pc)).append('"');
+                // Arcana's picture lookup reads "imageUri" from the card's metadata block (CardImages.bundledImage)
+                if (img != null) { b.append(",\"imageUri\":").append(JSONObject.quote(img)); pictured++; }
+                b.append('}');
                 if (commanderLegal != null) b.append(",\"legalFormats\":[").append(commanderLegal.test(pc) ? "\"COMMANDER\"" : "").append(']');
                 b.append(",\"colorIdentityOverride\":[").append(colors(rules.getColorIdentity())).append(']');
                 if (rules.getOtherPart() != null && rules.getOtherPart().getName() != null)
@@ -68,7 +84,8 @@ public final class ForgeCatalogExport {
                 written++;
             }
         }
-        System.out.println("FORGE CATALOG: " + written + " Forge cards added to Arcana's library (" + skipped + " already in it)");
+        System.out.println("FORGE CATALOG: " + written + " Forge cards added to Arcana's library (" + skipped + " already in it), "
+                + pictured + " with pictures (" + images.size() + " Scryfall names)");
     }
 
     private static String front(String name) { int i = name.indexOf(" // "); return i < 0 ? name : name.substring(0, i); }
