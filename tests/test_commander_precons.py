@@ -58,6 +58,36 @@ class CommanderPreconTests(unittest.TestCase):
             self.assertFalse(any(d["name"] == "Fan-made" for d in result["decks"]))
             self.assertEqual(len({d["id"] for d in result["decks"]}), 106)
 
+    def test_indexed_download_path_uses_only_commander_products(self):
+        with tempfile.TemporaryDirectory() as temp:
+            base = Path(temp)
+            fixtures = base / "fixtures"
+            fixtures.mkdir()
+            sets = base / "sets.json"
+            sets.write_text(json.dumps({"data": [{"code": "C13", "name": "Commander 2013"}]}))
+            entries = []
+            names = sorted(compiler.SIX) + [f"Precon {i}" for i in range(100)]
+            for i, name in enumerate(names):
+                filename = f"Deck{i}_C13"
+                entries.append({"fileName": filename, "name": name,
+                                "code": "C13", "releaseDate": "2013-11-01",
+                                "type": "Commander Deck"})
+                (fixtures / (filename + ".json")).write_text(json.dumps({"data": product(name)}))
+            entries.append({"fileName": "Theme_C13", "name": "Theme",
+                            "code": "C13", "releaseDate": "2013-11-01",
+                            "type": "Theme Deck"})
+            index = base / "DeckList.json"
+            index.write_text(json.dumps({"data": entries}))
+            fetched = []
+            def fake(url, dest, max_bytes):
+                fetched.append(url)
+                dest.write_bytes((fixtures / dest.name).read_bytes())
+            result = compiler.build_remote(index, sets, "2026-11-08", base, fetcher=fake)
+            self.assertEqual(len(result["decks"]), 106)
+            self.assertEqual(len(fetched), 106)
+            self.assertTrue(all("/decks/" in url for url in fetched))
+            self.assertNotIn("Theme", {x["name"] for x in result["decks"]})
+
     def test_source_is_chimera_only(self):
         patch = (ROOT / "scripts" / "patch_commander_precons.py").read_text()
         self.assertIn("ChimeraPreconTree", patch)
