@@ -32,6 +32,7 @@ public final class OneTurnProof {
         int myFirstTurn = -1, landTurn = -1, castTurn = -1, updates = 0, attacks = 0, decisions = 0, aiLife = 20;
         long deadline = System.currentTimeMillis() + TimeUnit.MINUTES.toMillis(8);
         String result = "FAIL: timed out";
+        boolean creatureSeen = false;
         while (System.currentTimeMillis() < deadline) {
             JSONObject m = inbox.poll(5, TimeUnit.SECONDS);
             if (m == null) continue;
@@ -68,7 +69,8 @@ public final class OneTurnProof {
             }
             if (active.equals(ArcanaForgeHost.HUMAN_ID) && myFirstTurn < 0) myFirstTurn = turn;
             boolean bearsOut = battlefield(s, ArcanaForgeHost.HUMAN_ID).contains(CREATURE);
-            if (creatureCast && !bearsOut && turn > castTurn) { result = "FAIL: cast " + CREATURE + " on turn " + castTurn + " but it never reached the battlefield"; break; }
+            if (bearsOut) creatureSeen = true; // it can die later in combat; the check is that it arrived
+            if (creatureCast && !creatureSeen && turn > castTurn) { result = "FAIL: cast " + CREATURE + " on turn " + castTurn + " but it never reached the battlefield"; break; }
             aiLife = player(s, ArcanaForgeHost.AI_ID).optInt("life", aiLife);
             if (aiTurnSeen && active.equals(ArcanaForgeHost.HUMAN_ID) && bearsOut && turn > castTurn && attacks > 0 && aiLife < 20 && decisions > 0) {
                 result = "PASS: attacked " + attacks + "x (AI life " + aiLife + "), answered " + decisions + " decision(s); played a land on turn " + landTurn + (creatureCast ? ", cast " + CREATURE + " on turn " + castTurn : "")
