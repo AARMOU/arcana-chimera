@@ -84,6 +84,36 @@ patch("DeckBuilderScreen.kt", [
      'result = withContext(Dispatchers.Default) { lib.search(baseQuery, filters, limit = Int.MAX_VALUE).let { r -> r.copy(cards = r.cards.distinctBy { it.name }) } }'),
 ])
 
+# Hand drawer with a Studio hand design (owner, Nov 9: "used to auto resize the cards when dragging the hand drawer").
+# Arcana's Studio canvas scaled the design to the screen width only, so dragging the drawer changed nothing inside it,
+# and the dragged height wasn't kept. In play, the design now scales to fit the drawer (width and height, proportions
+# kept, centred; buttons still grow to 44dp), and the drawer remembers its height per screen size.
+patch("StudioHandCanvas.kt", [
+    ("onResize: (String,Float,Float) -> Unit = { _,_,_ -> }) {",
+     "onResize: (String,Float,Float) -> Unit = { _,_,_ -> }, fitHeight: androidx.compose.ui.unit.Dp = androidx.compose.ui.unit.Dp.Unspecified) {"),
+    ("val scale = maxWidth.value / layout.canvasWidth.takeIf {it.isFinite()}?.coerceIn(240f,2000f).let {it ?: 412f}",
+     "val canvasW = layout.canvasWidth.takeIf {it.isFinite()}?.coerceIn(240f,2000f) ?: 412f\n        val widthScale = maxWidth.value / canvasW"),
+    ("val extent = ((renderElements.maxOfOrNull { it.y+it.h } ?: origin)-origin).coerceIn(44f,4000f)",
+     "val extent = ((renderElements.maxOfOrNull { it.y+it.h } ?: origin)-origin).coerceIn(44f,4000f)\n"
+     "        val scale = if (!editing && fitHeight != androidx.compose.ui.unit.Dp.Unspecified && fitHeight.value > 0f)\n"
+     "            minOf(widthScale, fitHeight.value / extent).coerceAtLeast(widthScale * 0.3f) else widthScale"),
+    ('Box(Modifier.fillMaxWidth().height((extent*scale).dp).testTag("studio-hand-canvas")) {',
+     'Box(Modifier.fillMaxWidth().height((extent*scale).dp).padding(start = ((maxWidth.value - canvasW*scale)/2f).coerceAtLeast(0f).dp).testTag("studio-hand-canvas")) {'),
+])
+patch("TableBoardViews.kt", [
+    ("onPreview = { selectedId = it.id; onPreview(it) })\n        }\n        return",
+     "onPreview = { selectedId = it.id; onPreview(it) }, fitHeight = availableHeight - 84.dp)\n        }\n        return"),
+])
+patch("TableOverlays.kt", [
+    ("mutableFloatStateOf(((configuration.screenHeightDp - (studioLayout?.originY ?: 344f)",
+     'mutableFloatStateOf(optionPrefs.getFloat("chimera_studio_hand_${configuration.screenWidthDp}x${configuration.screenHeightDp}", ((configuration.screenHeightDp - (studioLayout?.originY ?: 344f)'),
+    ("configuration.screenHeightDp.coerceAtLeast(1)).coerceIn(.38f,.95f))\n    }",
+     "configuration.screenHeightDp.coerceAtLeast(1)).coerceIn(.38f,.95f)))\n    }"),
+    ('if (!studioFrame) optionPrefs.edit().putFloat("hand_sheet_height_fraction"',
+     'if (studioFrame) optionPrefs.edit().putFloat("chimera_studio_hand_${configuration.screenWidthDp}x${configuration.screenHeightDp}", studioHandFraction).apply()\n'
+     '                                        if (!studioFrame) optionPrefs.edit().putFloat("hand_sheet_height_fraction"'),
+])
+
 # Import-time "not in Argentum" messages: Argentum no longer runs the game, so don't report against it.
 patch("DeckSupport.kt", [
     ('''        append("Argentum check: $argentumCopies in Argentum")
