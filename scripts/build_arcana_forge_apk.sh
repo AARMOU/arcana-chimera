@@ -42,6 +42,16 @@ cp "$ROOT/forge-host/src/main/java/org/arcanachimera/forgehost/ArcanaForgeHost.j
 cp "$LIBS"/*.jar "$APP/libs/forge/"
 cp "$WORK/forge-res.zip" "$APP/src/main/assets/forge-res.zip"
 python3 "$ROOT/scripts/patch_arcana_for_forge.py" "$APP" # owner: no Argentum card check; Forge decides
+echo "== Forge's cards for Arcana's deck import and editor (ForgeCatalogExport)"
+(cd "$FORGE" && mvn -B -q dependency:copy -Dartifact=org.json:json:20240303 -DoutputDirectory="$WORK/jvm")
+mkdir -p "$WORK/jvm/classes"
+javac --release 17 -encoding UTF-8 -nowarn -d "$WORK/jvm/classes" -cp "$LIBS/*:$WORK/jvm/json-20240303.jar" \
+  "$ROOT/forge-host/src/main/java/org/arcanachimera/forgehost/ArcanaForgeHost.java" \
+  "$ROOT/forge-host/src/main/java/org/arcanachimera/forgehost/ForgeCatalogExport.java"
+(cd "$FORGE/forge-gui" && java -Xmx3g -Djava.awt.headless=true -cp "$WORK/jvm/classes:$LIBS/*:$WORK/jvm/json-20240303.jar" \
+  org.arcanachimera.forgehost.ForgeCatalogExport "$FORGE/forge-gui/" "$APP/src/main/assets/argentum" \
+  "$APP/src/main/assets/argentum/all-cards.index.tsv" "$APP/src/main/assets/argentum/custom-cards.index.tsv")
+wc -l "$APP/src/main/assets/argentum/forge-cards.index.tsv"
 cp "$ROOT/arcana-overlay/app/src/main/java/com/arcanatable/engine/ForgeGameService.kt" "$APP/src/main/java/com/arcanatable/engine/"
 # Foreground service: keeps the Forge game alive while the player is in another app.
 python3 - "$APP/src/main/AndroidManifest.xml" <<'PY'

@@ -33,9 +33,9 @@ public final class PromptScenarios {
     public static void main(String[] args) throws Exception {
         forgeDir = args.length > 0 ? args[0] : "../forge-gui/";
         List<String> failures = new ArrayList<>();
-        for (String name : List.of("A-ghalta-order", "B-combat-damage", "C-mulligan", "D-trample-short", "E-stack", "F-mana-convoke", "G-you-lose")) {
+        for (String name : List.of("A-ghalta-order", "B-combat-damage", "C-mulligan", "D-trample-short", "E-stack", "F-mana-convoke", "G-you-lose", "H-end-step")) {
             String r;
-            try { r = name.startsWith("A") ? ghalta() : name.startsWith("B") ? combatDamage() : name.startsWith("C") ? mulligan() : name.startsWith("D") ? trampleShort() : name.startsWith("E") ? stack() : name.startsWith("F") ? manaAndConvoke() : youLose(); }
+            try { r = name.startsWith("A") ? ghalta() : name.startsWith("B") ? combatDamage() : name.startsWith("C") ? mulligan() : name.startsWith("D") ? trampleShort() : name.startsWith("E") ? stack() : name.startsWith("F") ? manaAndConvoke() : name.startsWith("G") ? youLose() : endStep(); }
             catch (Throwable t) { t.printStackTrace(); r = "FAIL: " + t; }
             System.out.println("SCENARIO " + name + " " + r);
             if (!r.startsWith("PASS")) failures.add(name);
@@ -291,6 +291,28 @@ public final class PromptScenarios {
         pickThread.join(30_000);
         if (!List.of("Black", "White").equals(picks.get())) return "multi-pick returned " + picks.get() + " (expected [Black, White])";
         out.append(", multi-pick ok");
+        // Forge's option dialog is a real choice (Goose's PR #19), and a stray pass can't answer it.
+        AtomicReference<Object> chosen = new AtomicReference<>();
+        Thread dialog = new Thread(() -> {
+            try { chosen.set(gui.showOptionDialog("Pick one", "Test", null, List.of("First", "Second", "Third"), 0)); }
+            catch (Throwable e) { chosen.set(e); }
+        }, "option-dialog");
+        dialog.start();
+        while (true) {
+            JSONObject m = s.next(30);
+            JSONObject d = m.optJSONObject("pendingDecision");
+            if (s.fresh(d) && d.optString("type").equals("ChooseOptionDecision") && d.optString("prompt").equals("Pick one")) {
+                int before = s.notices.size();
+                s.send(new JSONObject().put("type", "PassPriority").put("playerId", ArcanaForgeHost.HUMAN_ID));
+                s.pushBack = s.next(10); // the refusal, then the question again
+                if (s.notices.size() == before || !s.notices.get(s.notices.size() - 1).contains("isn't offering a pass")) return "a stray pass during a question wasn't refused";
+                s.answer(d, new JSONObject().put("type", "OptionChosenResponse").put("optionIndex", 2));
+                break;
+            }
+        }
+        dialog.join(30_000);
+        if (!Integer.valueOf(2).equals(chosen.get())) return "option dialog returned " + chosen.get() + " (expected 2)";
+        out.append(", option dialog ok, stray pass refused");
         return out.toString();
     }
 
@@ -602,6 +624,37 @@ public final class PromptScenarios {
                 s.send(new JSONObject().put("type", "PassPriority").put("playerId", ArcanaForgeHost.HUMAN_ID));
             }
             return "FAIL: no gameOver after losing";
+        } finally { s.close(); }
+    }
+
+    // ------------------------------------------------------------------ H. the AI's end step (Goose's PR #19 concern)
+
+    /** On the AI's turn, with an instant you can cast, you get a stop at their end step and can cast it there. */
+    private static String endStep() throws Exception {
+        Session s = new Session(String.join("\n",
+                "activeplayer=ai", "activephase=MAIN2",
+                "humanlife=20", "ailife=20", "humanlibrary=" + LIBRARY, "ailibrary=" + LIBRARY,
+                "humanbattlefield=Mountain", "humanhand=Shock", "aibattlefield=", "aihand="), "Shock");
+        try {
+            JSONObject m = s.next(5);
+            JSONObject st = m.getJSONObject("state");
+            if (!st.optString("activePlayerId").equals(ArcanaForgeHost.AI_ID) || !st.optString("currentStep").equals("END"))
+                return "FAIL: first stop was " + st.optString("activePlayerId") + " " + st.optString("currentStep") + " (expected the AI's END step)";
+            JSONObject shock = castAction(m, "Shock");
+            if (shock == null) return "FAIL: Shock not castable at the AI's end step";
+            s.send(shock);
+            while (true) {
+                m = s.next(30);
+                if (!interactive(m)) continue;
+                JSONObject d = m.optJSONObject("pendingDecision");
+                if (d != null && !s.fresh(d)) continue;
+                if (d != null && d.optString("type").equals("ChooseTargetsDecision")) {
+                    s.answer(d, new JSONObject().put("type", "TargetsResponse").put("selectedTargets", new JSONObject().put("0", new JSONArray().put(ArcanaForgeHost.AI_ID))));
+                    continue;
+                }
+                if (life(m.getJSONObject("state"), ArcanaForgeHost.AI_ID) == 18) return "PASS: stopped at the AI's end step (Shock in hand), cast it there, AI at 18";
+                s.send(new JSONObject().put("type", "PassPriority").put("playerId", ArcanaForgeHost.HUMAN_ID));
+            }
         } finally { s.close(); }
     }
 }

@@ -389,7 +389,19 @@ public final class ArcanaForgeHost {
         String type = action.optString("type");
         if (type.equals("SubmitDecision")) { answer(action.optJSONObject("response") == null ? new JSONObject() : action.getJSONObject("response")); return; }
         if (type.equals("DeclareAttackers") || type.equals("DeclareBlockers")) { declareCombat(you, action); return; }
-        if (type.equals("PassPriority")) { ok(you); return; }
+        if (type.equals("PassPriority")) {
+            // Only when Forge is offering priority (or a combat declaration, where OK means "none"); never while a
+            // question is open, so a stray pass can't answer it (from Goose's PR #19).
+            Input now = you.getInputQueue().getActualInput(you);
+            String kind = inputClassName(now);
+            if (pending != null || !(now instanceof InputPassPriority || kind.equals("InputAttack") || kind.equals("InputBlock"))) {
+                error("Forge isn't offering a pass right now; answer the open question first.");
+                scheduleEmit();
+                return;
+            }
+            ok(you);
+            return;
+        }
         SpellAbility sa = offered.get(key(type, action.optString("cardId", action.optString("sourceId")), action.optString("abilityId")));
         if (sa == null) { error("You can't do that right now (not enough mana, or it's no longer available)."); scheduleEmit(); return; }
         chosenAbilityId = sa.getId();
@@ -1164,6 +1176,24 @@ public final class ArcanaForgeHost {
             }
             case "chooseEntitiesForEffect": return choose((String) a[0], (Integer) a[2], (Integer) a[3], (List<?>) a[1]);
             case "getInteger": return askNumber((String) a[0], (Integer) a[1], (Integer) a[2]);
+            case "showOptionDialog": { // (message, title, icon, options, default) → chosen index (from Goose's PR #19)
+                List<?> opts = a.length > 3 && a[3] instanceof List<?> l ? l : List.of();
+                if (opts.size() < 2) return a.length > 4 ? a[4] : 0;
+                JSONObject d = decisionBase("ChooseOptionDecision", String.valueOf(a[0]));
+                JSONArray options = new JSONArray(); for (Object o : opts) options.put(String.valueOf(o));
+                d.put("options", options).put("canCancel", false);
+                int i = ask(d, Map.of()).optInt("optionIndex", -1);
+                return i >= 0 && i < opts.size() ? i : (a.length > 4 ? a[4] : 0);
+            }
+            case "showInputDialog": { // (message, title, icon, initial, options...) → with options, a real choice
+                List<?> opts = a.length > 4 && a[4] instanceof List<?> l ? l : List.of();
+                if (opts.isEmpty()) { notice("gui-free-text", "Forge asked for typed text (" + a[0] + "); Arcana can't show that yet, so its suggested text was used."); return a.length > 3 ? a[3] : null; }
+                JSONObject d = decisionBase("ChooseOptionDecision", String.valueOf(a[0]));
+                JSONArray options = new JSONArray(); for (Object o : opts) options.put(String.valueOf(o));
+                d.put("options", options).put("canCancel", false);
+                int i = ask(d, Map.of()).optInt("optionIndex", -1);
+                return String.valueOf(opts.get(i >= 0 && i < opts.size() ? i : 0));
+            }
             case "assignGenericAmount": return assignGenericAmount((forge.game.card.CardView) a[0], (Map<?, ?>) a[1], (Integer) a[2], (Boolean) a[3], (String) a[4]);
             case "assignCombatDamage": return assignCombatDamage((forge.game.card.CardView) a[0], (List<?>) a[1], (Integer) a[2], a[3], (Boolean) a[4]);
             case "order": {
@@ -1347,11 +1377,26 @@ public final class ArcanaForgeHost {
     }
 
     /** Stop only where Arcana normally stops: main phases and combat declarations. */
+    /** Something you could do right now besides mana: an instant, a flash card or an ability you can afford. */
+    private boolean canActNow(Player me) {
+        try {
+            for (ZoneType z : new ZoneType[]{ZoneType.Hand, ZoneType.Battlefield, ZoneType.Command, ZoneType.Graveyard, ZoneType.Exile})
+                for (Card c : me.getCardsIn(z))
+                    for (SpellAbility sa : c.getAllPossibleAbilities(me, true))
+                        if (!sa.isManaAbility() && !sa.isLandAbility() && (asksWhilePricing(sa) || forge.ai.ComputerUtilMana.canPayManaCost(sa, me, 0, false))) return true;
+        } catch (RuntimeException ignored) { } // a rules edge case shouldn't stop the game: just don't add the stop
+        return false;
+    }
+
     private boolean skipPhase(Object turnPlayer, PhaseType phase) {
         boolean yourTurn = false;
         PlayerControllerHuman you = humanController();
         if (you != null && turnPlayer instanceof forge.game.player.PlayerView pv) yourTurn = pv.getId() == you.getPlayer().getId();
-        if (!yourTurn) return phase != PhaseType.COMBAT_DECLARE_BLOCKERS; // AI turns: stop only after blocks (and for spells)
+        if (!yourTurn) { // AI turns: stop after blocks (and for anything on the stack), and at their end step if you can act
+            if (phase == PhaseType.COMBAT_DECLARE_BLOCKERS) return false;
+            if (phase == PhaseType.END_OF_TURN && you != null && canActNow(you.getPlayer())) return false;
+            return true;
+        }
         return phase != PhaseType.MAIN1 && phase != PhaseType.MAIN2
                 && phase != PhaseType.COMBAT_DECLARE_ATTACKERS && phase != PhaseType.COMBAT_DECLARE_BLOCKERS;
     }

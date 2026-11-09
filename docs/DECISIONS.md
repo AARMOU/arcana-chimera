@@ -60,3 +60,8 @@ Owner: "I want the argentum card check gone. Verifying being able to utilize all
 
 ## 2026-11-08 17:27 — Latest Arcana Studio
 Owner: fetch the latest Arcana Studio updates and integrate them into Chimera. Arcana is now staged read-only at `3d9fce0d` (head of arcana_table#1013, still versionCode 142): 7 Studio commits since `63edcb77` (per-player IDs, Fill it up, presets, Light palette, game options in Studio, two-finger scroll, Show me, clear boards, Pass copies, Background setting). UI only; no engine-file changes, and the Forge build patches apply unchanged.
+
+## 2026-11-08 17:44 — Deck import and editor on Forge's cards; parts of Goose's #19
+Owner: take the two good parts of #19 and add an end-step stop; and fix the deck import and editor, "severely hobbled by the Argentum restrictions".
+- Arcana's catalog (deck import, editor search, deck checks, card details) reads a build-time `forge-cards.jsonl` / `.index.tsv` from `ForgeCatalogExport`: Forge's cards that Arcana's library lacks, in Arcana's library-line shape, without an Argentum script. Argentum's engine never reads it. Labels say "Forge" instead of "Argentum library" / "Not in Argentum".
+- From #19: Forge's option and fixed-choice dialogs become real choices, and a pass is refused unless Forge is offering one. Not taken: always stopping at every phase (Forge already gives priority for anything on the stack; the gap was empty-stack windows, now an AI end-step stop when you can act), and freezing the game on an unknown prompt.

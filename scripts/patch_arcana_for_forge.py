@@ -56,6 +56,21 @@ patch("DeckSupport.kt", [
         append(" (indexed, not gameplay-verified)")''',
      '''        append("Forge engine: all $totalCopies card(s) go to Forge, which reports any it doesn't have when the game starts")'''),
 ])
+# Deck import and editor: Arcana's catalog also reads forge-cards.* (Forge's cards Arcana's library lacks; written at
+# build time by ForgeCatalogExport), so search, import, deck checks and card details cover every Forge card.
+patch("DeckSupport.kt", [
+    ('for ((base, custom) in listOf("all-cards" to false, "custom-cards" to true)) {',
+     'for ((base, custom) in listOf("all-cards" to false, "custom-cards" to true, "forge-cards" to false)) {'),
+    ('ARGENTUM -> "Argentum library · not verified"', 'ARGENTUM -> "Forge"'),
+    ('UNSUPPORTED -> "Not in Argentum"', 'UNSUPPORTED -> "Not in Forge"'),
+])
+patch("CardImages.kt", [
+    ('for (file in listOf("argentum/custom-cards.jsonl", "argentum/all-cards.jsonl")) {',
+     'for (file in listOf("argentum/custom-cards.jsonl", "argentum/all-cards.jsonl", "argentum/forge-cards.jsonl")) {'),
+])
+patch("DeckBuilderScreen.kt", [
+    ('if (card.custom) "Arcana custom card" else "Argentum library"', 'if (card.custom) "Arcana custom card" else "Forge library"'),
+])
 patch("TableController.kt", [
     ("if (supportReport != null && supportReport.unsupportedCopies > 0) {\n                    val names = supportReport.unsupportedNames",
      "if (supportReport != null && supportReport.unsupportedCopies > 0 && System.getProperty(\"arcana.argentumCardCheck\") != null) { // Forge build: no Argentum card check\n                    val names = supportReport.unsupportedNames"),
