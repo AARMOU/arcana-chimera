@@ -20,9 +20,33 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-/** WotC Commander products: expandable set parents; title-only children with color identity pips. */
+/**
+ * WotC Commander products in one collapsible "WotC Precons" row (owner, Nov 9), below your own decks; inside it,
+ * expandable sets with title-only decks and color identity pips. It opens on its own when you're playing a precon.
+ */
 @Composable
 internal fun ChimeraPreconTree(decks: List<DeckChoice>, activeId: String?, onPick: (DeckChoice) -> Unit) {
+    val playingPrecon = decks.any { it.id == activeId }
+    var open by remember(decks) { mutableStateOf(playingPrecon) }
+    Column(Modifier.padding(top = 14.dp)) {
+        Row(
+            modifier = Modifier.fillMaxWidth()
+                .background(Color(0xFF1E2E3B), RoundedCornerShape(12.dp))
+                .border(1.dp, Color(0xFF344856), RoundedCornerShape(12.dp))
+                .clickable { open = !open }
+                .heightIn(min = 52.dp).padding(horizontal = 14.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(if (open) "⌄" else "›", color = Color(0xFF7DDBCB), fontSize = 20.sp, modifier = Modifier.padding(end = 10.dp))
+            Text("WotC Precons", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 15.sp, modifier = Modifier.weight(1f))
+            Text("${decks.size} decks", color = Color(0xFF9EB0BB), fontSize = 12.sp)
+        }
+        if (open) Column(Modifier.padding(start = 10.dp)) { ChimeraPreconSets(decks, activeId, onPick) }
+    }
+}
+
+@Composable
+private fun ChimeraPreconSets(decks: List<DeckChoice>, activeId: String?, onPick: (DeckChoice) -> Unit) {
     val groups = remember(decks) {
         decks.groupBy { ChimeraPrecons.meta(it.id)?.setName ?: "Other Commander products" }
             .toList()
@@ -30,7 +54,8 @@ internal fun ChimeraPreconTree(decks: List<DeckChoice>, activeId: String?, onPic
                 item.second.mapNotNull { ChimeraPrecons.meta(it.id)?.releaseDate }.maxOrNull().orEmpty()
             }.thenBy { it.first.lowercase() })
     }
-    var openSets by remember(decks) { mutableStateOf(groups.take(1).map { it.first }.toSet()) }
+    // The set holding the deck you're playing starts open; otherwise every set starts closed.
+    var openSets by remember(decks) { mutableStateOf(groups.filter { g -> g.second.any { it.id == activeId } }.map { it.first }.toSet()) }
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
         groups.forEach { (setName, children) ->
             val expanded = setName in openSets

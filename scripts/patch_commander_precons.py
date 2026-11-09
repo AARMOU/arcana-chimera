@@ -40,8 +40,14 @@ replace_one(home,
                 DeckChoiceCategory.ARCANA to "ARCANA",
                 DeckChoiceCategory.ARGENTUM to "ARGENTUM PREMADE DECKS",
                 DeckChoiceCategory.OTHER to "YOUR OTHER DECKS"''',
-    '''                DeckChoiceCategory.PRECON to "WOTC COMMANDER PRECONS",
-                DeckChoiceCategory.OTHER to "YOUR OTHER DECKS"''')
+    '''                DeckChoiceCategory.OTHER to "YOUR DECKS",
+                DeckChoiceCategory.PRECON to ""''')  # owner, Nov 9: your decks on top; precons in one collapsible row, no heading
+replace_one(home,
+    'StudioText("HomeScreen.Text.38", "Home and setup", true, heading,',
+    'if (heading.isNotEmpty()) StudioText("HomeScreen.Text.38", "Home and setup", true, heading,')
+replace_one(home,
+    '.then(if (category == DeckChoiceCategory.PRECON) Modifier.tutorialTarget("deck-categories") else Modifier))',
+    '.then(if (category == DeckChoiceCategory.OTHER) Modifier.tutorialTarget("deck-categories") else Modifier))')
 replace_one(home,
     '''                list.forEach { d ->
                     Row(''',
