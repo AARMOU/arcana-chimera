@@ -28,6 +28,12 @@ class CommanderPreconTests(unittest.TestCase):
         self.assertEqual(p["name"], "Test Commander")
         self.assertEqual(p["decklist"], "Commander\n1 Commander Name\nDeck\n49 Island\n50 Plains\n")
 
+    def test_only_full_secret_lair_commander_products_are_admitted(self):
+        ordinary = product("Random Secret Lair", kind="Secret Lair Drop")
+        official = product("Heads I Win, Tails You Lose", kind="Secret Lair Drop")
+        self.assertIsNone(compiler.make_deck(ordinary, {}, "Random_SLD", "2026-11-08"))
+        self.assertIsNotNone(compiler.make_deck(official, {}, "Heads_SLD", "2026-11-08"))
+
     def test_noncommander_and_incomplete_are_excluded(self):
         self.assertIsNone(compiler.make_deck(product("Theme", kind="Theme Deck"), {}, "Theme_C13", "2026-11-08"))
         d = product("Incomplete")
