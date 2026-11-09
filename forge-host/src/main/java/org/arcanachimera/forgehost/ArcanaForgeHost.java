@@ -575,6 +575,28 @@ public final class ArcanaForgeHost {
         return host != null && (host.hasKeyword(forge.game.keyword.Keyword.CONVOKE) || host.hasKeyword(forge.game.keyword.Keyword.IMPROVISE))
                 || sa.hasParam("TapCreaturesForMana") || (sa.getMaxWaterbend() != null && sa.getMaxWaterbend() > 0);
     }
+    /**
+     * Whether you can pay for {@code sa}, without ever letting Forge stop to ask you something while it only checks.
+     * Forge's cost check asks the payer during the check for Convoke/Improvise, Emerge, Offering, Delve, Assist,
+     * "up to" reductions...; asked on this (non-game) thread, that question would wait forever (scenario F; soak 517:
+     * an Eldrazi Emerge spell). Any such question aborts the check; the spell is offered and Forge asks when you cast.
+     */
+    private boolean affordable(SpellAbility sa, Player me) {
+        if (asksWhilePricing(sa)) return true;
+        PlayerControllerHuman you = humanController();
+        Input before = you == null ? null : you.getInputQueue().getInput();
+        PRICING.set(true);
+        try { return forge.ai.ComputerUtilMana.canPayManaCost(sa, me, 0, false); }
+        catch (AskedWhilePricing asked) {
+            if (you != null) { Input stale = you.getInputQueue().getInput(); if (stale != null && stale != before) you.getInputQueue().removeInput(stale); }
+            return true;
+        }
+        finally { PRICING.set(false); }
+    }
+
+    private static final ThreadLocal<Boolean> PRICING = ThreadLocal.withInitial(() -> false);
+    private static final class AskedWhilePricing extends RuntimeException { AskedWhilePricing() { super(null, null, false, false); } }
+
     private volatile Input lastAutoPassed;
     /** Arcana's "respond to my own spells" (off: your own spells and abilities resolve without a stop, as Argentum did). */
     public volatile boolean respondToOwnStack;
@@ -635,9 +657,14 @@ public final class ArcanaForgeHost {
                 String source = paidFor.getHostCard() == null ? "an ability" : paidFor.getHostCard().getName();
                 // check the cost being asked for ("unless you pay {1}"), not the trigger's own cost, which is nothing
                 // (soak seeds 118/130, Nov 8: Rhystic Study / Overencumbered looked payable with no mana open)
-                boolean payable = field(input, "manaCost") instanceof forge.game.mana.ManaCostBeingPaid mc
-                        ? forge.ai.ComputerUtilMana.canPayManaCost(mc, paidFor, you.getPlayer(), Boolean.TRUE.equals(field(input, "effect")))
-                        : forge.ai.ComputerUtilMana.canPayManaCost(paidFor, you.getPlayer(), 0, false);
+                boolean payable;
+                PRICING.set(true);
+                try {
+                    payable = field(input, "manaCost") instanceof forge.game.mana.ManaCostBeingPaid mc
+                            ? forge.ai.ComputerUtilMana.canPayManaCost(mc, paidFor, you.getPlayer(), Boolean.TRUE.equals(field(input, "effect")))
+                            : forge.ai.ComputerUtilMana.canPayManaCost(paidFor, you.getPlayer(), 0, false);
+                } catch (AskedWhilePricing asked) { payable = true; } // Forge will ask while paying
+                finally { PRICING.set(false); }
                 if (!asksWhilePricing(paidFor) && !payable) {
                     error("You can't pay " + cost + " for " + source + " right now, so it was skipped.");
                     cancel(you);
@@ -738,8 +765,7 @@ public final class ArcanaForgeHost {
                         String abilityId = type.equals("ActivateAbility") ? "sa" + sa.getId() : "";
                         JSONObject a = new JSONObject().put("type", type).put("playerId", this.me);
                         if (type.equals("ActivateAbility")) a.put("sourceId", cardId).put("abilityId", abilityId); else a.put("cardId", cardId);
-                        boolean affordable = sa.isLandAbility() || sa.isManaAbility() || asksWhilePricing(sa)
-                                || forge.ai.ComputerUtilMana.canPayManaCost(sa, me, 0, false);
+                        boolean affordable = sa.isLandAbility() || sa.isManaAbility() || affordable(sa, me);
                         if (affordable) offered.put(key(type, cardId, abilityId), sa);
                         JSONObject offer = action(type, sa.isManaAbility() ? "Tap for mana: " + sa : sa.toString(), a).put("isAffordable", affordable);
                         if (sa.isManaAbility()) offer.put("isManaAbility", true);
@@ -1562,7 +1588,9 @@ public final class ArcanaForgeHost {
                     for (Object v : views) if (v instanceof forge.game.spellability.SpellAbilityView sv && sv.getId() == chosenAbilityId) return v;
                     return views.isEmpty() ? null : views.get(0);
                 }
-                case "awaitInput": ((CountDownLatch) args[0]).await(); return null; // Forge's "wait for the player
+                case "awaitInput":
+                    if (PRICING.get()) throw new AskedWhilePricing(); // a question during a cost check: see affordable()
+                    ((CountDownLatch) args[0]).await(); return null; // Forge's "wait for the player
                 case "isNetGame": case "isGamePaused": case "isSelecting": case "isLibgdxPort": return false;
                 case "equals": return proxy == args[0];
                 case "hashCode": return System.identityHashCode(proxy);
@@ -1570,6 +1598,7 @@ public final class ArcanaForgeHost {
                 default: break;
             }
             if (m.getReturnType() == void.class) return null;
+            if (PRICING.get()) throw new AskedWhilePricing();
             Object asked = question(name, args == null ? new Object[0] : args);
             if (asked != NOT_HANDLED) return asked;
             notice("gui-" + name, "Forge asked something Arcana can't show yet (" + name + "); Forge's default was used.");
@@ -1584,7 +1613,7 @@ public final class ArcanaForgeHost {
             for (ZoneType z : new ZoneType[]{ZoneType.Hand, ZoneType.Battlefield, ZoneType.Command, ZoneType.Graveyard, ZoneType.Exile})
                 for (Card c : me.getCardsIn(z))
                     for (SpellAbility sa : c.getAllPossibleAbilities(me, true))
-                        if (!sa.isManaAbility() && !sa.isLandAbility() && (asksWhilePricing(sa) || forge.ai.ComputerUtilMana.canPayManaCost(sa, me, 0, false))) return true;
+                        if (!sa.isManaAbility() && !sa.isLandAbility() && affordable(sa, me)) return true;
         } catch (RuntimeException ignored) { } // a rules edge case shouldn't stop the game: just don't add the stop
         return false;
     }
