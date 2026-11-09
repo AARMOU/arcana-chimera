@@ -11,7 +11,7 @@
 
 ## Data source and build
 - Script: `scripts/build_wotc_commander_precons.py`.
-- Public upstream: [MTGJSON](https://mtgjson.com/downloads/) `AllDeckFiles.tar.gz` plus `SetList.json`, with published SHA-256 checksum verification.
+- Public upstream: [MTGJSON](https://mtgjson.com/downloads/) `DeckList.json` plus `SetList.json`, with published SHA-256 checksums. The compiler then downloads only the selected individual Commander deck files, not the enormous all-decks archive.
 - Source licensing: [MTGJSON MIT](https://mtgjson.com/license/). The generated app asset includes source and digest metadata.
 - Select Commander Deck products (and full 100-card Commander Secret Lair products when cataloged as Secret Lair Drop), use the published commander and mainboard quantities, and exclude unrelated/non-100-card products.
 - Compile at **APK build time**, never fetch a decklist from the phone when selected.
@@ -27,14 +27,14 @@
 - Existing deck selection and Forge message contract remain intact.
 
 ## Testing boundary
-- `python3 -m unittest discover -s tests -p 'test_commander_precons.py'`: synthetic archive, Commander-only filter, original six inclusion and filename stability.
+- `python3 -m unittest discover -s tests -p 'test_commander_precons.py'`: synthetic archive and offline indexed-download fixtures, Commander-only filter, original six inclusion and filename stability.
 - A real CI build is still required to prove MTGJSON downloads and Compose compilation; a phone run is required to confirm the set tree and color pips on the Fold.
 - The compiler's 100-card check is **source-data integrity only**, not Forge game/rules verification.
 - If MTGJSON is unavailable at build time, the build fails; it must not fall back to the old/non-WotC lists.
 - Never merge or release without owner approval; keep Claude B's `claude-b/forge-brain-transplant-20261107` branch untouched.
 
 ## Operational notes
-- The automatic source refresh happens when a future APK is built, not continuously on the device.
+- The automatic source refresh happens when a future APK is built, not continuously on the device. The index/download approach makes bounded requests for Commander products only.
 - To make distribution reproducible, pin the MTGJSON archive digests for a final release candidate.
 - New Commander precons that MTGJSON has not published yet cannot be fabricated.
 - Collector/alternate editions may appear as separately named official product variants if the source provides a different deck file.
