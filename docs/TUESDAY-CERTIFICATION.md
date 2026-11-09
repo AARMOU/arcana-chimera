@@ -47,3 +47,9 @@ Inspect exact-head proof log for default six-game soak outcomes and any unbridge
 ## Boundaries
 
 No writes to `AARMOU/arcana_table`, no production release, no paid compute, no automatic merges, no uploading private phone diagnostics or protected assets. Only owner-approved merges. Existing Chimera free standard runner and 1-day debug artifacts remain within the current authorization.
+
+## Exact-head proof log inspection — Nov 8, 17:00 Mountain
+
+From [proof job 128905218073](https://github.com/AARMOU/arcana-chimera/actions/runs/42537589223): ProtocolGuard, OneTurnProof, scenarios A–G, FourSeatProof and AllCardsCheck all report PASS. FourSeatProof had 2 cleanup choices, 5 human actions, 6 snapshots and returned control at turn 5. AllCardsCheck constructed 33,612/33,612 cards, and resolved 1,544/1,544 bundled names; Forge flags 2,450 cards as unsuitable for its AI decks, **not unplayable by humans**.
+
+**Crucial coverage finding:** all six default SoakTest games (seeds 1–6, seats 2/3/4, AI OFF, turn cap 12) reported `TURN LIMIT`, with **0 games actually completed**, 175 actions and 28 decisions. This is a legitimate green protocol/short-run result, **not evidence of full game completion**. Next run should use a bounded higher turn limit and explicit game-over outcome criteria; avoid changing the adapter to manufacture a green result. No additional workflow was dispatched in this check-in.
