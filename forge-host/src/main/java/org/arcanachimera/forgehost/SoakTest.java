@@ -32,6 +32,7 @@ import java.util.concurrent.TimeUnit;
  *               player at 0 life, 10 poison or 21 commander damage who hasn't lost; your commander put in the
  *               graveyard or exile without the command-zone question (the Nov 8 Ayula bug: the bridge was fine,
  *               the rules were silently off, so only a rules check could see it)
+ *   LOCKED      a refused block sent without INVALID_ACTION: Arcana's block screen would stay locked (Nov 9)
  *   RAW_TEXT    a prompt or choice with Forge's unfilled placeholders (%d, %s, %1$s) or untranslated keys (lblXxx)
  * A game that reaches the turn limit without ending is fine (counted, not failed).
  *
@@ -177,6 +178,8 @@ public final class SoakTest {
         boolean gone, gameOverSeen;
         final RulesWatch rules = new RulesWatch();
         String lastError = "";
+        /** Arcana's ArgentumBlockSubmissionGuard: after sending blockers, only INVALID_ACTION reopens the block screen. */
+        boolean blockSent;
         int movesThisStep;
         long lostAt;
 
@@ -240,6 +243,8 @@ public final class SoakTest {
                 case "error" -> {
                     String text = m.optString("message");
                     lastError = text;
+                    if (blockSent && text.toLowerCase(java.util.Locale.ROOT).contains("block") && !m.optString("code").equals("INVALID_ACTION"))
+                        return "FAIL LOCKED blockers refused with code " + m.optString("code") + " (Arcana's block screen stays locked): " + text;
                     if (text.contains("can't show yet")) return "FAIL UNBRIDGED " + text;
                     if (text.startsWith("Forge host problem")) return "FAIL HOST_ERROR " + text;
                 }
@@ -340,7 +345,7 @@ public final class SoakTest {
             JSONArray legal = m.optJSONArray("legalActions");
             if (legal == null || legal.length() == 0) return;
             String key = st.optInt("turnNumber") + "/" + st.optString("currentStep");
-            if (!key.equals(stepKey)) { stepKey = key; actionsThisStep = 0; movesThisStep = 0; }
+            if (!key.equals(stepKey)) { stepKey = key; actionsThisStep = 0; movesThisStep = 0; blockSent = false; }
             // the game isn't moving: every move is refused or changes nothing (a stuck input, not a slow AI)
             if (++movesThisStep > 100) throw new IllegalStateException("LOOP");
             JSONObject chosen = null;
@@ -366,6 +371,7 @@ public final class SoakTest {
             if (chosen == null) return;
             actionsThisStep++;
             actions++;
+            if (chosen.optString("type").equals("DeclareBlockers")) blockSent = true;
             send(host, new JSONObject().put("type", "submitAction").put("action", chosen));
         }
 

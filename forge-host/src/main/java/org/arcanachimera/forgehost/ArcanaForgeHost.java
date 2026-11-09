@@ -404,6 +404,12 @@ public final class ArcanaForgeHost {
         if (t.equals("createQuickGameLobby") && match == null && pendingSeats != null) { new Thread(this::startPrepared, "forge-start").start(); return; }
         PlayerControllerHuman you = humanController();
         if (you == null) return;
+        String mt = message.optString("type");
+        if (mt.equals("keepHand") || mt.equals("mulligan") || mt.equals("chooseBottomCards")) {
+            String open = inputClassName(you.getInputQueue().getActualInput(you));
+            // a late or doubled tap from the opening-hand screen must not answer whatever Forge asks next
+            if (!open.equals("InputConfirmMulligan") && !open.equals("InputLondonMulligan")) { scheduleSelf(); return; }
+        }
         switch (message.optString("type")) {
             case "submitAction" -> submit(you, message.getJSONObject("action"));
             // Forge's London mulligan deals the new 7 and asks for the bottom cards first, then keep/mulligan.
@@ -529,7 +535,7 @@ public final class ArcanaForgeHost {
             Input now = you.getInputQueue().getActualInput(you);
             String kind = inputClassName(now);
             if (pending != null || !(now instanceof InputPassPriority || kind.equals("InputAttack") || kind.equals("InputBlock"))) {
-                error("Forge isn't offering a pass right now; answer the open question first.");
+                reject("Forge isn't offering a pass right now; answer the open question first.");
                 scheduleEmit();
                 return;
             }
@@ -537,10 +543,10 @@ public final class ArcanaForgeHost {
             return;
         }
         SpellAbility sa = offered.get(key(type, action.optString("cardId", action.optString("sourceId")), action.optString("abilityId")));
-        if (sa == null) { error("You can't do that right now (not enough mana, or it's no longer available)."); scheduleEmit(); return; }
+        if (sa == null) { reject("You can't do that right now (not enough mana, or it's no longer available)."); scheduleEmit(); return; }
         chosenAbilityId = sa.getId();
         Input input = you.getInputQueue().getActualInput(you);
-        if (input == null || !input.selectAbility(sa)) { error("Forge did not accept " + sa); scheduleEmit(); }
+        if (input == null || !input.selectAbility(sa)) { reject("Forge did not accept " + sa); scheduleEmit(); }
     }
 
     // ---------------------------------------------------------------- state out to the UI
@@ -1086,6 +1092,32 @@ public final class ArcanaForgeHost {
         catch (Exception ignored) { }
     }
 
+    /**
+     * Your move was refused (an illegal block, a pass while a question is open...): Argentum's code for that,
+     * INVALID_ACTION. Arcana unlocks its block screen only for that code, so with FORGE_HOST a refused block left the
+     * declare-blockers step with no way to answer it (owner, Nov 9 11:27: Aang and La, "frozen waiting for the AI").
+     */
+    private void reject(String text) {
+        try { sink.accept(new JSONObject().put("type", "error").put("code", "INVALID_ACTION").put("message", plain(text))); }
+        catch (Exception ignored) { }
+    }
+
+    /** Forge's combat rule messages, the way a player says them (and without Forge's object numbers). */
+    static String plain(String text) {
+        String t = text.replaceAll(" \\(\\d+\\)", "").trim();
+        java.util.regex.Matcher m;
+        if ((m = java.util.regex.Pattern.compile("^(.+?) cannot be blocked with (\\d+) creatures you've assigned\\.?$").matcher(t)).find())
+            return m.group(1) + " can't be blocked by just " + m.group(2) + (m.group(2).equals("1") ? " creature" : " creatures")
+                    + ". Choose more blockers, or none.";
+        if ((m = java.util.regex.Pattern.compile("^(.+?) must block an attacker, but has not been assigned to block (any|the right ones)\\.?$").matcher(t)).find())
+            return m.group(1) + " must block if it can" + (m.group(2).equals("any") ? "" : ", and not just any attacker") + ". Assign it to block.";
+        if ((m = java.util.regex.Pattern.compile("^(.+?) must block each combat but was not assigned to block any attacker now\\.?$").matcher(t)).find())
+            return m.group(1) + " must block each combat. Assign it to block.";
+        if ((m = java.util.regex.Pattern.compile("^(.+?) must still block (.+?)\\.?$").matcher(t)).find())
+            return m.group(1) + " must block " + m.group(2) + ".";
+        return t;
+    }
+
     // ---------------------------------------------------------------- player decisions (Argentum pendingDecision)
 
     /** An open question to the player. {@code onAnswer} applies it to a Forge input; null = a waiting GUI call takes it. */
@@ -1160,7 +1192,12 @@ public final class ArcanaForgeHost {
 
     private void answer(JSONObject response) {
         Decision d = pending;
-        if (d == null || !d.id().equals(response.optString("decisionId"))) { error("That question was already answered."); return; }
+        if (d == null || !d.id().equals(response.optString("decisionId"))) {
+            // Arcana cleared its question when you answered: show the one Forge is actually asking now, or the table
+            reject("That question was already answered.");
+            try { if (pending != null) emitDecision(); else scheduleSelf(); } catch (Exception ignored) { scheduleSelf(); }
+            return;
+        }
         if (d.onAnswer() == null) { answers.offer(response); return; }
         pending = null;
         try { d.onAnswer().accept(response); } catch (Exception e) { error("Forge host problem: " + describe(e)); }
@@ -1589,7 +1626,7 @@ public final class ArcanaForgeHost {
         Input input = you.getInputQueue().getActualInput(you);
         forge.game.combat.Combat combat = input == null ? null : (forge.game.combat.Combat) field(input, "combat");
         Game game = match.getGame();
-        if (combat == null) { error("It's not time to declare that."); scheduleEmit(); return; }
+        if (combat == null) { reject("It's not time to declare that."); scheduleEmit(); return; }
         Map<String, Object> entities = new LinkedHashMap<>();
         for (Player p : game.getPlayers()) entities.put(playerId(p), p);
         for (Card c : game.getCardsIn(ZoneType.Battlefield)) entities.put(cardId(c), c);
@@ -1630,7 +1667,13 @@ public final class ArcanaForgeHost {
                 case "showPromptMessage": case "updateButtons": case "finishGame": case "afterGameEnd": scheduleEmit(); return null;
                 // Forge's messages to the player (e.g. why a block or attack was rejected): show them, don't drop them.
                 case "message": case "showErrorDialog":
-                    if (args != null && args.length > 0 && args[0] != null) error(String.valueOf(args[0]));
+                    if (args != null && args.length > 0 && args[0] != null) {
+                        PlayerControllerHuman y = humanController();
+                        String kind = y == null ? "" : inputClassName(y.getInputQueue().getActualInput(y));
+                        // while you're declaring attackers or blockers, Forge's message is why your declaration was refused
+                        if (kind.equals("InputBlock") || kind.equals("InputAttack")) reject(String.valueOf(args[0]));
+                        else error(String.valueOf(args[0]));
+                    }
                     scheduleEmit(); return null;
                 case "isUiSetToSkipPhase": return skipPhase(args[0], (PhaseType) args[1]);
                 case "canPickStackTargets": return false; // a capability query, not a question: Forge then lists stack targets

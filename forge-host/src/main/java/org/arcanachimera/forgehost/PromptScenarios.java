@@ -33,9 +33,10 @@ public final class PromptScenarios {
     public static void main(String[] args) throws Exception {
         forgeDir = args.length > 0 ? args[0] : "../forge-gui/";
         List<String> failures = new ArrayList<>();
-        for (String name : List.of("A-ghalta-order", "B-combat-damage", "C-mulligan", "D-trample-short", "E-stack", "F-mana-convoke", "G-you-lose", "H-end-step", "I-may-pay", "J-ayula-fight-0", "J-ayula-fight-1", "J-ayula-fight-2", "K-commander-dies")) {
+        for (String name : List.of("A-ghalta-order", "B-combat-damage", "C-mulligan", "D-trample-short", "E-stack", "F-mana-convoke", "G-you-lose", "H-end-step", "I-may-pay", "J-ayula-fight-0", "J-ayula-fight-1", "J-ayula-fight-2", "K-commander-dies", "L-illegal-block", "M-forced-block")) {
             String r;
-            try { r = name.startsWith("A") ? ghalta() : name.startsWith("B") ? combatDamage() : name.startsWith("C") ? mulligan() : name.startsWith("D") ? trampleShort() : name.startsWith("E") ? stack() : name.startsWith("F") ? manaAndConvoke() : name.startsWith("G") ? youLose() : name.startsWith("H") ? endStep() : name.startsWith("I") ? mayPay() : name.startsWith("J") ? ayulaFight(name.charAt(name.length() - 1) - '0') : commanderDies(); }
+            try { r = name.startsWith("A") ? ghalta() : name.startsWith("B") ? combatDamage() : name.startsWith("C") ? mulligan() : name.startsWith("D") ? trampleShort() : name.startsWith("E") ? stack() : name.startsWith("F") ? manaAndConvoke() : name.startsWith("G") ? youLose() : name.startsWith("H") ? endStep() : name.startsWith("I") ? mayPay() : name.startsWith("J") ? ayulaFight(name.charAt(name.length() - 1) - '0') : name.startsWith("K") ? commanderDies()
+                    : name.startsWith("L") ? illegalBlock() : forcedBlock(); }
             catch (Throwable t) { t.printStackTrace(); r = "FAIL: " + t; }
             System.out.println("SCENARIO " + name + " " + r);
             if (!r.startsWith("PASS")) failures.add(name);
@@ -51,6 +52,7 @@ public final class PromptScenarios {
         final ArcanaForgeHost host = new ArcanaForgeHost(m -> { protocol.observe(m); inbox.add(m); });
         JSONObject last;
         final List<String> notices = new ArrayList<>();
+        final List<String> errorCodes = new ArrayList<>(); // "CODE: message", for refused moves
 
         final List<Integer> mulliganOffers = new ArrayList<>();
         int bottomAsked = -1;
@@ -101,6 +103,7 @@ public final class PromptScenarios {
                 if (m == null) throw new IllegalStateException("timed out after " + seconds + " s waiting for Forge (last state v" + (last == null ? "-" : last.optInt("stateVersion")) + ")");
                 if (m.optString("type").equals("error")) {
                     notices.add(m.optString("message"));
+                    errorCodes.add(m.optString("code") + ": " + m.optString("message"));
                     System.out.println("  notice: " + m.optString("message"));
                     if (m.optString("message").contains("can't show yet")) throw new IllegalStateException("unbridged prompt: " + m.optString("message"));
                     continue;
@@ -768,6 +771,62 @@ public final class PromptScenarios {
     // ------------------------------------------------------------------ K. your commander dies (phone, Nov 8 19:10)
 
     /** Your commander (Ayula) is Shocked: you must be asked to move it to the command zone, and be able to recast it. */
+    // ------------------------------------------------------------------ L/M. refused blocks (phone, Nov 9 11:27)
+
+    /**
+     * Arcana unlocks its block screen after a refused block only for Argentum's INVALID_ACTION code; with any other code
+     * the declare-blockers step had no way forward ("frozen waiting for the AI"). L: one blocker for a menace attacker
+     * is refused (INVALID_ACTION, plain words), then two blockers are accepted. M: Prized Unicorn must be blocked by
+     * every creature able to: no blockers is refused, then blocking is accepted.
+     */
+    private static String illegalBlock() throws Exception {
+        return refusedThenFixed("Boggart Brute", "Grizzly Bears;Grizzly Bears", true, "can't be blocked by just 1 creature");
+    }
+
+    private static String forcedBlock() throws Exception {
+        return refusedThenFixed("Prized Unicorn", "Grizzly Bears", false, "must block");
+    }
+
+    private static String refusedThenFixed(String attackerName, String yourCreatures, boolean oneThenAll, String reason) throws Exception {
+        Session s = new Session(String.join("\n",
+                "activeplayer=ai", "activephase=COMBAT_DECLARE_BLOCKERS", "removesummoningsickness=true",
+                "humanlife=20", "ailife=20", "humanlibrary=" + LIBRARY, "ailibrary=" + LIBRARY,
+                "humanbattlefield=" + yourCreatures, "humanhand=",
+                "aibattlefield=" + attackerName + "|Attacking", "aihand="), attackerName);
+        try {
+            int tries = 0;
+            boolean refused = false;
+            while (true) {
+                JSONObject m = s.next(90);
+                if (!interactive(m)) continue;
+                JSONObject state = m.getJSONObject("state");
+                JSONObject block = null;
+                JSONArray legal = m.getJSONArray("legalActions");
+                for (int i = 0; i < legal.length(); i++) if (legal.getJSONObject(i).optString("actionType").equals("DeclareBlockers")) block = legal.getJSONObject(i);
+                if (block == null) {
+                    if (!refused) return "FAIL: blockers step ended without the illegal declaration being refused (" + s.errorCodes + ")";
+                    return "PASS: refused with " + s.errorCodes.stream().filter(e -> e.startsWith("INVALID_ACTION")).findFirst().orElse("?")
+                            + "; the corrected declaration was accepted (" + state.optString("currentStep") + ")";
+                }
+                List<String> mine = battlefield(state, ArcanaForgeHost.HUMAN_ID, "Grizzly Bears");
+                List<String> attacker = battlefield(state, ArcanaForgeHost.AI_ID, attackerName);
+                if (attacker.isEmpty() || mine.isEmpty()) return "FAIL: board missing (" + attacker + ", " + mine + ")";
+                JSONObject blockers = new JSONObject();
+                if (tries == 0) { // the illegal one
+                    if (oneThenAll) blockers.put(mine.get(0), new JSONArray().put(attacker.get(0)));
+                } else for (String b : mine) blockers.put(b, new JSONArray().put(attacker.get(0))); // the legal one
+                if (tries == 1) {
+                    String code = s.errorCodes.stream().filter(e -> e.contains(reason)).findFirst().orElse(null);
+                    if (code == null) return "FAIL: no refusal mentioning '" + reason + "' (" + s.errorCodes + ")";
+                    if (!code.startsWith("INVALID_ACTION")) return "FAIL: refusal sent as " + code + " (Arcana keeps its block screen locked unless INVALID_ACTION)";
+                    refused = true;
+                }
+                if (tries++ > 2) return "FAIL: the corrected declaration was refused too (" + s.errorCodes + ")";
+                s.send(new JSONObject(block.getJSONObject("action").toString()).put("blockers", blockers));
+            }
+        } finally { s.close(); }
+    }
+
     private static String commanderDies() throws Exception {
         Session s = new Session(String.join("\n",
                 "activeplayer=human", "activephase=MAIN1", "removesummoningsickness=true",

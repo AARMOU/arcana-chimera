@@ -10,7 +10,7 @@ the PR in the **Forge host proof** workflow (`.github/workflows/forge-host-proof
 |---|---|---|---|
 | 1 | `ProtocolGuardSelfTest` | The message checker itself rejects bad messages | `PROTOCOL GUARD RESULT` |
 | 2 | `OneTurnProof` | A real 1v1 game: land, creature, targeted spell, attack, AI turn, a second game in the same session | `PROOF RESULT` |
-| 3 | `PromptScenarios` A–K | Fixed boards for each bug found so far (below) | `SCENARIO …`, `SCENARIOS RESULT` |
+| 3 | `PromptScenarios` A–M | Fixed boards for each bug found so far (below) | `SCENARIO …`, `SCENARIOS RESULT` |
 | 4 | `FourSeatProof` | 4 Commander seats: opening hand → AI turns → back to you, with an explicit cleanup discard | `FOUR-SEAT ADAPTER RESULT` |
 | 5 | `AllCardsCheck` | Every Forge card (33,612) builds; every card in Arcana's bundled decks (1,544) resolves to a Forge card | `ALLCARDS RESULT` |
 | 6 | `SoakTest` | **Random play**: whole games on Arcana's bundled decks, 2–4 seats, random legal actions and random valid answers | `SOAK RESULT` |
@@ -31,6 +31,7 @@ A bot plays seat 0; Forge AIs play the others. A game **fails** on:
 | `PROTOCOL` | A `ProtocolGuard` finding |
 | `NO_GAMEOVER` | The player lost but Arcana was never told |
 | `BOT_ERROR` | The soak bot itself failed (fix `SoakTest`, not the bridge) |
+| `LOCKED` | A refused block sent without `INVALID_ACTION`: Arcana's block screen would stay locked (Nov 9) |
 | `RULES` | Forge's rules are silently off: a Commander game without Forge's Commander variant; a player at 0 life, 10 poison or 21 commander damage still playing; your commander in the graveyard/exile without the command-zone question |
 | `RAW_TEXT` | A prompt with unfilled placeholders (`%d`, `%s`, `%1$s`; `{2}` is mana, not a placeholder) or untranslated `lblXxx` keys |
 
@@ -67,6 +68,8 @@ java -Xmx4g -Djava.awt.headless=true -cp "$OUT/classes:$CP" org.arcanachimera.fo
 | I May pay | "You may pay {1}" on a trigger is asked, not auto-paid; connive's discard prompt shows its count (Nov 8) |
 | J Ayula fight | Fight mode with 0, 1 and 2 opposing creatures (0 is info only: Forge offers the mode and the fight does nothing) (Nov 8) |
 | K Commander dies | Commander games apply Forge's Commander variant: you're asked to return a dead commander to the command zone and can recast it (Nov 8) |
+| L Illegal block | One blocker for a menace attacker is refused with `INVALID_ACTION` in plain words, then a legal block is accepted (Arcana unlocks its block screen only for that code; phone, Nov 9) |
+| M Forced block | Prized Unicorn must be blocked: no blockers is refused (`INVALID_ACTION`), then blocking is accepted (Nov 9) |
 
 ## Rules for changes
 
