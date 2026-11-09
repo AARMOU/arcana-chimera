@@ -78,6 +78,8 @@ public final class ArcanaForgeHost {
     private volatile boolean gameOverSent;
     private volatile Input lastAutoPaid;
     private volatile Input lastPrompted;
+    /** Unsupported live inputs remain blocked until bridged; never consume them on the player's behalf. */
+    private volatile Input unsupportedInput;
     private volatile int mulligans = -1;
     private volatile boolean inMulligan;
     private volatile int chosenAbilityId = -1;
@@ -339,17 +341,6 @@ public final class ArcanaForgeHost {
                 .put("forgeHandZone", p.getZone(ZoneType.Hand).size()).put("forgeLibrary", p.getCardsIn(ZoneType.Library).size());
     }
 
-    /** For "choose N" prompts (e.g. discard to hand size): pick the first N valid choices so OK is accepted. */
-    private static void autoSelectMinimum(Input input) {
-        Object min = field(input, "min"), choices = field(input, "validChoices");
-        if (!(min instanceof Integer n) || !(choices instanceof Iterable<?> it)) return;
-        int picked = 0;
-        for (Object o : it) {
-            if (picked >= n) break;
-            if (o instanceof Card c && input.selectCard(c, null, null)) picked++;
-        }
-    }
-
     private static Object field(Object o, String name) {
         for (Class<?> k = o.getClass(); k != null; k = k.getSuperclass()) {
             try { java.lang.reflect.Field f = k.getDeclaredField(name); f.setAccessible(true); return f.get(o); }
@@ -389,7 +380,16 @@ public final class ArcanaForgeHost {
         String type = action.optString("type");
         if (type.equals("SubmitDecision")) { answer(action.optJSONObject("response") == null ? new JSONObject() : action.getJSONObject("response")); return; }
         if (type.equals("DeclareAttackers") || type.equals("DeclareBlockers")) { declareCombat(you, action); return; }
-        if (type.equals("PassPriority")) { ok(you); return; }
+        if (type.equals("PassPriority")) {
+            Input now = you.getInputQueue().getActualInput(you);
+            if (!(now instanceof InputPassPriority)) {
+                error("Forge is not offering a priority pass; the current player decision was not answered.");
+                scheduleEmit();
+                return;
+            }
+            ok(you);
+            return;
+        }
         SpellAbility sa = offered.get(key(type, action.optString("cardId", action.optString("sourceId")), action.optString("abilityId")));
         if (sa == null) { error("You can't do that right now (not enough mana, or it's no longer available)."); scheduleEmit(); return; }
         chosenAbilityId = sa.getId();
@@ -540,15 +540,22 @@ public final class ArcanaForgeHost {
         boolean combatInput = inputKind.equals("InputAttack") || inputKind.equals("InputBlock");
         // InputLockUI is Forge's "waiting for actions" lock while its game thread works: not a decision. Show state only.
         if (inputKind.equals("InputLockUI")) input = null;
+        if (input != unsupportedInput) unsupportedInput = null;
         if (input != null && !priority && !combatInput && input != lastPrompted && decisionForInput(input, you, game)) { lastPrompted = input; return; }
         if (input != null && !priority && !combatInput && input != lastPrompted) {
-            notice("input-" + inputKind, "Forge asked something Arcana can't show yet (" + inputKind + "); it was answered automatically.");
-            // Milestone 1 stand-in until combat/targets reach Arcana's screens: Forge's default (no attack,
-            // no block, its suggested target) so the game never waits on a prompt the UI can't show yet.
+            // Never guess a choice. A visible blocking error is safer than silently discarding,
+            // selecting a target, or invoking OK and changing the Magic game state.
+            unsupportedInput = input;
             lastPrompted = input;
-            defaultedPrompts.add("auto-answered " + inputKind);
-            autoSelectMinimum(input);
-            ok(you);
+            notice("input-" + inputKind, "Forge asked something Arcana can't show yet (" + inputKind
+                    + "). The game is paused; no choice was made. Please report this input type.");
+        }
+        if (input != null && input == unsupportedInput) {
+            offered.clear(); // stale spell/land offers must not be actionable during an unsupported input
+            JSONObject blocked = passiveUpdate(game, you).put("forgeInput", inputKind)
+                    .put("blockedOnForgeInput", true)
+                    .put("blockedReason", "Unsupported Forge player input: " + inputKind);
+            sink.accept(blocked); // remains blocked on requestResync; no Forge input is acknowledged
             return;
         }
         JSONArray legal = new JSONArray();
@@ -1133,6 +1140,32 @@ public final class ArcanaForgeHost {
         return ask(d, Map.of()).optBoolean("choice");
     }
 
+    private int askOptionDialog(Object[] args) throws Exception {
+        if (args.length < 5 || !(args[3] instanceof List<?> choices) || choices.isEmpty())
+            throw new IllegalArgumentException("Forge option dialog has no choices");
+        JSONArray options = new JSONArray();
+        for (Object value : choices) options.put(String.valueOf(value));
+        JSONObject d = decisionBase("ChooseOptionDecision", String.valueOf(args[0]))
+                .put("options", options).put("canCancel", false);
+        int selected = ask(d, Map.of()).optInt("optionIndex", -1);
+        if (selected < 0 || selected >= choices.size())
+            throw new IllegalArgumentException("Forge option dialog received an invalid selection");
+        return selected;
+    }
+
+    private String askInputDialog(Object[] args) throws Exception {
+        if (args.length > 4 && args[4] instanceof List<?> options && !options.isEmpty()) {
+            JSONObject d = decisionBase("ChooseOptionDecision", String.valueOf(args[0]))
+                    .put("options", new JSONArray(options)).put("canCancel", false);
+            int selected = ask(d, Map.of()).optInt("optionIndex", -1);
+            if (selected < 0 || selected >= options.size())
+                throw new IllegalArgumentException("Forge input dialog received an invalid selection");
+            return String.valueOf(options.get(selected));
+        }
+        notice("gui-showInputDialog-free-text", "Forge asked something Arcana can't show yet (free-text input). No default was selected; the game cannot continue safely.");
+        throw new UnsupportedOperationException("Forge free-text input is not bridged to Arcana");
+    }
+
     private int askNumber(String prompt, int min, int max) throws Exception {
         if (min >= max) return min;
         JSONObject d = decisionBase("ChooseNumberDecision", prompt).put("minValue", min).put("maxValue", max);
@@ -1164,6 +1197,8 @@ public final class ArcanaForgeHost {
             }
             case "chooseEntitiesForEffect": return choose((String) a[0], (Integer) a[2], (Integer) a[3], (List<?>) a[1]);
             case "getInteger": return askNumber((String) a[0], (Integer) a[1], (Integer) a[2]);
+            case "showOptionDialog": return askOptionDialog(a);
+            case "showInputDialog": return askInputDialog(a);
             case "assignGenericAmount": return assignGenericAmount((forge.game.card.CardView) a[0], (Map<?, ?>) a[1], (Integer) a[2], (Boolean) a[3], (String) a[4]);
             case "assignCombatDamage": return assignCombatDamage((forge.game.card.CardView) a[0], (List<?>) a[1], (Integer) a[2], a[3], (Boolean) a[4]);
             case "order": {
@@ -1341,19 +1376,21 @@ public final class ArcanaForgeHost {
             if (m.getReturnType() == void.class) return null;
             Object asked = question(name, args == null ? new Object[0] : args);
             if (asked != NOT_HANDLED) return asked;
-            notice("gui-" + name, "Forge asked something Arcana can't show yet (" + name + "); Forge's default was used.");
+            if (name.equals("manipulateCardList") || name.equals("insertInList")) {
+                notice("gui-" + name, "Forge asked something Arcana can't show yet (" + name
+                        + "). No card selection or ordering was silently made.");
+                throw new UnsupportedOperationException("Forge player choice is not bridged: " + name);
+            }
+            notice("gui-" + name, "Forge called an unbridged GUI method (" + name + "); fallback behavior was used.");
             return defaultAnswer(m, args);
         });
     }
 
-    /** Stop only where Arcana normally stops: main phases and combat declarations. */
+    /** Conservative correctness policy: never silently skip a legal response window at the phase-yield layer.
+     * Existing explicit user settings for own-stack and quiet-opponent auto-pass are handled separately.
+     */
     private boolean skipPhase(Object turnPlayer, PhaseType phase) {
-        boolean yourTurn = false;
-        PlayerControllerHuman you = humanController();
-        if (you != null && turnPlayer instanceof forge.game.player.PlayerView pv) yourTurn = pv.getId() == you.getPlayer().getId();
-        if (!yourTurn) return phase != PhaseType.COMBAT_DECLARE_BLOCKERS; // AI turns: stop only after blocks (and for spells)
-        return phase != PhaseType.MAIN1 && phase != PhaseType.MAIN2
-                && phase != PhaseType.COMBAT_DECLARE_ATTACKERS && phase != PhaseType.COMBAT_DECLARE_BLOCKERS;
+        return false;
     }
 
     /** Milestone 1 placeholder for questions the player should answer (logged in {@link #defaultedPrompts}). */
