@@ -160,7 +160,8 @@ public final class ArcanaForgeHost {
                 forge.ai.LobbyPlayerAi ai = new forge.ai.LobbyPlayerAi(p.getName(), null);
                 p.dangerouslySetController(new forge.ai.PlayerControllerAi(game, p, ai));
                 p.getRegisteredPlayer().setPlayer(ai);
-                view.answers.offer(new JSONObject().put("left", true)); // a question they were answering: unblock it
+                try { view.answers.offer(new JSONObject().put("left", true)); } // a question they were answering: unblock it
+                catch (Exception ignored) { } // Android's org.json declares JSONException
                 pch.getInputQueue().clearInputs(); // unblocks Forge's game thread if it was waiting on their input
             }
         } else guestSeats.remove(seatId);
