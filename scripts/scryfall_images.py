@@ -25,13 +25,32 @@ def get(url):
 
 rows = {}
 try:
+    def file_link(entry):
+        """The bulk file's link, whatever Scryfall calls the field (download_uri, or a data.scryfall.io link)."""
+        if entry.get("download_uri"):
+            return entry["download_uri"]
+        for k, v in entry.items():
+            if isinstance(v, str) and v.startswith("https://") and ("download" in k or "data.scryfall.io" in v):
+                return v
+        return None
+
     listing = json.load(get("https://api.scryfall.com/bulk-data"))
     entries = listing.get("data", []) if isinstance(listing, dict) else []
-    uri = next((e.get("download_uri") for e in entries if e.get("type") == "oracle_cards"), None)
+    entry = next((e for e in entries if e.get("type") == "oracle_cards"), None)
+    if entry is None:
+        raise RuntimeError("no oracle_cards in Scryfall's bulk listing")
+    uri = file_link(entry)
+    if not uri and entry.get("uri"):  # the entry's own page lists the file
+        entry = json.load(get(entry["uri"]))
+        uri = file_link(entry)
     if not uri:
-        raise RuntimeError("no oracle_cards in Scryfall's bulk listing: " + json.dumps(listing)[:400])
+        raise RuntimeError("no file link in Scryfall's oracle_cards entry; fields: " + ", ".join(sorted(entry)))
     print(f"scryfall_images: downloading {uri}")
-    cards = json.load(get(uri))
+    raw = get(uri).read()
+    if raw[:2] == b"\x1f\x8b":
+        import gzip
+        raw = gzip.decompress(raw)
+    cards = json.loads(raw)
     for c in cards:
         if c.get("layout") in ("art_series",):
             continue
