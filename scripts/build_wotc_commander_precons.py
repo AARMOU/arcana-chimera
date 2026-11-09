@@ -21,7 +21,20 @@ API = "https://mtgjson.com/api/v5"
 AGENT = "Arcana-Chimera-WotC-Commander-Catalog/1.0 (private offline decklist compiler)"
 SIX = {"Forces of the Imperium", "Necron Dynasties", "The Ruinous Powers",
        "Tyranid Swarm", "Eldrazi Unbound", "Eldrazi Incursion"}
-TYPES = {"Commander Deck", "Secret Lair Drop"}
+TYPES = {"Commander Deck", "Starter Commander Deck"}
+# MTGJSON labels hundreds of small Secret Lair card drops the same way as
+# full Commander products. Only the known official 100-card releases belong here.
+SECRET_LAIR_COMMANDER = {
+    "Heads I Win, Tails You Lose",
+    "Angels: They're Just Like Us but Cooler and with Wings",
+    "From Cute to Brute",
+    "Raining Cats and Dogs",
+    "20 Ways to Win",
+    "Everyone's Invited!",
+    "Hatsune Miku",
+    "Goblin Storm",
+    "Odds and Ends",
+}
 COLORS = "WUBRG"
 
 def download(url: str, dst: Path, max_bytes: int = 250_000_000) -> None:
@@ -74,9 +87,13 @@ def cards(items: list[dict]) -> list[tuple[str, int]]:
         grouped[name] = grouped.get(name, 0) + qty
     return list(grouped.items())
 
+def is_commander_product(row: dict) -> bool:
+    kind = row.get("type")
+    return kind in TYPES or (kind == "Secret Lair Drop" and row.get("name") in SECRET_LAIR_COMMANDER)
+
 def make_deck(raw: dict, names: dict[str, str], file: str, cutoff: str) -> dict | None:
     commander_cards = raw.get("commander")
-    if raw.get("type") not in TYPES or not isinstance(commander_cards, list) or not commander_cards:
+    if not is_commander_product(raw) or not isinstance(commander_cards, list) or not commander_cards:
         return None
     release = raw.get("releaseDate") or ""
     if release and release > cutoff:
@@ -147,7 +164,7 @@ def build_remote(index: Path, sets: Path, cutoff: str, folder: Path,
     if isinstance(listing, dict):
         listing = list(listing.values())
     selected = [row for row in listing if isinstance(row, dict)
-                and row.get("type") in TYPES
+                and is_commander_product(row)
                 and (not row.get("releaseDate") or row["releaseDate"] <= cutoff)]
     if not 100 <= len(selected) <= 400:
         raise ValueError(f"Suspicious Commander catalog size: {len(selected)}")
