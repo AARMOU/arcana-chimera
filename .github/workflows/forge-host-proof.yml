@@ -8,6 +8,8 @@ on:
       soak_turns: { description: 'Soak: turn limit per game', default: '12' }
       soak_players: { description: 'Soak: seats, e.g. 2-4 or 4', default: '2-4' }
       soak_ai: { description: 'Soak: Forge AI strength OFF/LITE/MAX', default: 'OFF' }
+      soak_humans: { description: 'Soak: people per game (1, or e.g. 2-4 for multiplayer)', default: '1' }
+      multi_games: { description: 'Multiplayer soak: number of games', default: '6' }
   pull_request:
     paths:
       - 'forge-host/**'
@@ -33,3 +35,5 @@ jobs:
           SOAK_TURNS: ${{ inputs.soak_turns || '12' }}
           SOAK_PLAYERS: ${{ inputs.soak_players || '2-4' }}
           SOAK_AI: ${{ inputs.soak_ai || 'OFF' }}
+          SOAK_HUMANS: ${{ inputs.soak_humans || '1' }}
+          MULTI_GAMES: ${{ inputs.multi_games || '6' }}

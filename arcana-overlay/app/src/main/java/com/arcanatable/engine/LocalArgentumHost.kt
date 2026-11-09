@@ -38,7 +38,8 @@ class LocalArgentumHost(
     var respondToOwnStack: Boolean
         get() = forge.respondToOwnStack
         set(value) { forge.respondToOwnStack = value }
-    val isWifi: Boolean get() = false
+    /** True once a Wi-Fi or internet friend has a seat. */
+    val isWifi: Boolean get() = forge.hasGuests()
     private val forge = ArcanaForgeHost { emit(it) }
 
     init {
@@ -55,20 +56,27 @@ class LocalArgentumHost(
         ForgeGameService.start(app())
     }
 
+    /**
+     * Messages from the person in seat [from]. The host's transport also sends "guestLeft" (seatId: who dropped) from
+     * the host's seat; a guest may only leave their own seat.
+     */
     fun receive(message: JSONObject, from: EntityId = HUMAN_ID) {
-        if (from == HUMAN_ID) forge.handle(message)
+        if (from != HUMAN_ID && message.optString("type") == "guestLeft") { forge.guestLeft(from.value); return }
+        forge.handleFrom(from.value, message)
     }
 
     private val stopped = java.util.concurrent.atomic.AtomicBoolean()
     fun shutdown() { if (stopped.compareAndSet(false, true)) ForgeGameService.stop(app()); forge.shutdown() }
 
-    /** Wi-Fi two-person games aren't on Forge yet (later milestone): tell both sides plainly. */
+    /** Compatibility entry point: a legacy Wi-Fi guest occupies seat two. */
     fun setGuest(seat: LocalSeat, guest: (JSONObject) -> Unit) = setGuest(AI_ID, seat, guest)
 
+    /**
+     * Wi-Fi and internet multiplayer: a person takes seat [seatId] with their own deck before the game starts. Forge
+     * gives them their own player and questions; the bridge sends them their own view of the table through [guest].
+     */
     fun setGuest(seatId: EntityId, seat: LocalSeat, guest: (JSONObject) -> Unit) {
-        val note = JSONObject().put("type", "error").put("code", "WIFI").put("message", "Wi-Fi games aren't available in the Forge build yet.")
-        guest(note)
-        emit(JSONObject(note.toString()))
+        forge.addGuest(seatId.value, ArcanaForgeHost.Seat(seat.name, seat.deck, seat.commander)) { guest(it) }
     }
 
     companion object {

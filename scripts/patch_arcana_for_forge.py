@@ -48,6 +48,17 @@ patch("engine/OfflineGame.kt", [
      "val extras = otherLists.map { (d, list) -> (library.canonical(d.commander) ?: d.commander).let { cmd -> LocalSeat(aiName(cmd), filled(list, cmd), cmd) } }"),
 ])
 
+# Wi-Fi/internet guests (Nov 8, multiplayer): the host checked each guest's deck against Argentum, refusing a seat
+# whose commander Argentum lacks and dropping its other cards. Forge plays the guest's whole deck, like the host's.
+patch("engine/OfflineGame.kt", [
+    ("val cmd = commander?.let(library::canonical) ?: return null to",
+     "val cmd = commander?.let " + KEEP + " ?: return null to"),
+    ("val supported = list.mapNotNull(library::canonical)\n        val missing = list.filter { library.canonical(it) == null }.distinct()",
+     "val supported = list.map " + KEEP + "\n        val missing = emptyList<String>() // Forge decides; it reports cards it lacks"),
+    ("val toLoad = (supported + cmd).toSet().filter { registry.getCard(it) == null }.toSet()",
+     "val toLoad = (supported + cmd).toSet().filter { registry.getCard(it) == null && library.canonical(it) != null }.toSet()"),
+])
+
 # Import-time "not in Argentum" messages: Argentum no longer runs the game, so don't report against it.
 patch("DeckSupport.kt", [
     ('''        append("Argentum check: $argentumCopies in Argentum")

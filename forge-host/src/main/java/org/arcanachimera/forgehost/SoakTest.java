@@ -36,7 +36,10 @@ import java.util.concurrent.TimeUnit;
  * A game that reaches the turn limit without ending is fine (counted, not failed).
  *
  * Every game has its own seed; a failure prints it, and `seed=<n> games=1` replays that game.
- * Usage: SoakTest <forge-gui dir> <arcana assets dir> [games=8] [seed=1] [turns=12] [players=2-4] [ai=OFF|LITE|MAX]
+ *   MULTI       multiplayer (humans=2-4): a person sees someone else's hand, gets someone else's question or action,
+ *               or isn't "you" in exactly their own seat; on even seeds with 3+ people one friend leaves on turn 4 and
+ *               the game must go on (the AI plays their seat)
+ * Usage: SoakTest <forge-gui dir> <arcana assets dir> [games=8] [seed=1] [turns=12] [players=2-4] [ai=OFF|LITE|MAX] [humans=1|2-4]
  */
 public final class SoakTest {
     record Deck(String name, String commander, List<String> cards) { }
@@ -52,6 +55,8 @@ public final class SoakTest {
         final Set<String> declinedCommander = new HashSet<>(); // you said "leave it": staying put is right
         String lastPrompt = "";
         int lethalStates, unaskedStates;
+
+        String me = ArcanaForgeHost.HUMAN_ID;
 
         String check(ArcanaForgeHost host, JSONObject m, JSONObject st, List<ArcanaForgeHost.Seat> seats) {
             if (!variantChecked && host.gameForTest() != null) {
@@ -74,7 +79,7 @@ public final class SoakTest {
             for (Object z : st.getJSONArray("zones")) {
                 JSONObject zone = (JSONObject) z;
                 JSONObject id = zone.getJSONObject("zoneId");
-                if (!ArcanaForgeHost.HUMAN_ID.equals(id.optString("ownerId"))) continue;
+                if (!me.equals(id.optString("ownerId"))) continue;
                 String type = id.optString("zoneType");
                 for (Object cid : zone.getJSONArray("cardIds")) {
                     JSONObject c = cards.optJSONObject(String.valueOf(cid));
@@ -108,16 +113,18 @@ public final class SoakTest {
     public static void main(String[] args) throws Exception {
         String forgeDir = args[0];
         Path assets = Path.of(args[1]);
-        Map<String, String> opt = new LinkedHashMap<>(Map.of("games", "8", "seed", "1", "turns", "12", "players", "2-4", "ai", "OFF"));
+        Map<String, String> opt = new LinkedHashMap<>(Map.of("games", "8", "seed", "1", "turns", "12", "players", "2-4", "ai", "OFF", "humans", "1"));
         for (int i = 2; i < args.length; i++) { String[] kv = args[i].split("=", 2); if (kv.length == 2) opt.put(kv[0], kv[1]); }
         int games = Integer.parseInt(opt.get("games")), turns = Integer.parseInt(opt.get("turns"));
         long seed0 = Long.parseLong(opt.get("seed"));
         String[] pr = opt.get("players").split("-");
         int minP = Integer.parseInt(pr[0]), maxP = Integer.parseInt(pr[pr.length - 1]);
+        String[] hr = opt.get("humans").split("-");
+        int minH = Integer.parseInt(hr[0]), maxH = Integer.parseInt(hr[hr.length - 1]);
 
         List<Deck> decks = loadDecks(assets);
         System.out.println("SOAK decks loaded: " + decks.size() + "; games " + games + ", seeds " + seed0 + "–" + (seed0 + games - 1)
-                + ", turn limit " + turns + ", players " + minP + "–" + maxP + ", AI " + opt.get("ai"));
+                + ", turn limit " + turns + ", players " + minP + "–" + maxP + ", people " + minH + "–" + maxH + ", AI " + opt.get("ai"));
         ArcanaForgeHost.lazyCards = false;
 
         List<String> failures = new ArrayList<>();
@@ -130,13 +137,15 @@ public final class SoakTest {
             int players = minP + (int) (seed % (maxP - minP + 1));
             List<Deck> pick = new ArrayList<>();
             for (int i = 0; i < players; i++) pick.add(decks.get(rng.nextInt(decks.size())));
+            int humans = Math.min(players, minH + (int) ((seed / 3) % (maxH - minH + 1)));
             Game game = new Game(seed, rng, pick, turns, ArcanaForgeHost.AiStrength.valueOf(opt.get("ai")), forgeDir);
+            game.humans = humans;
             String outcome;
             try { outcome = game.play(); }
             catch (Throwable t) { outcome = "FAIL HOST_ERROR " + t; t.printStackTrace(); }
             totalDecisions += game.decisions; totalActions += game.actions;
             String decksLine = String.join(" vs ", pick.stream().map(Deck::name).toList());
-            System.out.println("SOAK game seed=" + seed + " " + players + "p [" + decksLine + "] -> " + outcome
+            System.out.println("SOAK game seed=" + seed + " " + players + "p" + (humans > 1 ? " (" + humans + " people)" : "") + " [" + decksLine + "] -> " + outcome
                     + " (turn " + game.turn + ", " + game.actions + " actions, " + game.decisions + " answers, decisions " + game.decisionTypes + ")");
             if (outcome.startsWith("FAIL")) failures.add("seed=" + seed + " " + outcome);
             else if (outcome.startsWith("GAME OVER")) finished++;
@@ -160,10 +169,20 @@ public final class SoakTest {
         int turn, actions, decisions, actionsThisStep, unboundedNumbers;
         String stepKey = "";
         boolean youLost;
+        /** Multiplayer: how many seats are people (seat 0 is the host; the rest are Wi-Fi/internet guests). */
+        int humans = 1;
+        /** This bot's seat, and the bots for the guests' seats (host bot only). */
+        String me = ArcanaForgeHost.HUMAN_ID;
+        final List<Game> guests = new ArrayList<>();
+        boolean gone, gameOverSeen;
+        final RulesWatch rules = new RulesWatch();
+        long lostAt;
 
         Game(long seed, Random rng, List<Deck> decks, int turnLimit, ArcanaForgeHost.AiStrength ai, String forgeDir) {
             this.seed = seed; this.rng = rng; this.decks = decks; this.turnLimit = turnLimit; this.ai = ai; this.forgeDir = forgeDir;
         }
+
+        void send(ArcanaForgeHost host, JSONObject message) { host.handleFrom(me, message); }
 
         String play() throws Exception {
             ArcanaForgeHost host = new ArcanaForgeHost(m -> { guard.observe(m); inbox.add(m); });
@@ -171,56 +190,120 @@ public final class SoakTest {
             List<ArcanaForgeHost.Seat> seats = new ArrayList<>();
             for (int i = 0; i < decks.size(); i++) seats.add(new ArcanaForgeHost.Seat(i == 0 ? "Bot" : "AI " + i, decks.get(i).cards(), decks.get(i).commander()));
             host.prepare(seats, () -> forgeDir);
+            // Multiplayer: people in seats 1..humans-1, each a bot with its own view (Arcana's setGuest)
+            for (int i = 1; i < humans; i++) {
+                Game g = new Game(seed * 31 + i, new Random(seed * 31 + i), decks, turnLimit, ai, forgeDir);
+                g.me = i == 1 ? ArcanaForgeHost.AI_ID : ArcanaForgeHost.AI_ID + "-" + i;
+                g.rules.me = g.me;
+                guests.add(g);
+                host.addGuest(g.me, new ArcanaForgeHost.Seat("Friend " + i, decks.get(i).cards(), decks.get(i).commander()),
+                        m -> { g.guard.observe(m); g.inbox.add(m); });
+            }
+            List<Game> people = new ArrayList<>(); people.add(this); people.addAll(guests);
+            // Even seeds with 3+ people: the last friend drops on turn 4 and the AI must take over their seat.
+            Game leaver = guests.size() >= 2 && seed % 2 == 0 ? guests.get(guests.size() - 1) : null;
             host.handle(new JSONObject().put("type", "createQuickGameLobby"));
             try {
                 long deadline = System.currentTimeMillis() + 15 * 60_000;
+                long lastMessage = System.currentTimeMillis();
                 while (System.currentTimeMillis() < deadline) {
-                    JSONObject m = inbox.poll(45, TimeUnit.SECONDS);
-                    if (m == null) return youLost ? "FAIL NO_GAMEOVER you lost at turn " + turn + " but Arcana was never told"
-                            : "FAIL STALL no message for 45 s at turn " + turn + " (step " + stepKey + ")\n" + stacks();
-                    String type = m.optString("type");
-                    switch (type) {
-                        case "error" -> {
-                            String text = m.optString("message");
-                            if (text.contains("can't show yet")) return "FAIL UNBRIDGED " + text;
-                            if (text.startsWith("Forge host problem")) return "FAIL HOST_ERROR " + text;
+                    boolean any = false;
+                    for (Game bot : people) {
+                        if (bot.gone) continue;
+                        JSONObject m = bot.inbox.poll(people.size() == 1 ? 1000 : 20, TimeUnit.MILLISECONDS);
+                        if (m == null) continue;
+                        any = true; lastMessage = System.currentTimeMillis();
+                        String out = bot.onMessage(host, m, seats);
+                        if (out != null) return bot == this ? out : out.startsWith("FAIL") ? out + " (seat " + bot.me + ")" : out;
+                        if (bot == leaver && bot.turn >= 4) {
+                            bot.gone = true;
+                            host.guestLeft(bot.me);
+                            System.out.println("SOAK seed=" + seed + " " + bot.me + " left on turn " + bot.turn);
                         }
-                        case "gameOver" -> {
-                            String extra = verdict(host);
-                            return extra != null ? extra : "GAME OVER winner " + m.opt("winnerId") + " (" + m.optString("reason") + ")";
-                        }
-                        case "mulliganDecision" -> host.handle(new JSONObject().put("type",
-                                m.optInt("mulliganCount") < 2 && rng.nextInt(100) < 15 ? "mulligan" : "keepHand"));
-                        case "chooseBottomCards" -> {
-                            JSONArray hand = m.getJSONArray("hand");
-                            host.handle(new JSONObject().put("type", "chooseBottomCards").put("cardIds", sample(hand, m.optInt("cardsToPutOnBottom"))));
-                        }
-                        case "stateUpdate" -> {
-                            JSONObject st = m.getJSONObject("state");
-                            turn = st.optInt("turnNumber");
-                            String broken = rules.check(host, m, st, seats);
-                            if (broken != null) return broken;
-                            for (Object o : st.getJSONArray("players")) {
-                                JSONObject p = (JSONObject) o;
-                                if (p.optString("playerId").equals(ArcanaForgeHost.HUMAN_ID) && p.optBoolean("hasLost")) youLost = true;
-                            }
-                            if (turn > turnLimit) {
-                                String extra = verdict(host);
-                                return extra != null ? extra : "TURN LIMIT";
-                            }
-                            if (m.optBoolean("interactive")) {
-                                try { act(host, m, st); }
-                                catch (RuntimeException bot) { bot.printStackTrace(); return "FAIL BOT_ERROR (the soak bot, not the bridge) " + bot; }
-                            }
-                        }
-                        default -> { }
+                    }
+                    if (!any && System.currentTimeMillis() - lastMessage > 45_000) {
+                        for (Game bot : people) if (bot.youLost && !bot.gameOverSeen && !bot.gone)
+                            return "FAIL NO_GAMEOVER " + bot.me + " lost at turn " + bot.turn + " but Arcana was never told";
+                        return "FAIL STALL no message for 45 s at turn " + turn + " (step " + stepKey + ")\n" + stacks();
                     }
                 }
                 return "FAIL STALL game took over 15 minutes";
             } finally { host.shutdown(); }
         }
 
-        final RulesWatch rules = new RulesWatch();
+        /** One message to this bot's seat. A non-null result ends the game. */
+        String onMessage(ArcanaForgeHost host, JSONObject m, List<ArcanaForgeHost.Seat> seats) throws Exception {
+            String type = m.optString("type");
+            switch (type) {
+                case "error" -> {
+                    String text = m.optString("message");
+                    if (text.contains("can't show yet")) return "FAIL UNBRIDGED " + text;
+                    if (text.startsWith("Forge host problem")) return "FAIL HOST_ERROR " + text;
+                }
+                case "gameStarted" -> { // each person is "you" in exactly their own seat
+                    int mine = 0; boolean right = false;
+                    for (Object o : m.getJSONArray("players")) {
+                        JSONObject p = (JSONObject) o;
+                        if (p.optBoolean("isYou")) { mine++; right = p.optString("playerId").equals(me); }
+                    }
+                    if (mine != 1 || !right) return "FAIL MULTI gameStarted for " + me + " marks " + mine + " seat(s) as you: " + m;
+                }
+                case "gameOver" -> {
+                    gameOverSeen = true;
+                    if (me.equals(ArcanaForgeHost.HUMAN_ID) || !m.optString("reason").equals("ELIMINATED")) {
+                        if (!me.equals(ArcanaForgeHost.HUMAN_ID)) return null; // a guest's end: the host bot decides the game
+                        String extra = verdict(host);
+                        return extra != null ? extra : "GAME OVER winner " + m.opt("winnerId") + " (" + m.optString("reason") + ")";
+                    }
+                }
+                case "mulliganDecision" -> send(host, new JSONObject().put("type",
+                        m.optInt("mulliganCount") < 2 && rng.nextInt(100) < 15 ? "mulligan" : "keepHand"));
+                case "chooseBottomCards" -> {
+                    JSONArray hand = m.getJSONArray("hand");
+                    send(host, new JSONObject().put("type", "chooseBottomCards").put("cardIds", sample(hand, m.optInt("cardsToPutOnBottom"))));
+                }
+                case "stateUpdate" -> {
+                    JSONObject st = m.getJSONObject("state");
+                    turn = st.optInt("turnNumber");
+                    String broken = rules.check(host, m, st, seats);
+                    if (broken != null) return broken;
+                    String leak = privacy(m, st);
+                    if (leak != null) return leak;
+                    for (Object o : st.getJSONArray("players")) {
+                        JSONObject p = (JSONObject) o;
+                        if (p.optString("playerId").equals(me) && p.optBoolean("hasLost")) youLost = true;
+                    }
+                    if (turn > turnLimit && me.equals(ArcanaForgeHost.HUMAN_ID)) {
+                        String extra = verdict(host);
+                        return extra != null ? extra : "TURN LIMIT";
+                    }
+                    if (m.optBoolean("interactive") && turn <= turnLimit) {
+                        try { act(host, m, st); }
+                        catch (RuntimeException bot) { bot.printStackTrace(); return "FAIL BOT_ERROR (the soak bot, not the bridge) " + bot; }
+                    }
+                }
+                default -> { }
+            }
+            return null;
+        }
+
+        /** Multiplayer: each person sees their own hand only, and is asked and offered actions as themselves. */
+        String privacy(JSONObject m, JSONObject st) {
+            if (!st.optString("viewingPlayerId").equals(me)) return "FAIL MULTI " + me + " got the table as seen by " + st.optString("viewingPlayerId");
+            for (Object z : st.getJSONArray("zones")) {
+                JSONObject zone = (JSONObject) z, id = zone.getJSONObject("zoneId");
+                if (id.optString("zoneType").equals("Hand") && !id.optString("ownerId").equals(me) && zone.getJSONArray("cardIds").length() > 0)
+                    return "FAIL MULTI " + me + " can see " + id.optString("ownerId") + "'s hand";
+            }
+            JSONObject d = m.optJSONObject("pendingDecision");
+            if (d != null && !d.optString("playerId").equals(me)) return "FAIL MULTI " + me + " got " + d.optString("playerId") + "'s question: " + d.optString("prompt");
+            JSONArray legal = m.optJSONArray("legalActions");
+            if (legal != null) for (int i = 0; i < legal.length(); i++) {
+                JSONObject a = legal.getJSONObject(i).optJSONObject("action");
+                if (a != null && !a.optString("playerId", me).equals(me)) return "FAIL MULTI " + me + " was offered " + a.optString("playerId") + "'s action " + a;
+            }
+            return null;
+        }
 
         /** Checks that apply at the end of any game. Null if clean. */
         String verdict(ArcanaForgeHost host) {
@@ -238,8 +321,8 @@ public final class SoakTest {
                 decisions++;
                 decisionTypes.merge(d.optString("type"), 1, Integer::sum);
                 JSONObject response = answer(d).put("decisionId", d.getString("id"));
-                host.handle(new JSONObject().put("type", "submitAction").put("action", new JSONObject().put("type", "SubmitDecision")
-                        .put("playerId", ArcanaForgeHost.HUMAN_ID).put("response", response)));
+                send(host, new JSONObject().put("type", "submitAction").put("action", new JSONObject().put("type", "SubmitDecision")
+                        .put("playerId", me).put("response", response)));
                 return;
             }
             JSONArray legal = m.optJSONArray("legalActions");
@@ -269,7 +352,7 @@ public final class SoakTest {
             if (chosen == null) return;
             actionsThisStep++;
             actions++;
-            host.handle(new JSONObject().put("type", "submitAction").put("action", chosen));
+            send(host, new JSONObject().put("type", "submitAction").put("action", chosen));
         }
 
         JSONObject attack(JSONObject a, JSONObject st) {

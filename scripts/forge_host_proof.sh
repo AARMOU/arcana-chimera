@@ -50,4 +50,9 @@ timeout 1500s java -Xmx6g -Djava.awt.headless=true -cp "$OUT/classes:$CP" \
 # Fixed seeds on every push so a failure is repeatable; the "Soak test" workflow runs more games on demand.
 timeout 1500s java -Xmx4g -Djava.awt.headless=true -cp "$OUT/classes:$CP" \
   org.arcanachimera.forgehost.SoakTest "$FORGE/forge-gui/" "$ADECKS/repo/android/app/src/main/assets" \
-  games="${SOAK_GAMES:-6}" seed="${SOAK_SEED:-1}" turns="${SOAK_TURNS:-12}" players="${SOAK_PLAYERS:-2-4}" ai="${SOAK_AI:-OFF}"
+  games="${SOAK_GAMES:-6}" seed="${SOAK_SEED:-1}" turns="${SOAK_TURNS:-12}" players="${SOAK_PLAYERS:-2-4}" ai="${SOAK_AI:-OFF}" humans="${SOAK_HUMANS:-1}"
+# MULTIPLAYER SOAK: Wi-Fi/internet games, 2-4 people in one game (each a bot with its own view), AIs in the other
+# seats; on even seeds with 3+ people one friend leaves mid-game and the AI takes their seat.
+timeout 1500s java -Xmx4g -Djava.awt.headless=true -cp "$OUT/classes:$CP" \
+  org.arcanachimera.forgehost.SoakTest "$FORGE/forge-gui/" "$ADECKS/repo/android/app/src/main/assets" \
+  games="${MULTI_GAMES:-6}" seed="${MULTI_SEED:-500}" turns="${SOAK_TURNS:-12}" players=2-4 humans=2-4 ai="${SOAK_AI:-OFF}"

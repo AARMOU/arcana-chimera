@@ -85,9 +85,87 @@ public final class ArcanaForgeHost {
     /** Forge prompts answered with a default instead of the player (milestone 1 gap list). */
     public final List<String> defaultedPrompts = new ArrayList<>();
 
+    /** This view's seat: the host is {@link #HUMAN_ID}; a Wi-Fi/internet guest is the seat it took ("offline-ai", ...). */
+    private final String me;
+    /** The view that owns the game (the host's); itself for the host. */
+    private final ArcanaForgeHost primary;
+    /** Every person's view of this game, the host's first. Shared by all views. */
+    private final List<ArcanaForgeHost> views;
+
     public ArcanaForgeHost(Consumer<JSONObject> sink) {
         this.sink = sink;
+        this.me = HUMAN_ID;
+        this.primary = this;
+        this.views = new java.util.concurrent.CopyOnWriteArrayList<>(List.of(this));
+        this.seatIds = new java.util.IdentityHashMap<>();
         if (edtThread == null) edt.submit(() -> edtThread = Thread.currentThread());
+    }
+
+    /** A guest's view of the host's game: its own messages, questions and hidden cards. */
+    private ArcanaForgeHost(ArcanaForgeHost primary, String seatId, Consumer<JSONObject> sink) {
+        this.sink = sink;
+        this.me = seatId;
+        this.primary = primary;
+        this.views = primary.views;
+        this.seatIds = primary.seatIds;
+    }
+
+    // ---------------------------------------------------------------- multiplayer (Wi-Fi / internet guests)
+
+    private final Map<String, Seat> guestSeats = new LinkedHashMap<>();
+
+    /**
+     * Arcana's setGuest: a person takes an opponent seat before the game starts, with their own deck. Their messages
+     * come in through {@link #handleFrom}; everything for them goes to {@code guestSink}.
+     */
+    public synchronized void addGuest(String seatId, Seat seat, Consumer<JSONObject> guestSink) {
+        if (primary != this) throw new IllegalStateException("guests join the host's game");
+        if (match != null) throw new IllegalStateException("Remote seats must join before the game starts.");
+        if (seatId.equals(HUMAN_ID)) throw new IllegalArgumentException("The host's own seat can't be a guest.");
+        views.removeIf(v -> v.me.equals(seatId));
+        guestSeats.put(seatId, seat);
+        ArcanaForgeHost view = new ArcanaForgeHost(this, seatId, guestSink);
+        views.add(view);
+        try { guestSink.accept(new JSONObject().put("type", "connected").put("playerId", seatId).put("token", "offline")); }
+        catch (Exception ignored) { }
+    }
+
+    /** True once a person other than the host has a seat. */
+    public boolean hasGuests() { return views.size() > 1 || !guestSeats.isEmpty(); }
+
+    /** A message from the person in {@code seatId} (the host is {@link #HUMAN_ID}). */
+    public void handleFrom(String seatId, JSONObject message) {
+        if (seatId == null || seatId.equals(me)) { handle(message); return; }
+        for (ArcanaForgeHost v : views) if (v.me.equals(seatId)) { v.handle(message); return; }
+    }
+
+    private volatile boolean left;
+
+    /**
+     * A guest disconnected or quit: the AI plays their seat from here (Forge's own takeover, FServerManager.convertToAI),
+     * so nobody is left waiting on a person who isn't there. Arcana's message: "X left. The AI is playing their seat now."
+     */
+    public void guestLeft(String seatId) {
+        ArcanaForgeHost view = null;
+        for (ArcanaForgeHost v : views) if (!v.me.equals(HUMAN_ID) && v.me.equals(seatId)) view = v;
+        if (view == null) return;
+        String name = guestSeats.containsKey(seatId) ? guestSeats.get(seatId).name() : "Your friend";
+        Game game = match == null ? null : match.getGame();
+        PlayerControllerHuman pch = view.humanController();
+        view.left = true;
+        views.remove(view);
+        if (game != null && !game.isGameOver()) {
+            if (pch != null) {
+                Player p = pch.getPlayer();
+                forge.ai.LobbyPlayerAi ai = new forge.ai.LobbyPlayerAi(p.getName(), null);
+                p.dangerouslySetController(new forge.ai.PlayerControllerAi(game, p, ai));
+                p.getRegisteredPlayer().setPlayer(ai);
+                view.answers.offer(new JSONObject().put("left", true)); // a question they were answering: unblock it
+                pch.getInputQueue().clearInputs(); // unblocks Forge's game thread if it was waiting on their input
+            }
+        } else guestSeats.remove(seatId);
+        for (ArcanaForgeHost v : views) v.error(name + " left. The AI is playing their seat now.");
+        scheduleEmit();
     }
 
     // ---------------------------------------------------------------- startup
@@ -100,7 +178,7 @@ public final class ArcanaForgeHost {
     /** One seat: a name, its deck as card names, and an optional commander. */
     public record Seat(String name, List<String> deck, String commander) { }
 
-    private final java.util.IdentityHashMap<RegisteredPlayer, String> seatIds = new java.util.IdentityHashMap<>();
+    private final java.util.IdentityHashMap<RegisteredPlayer, String> seatIds;
     private List<Seat> pendingSeats;
     private java.util.function.Supplier<String> assetsDir;
 
@@ -112,17 +190,26 @@ public final class ArcanaForgeHost {
     private void startPrepared() {
         try {
             initForge(assetsDir.get(), this);
-            boolean commander = pendingSeats.stream().allMatch(x -> x.commander() != null && !x.commander().isEmpty());
+            boolean commander = true;
+            for (int i = 0; i < pendingSeats.size(); i++) {
+                Seat x = guestSeats.getOrDefault(seatId(i), pendingSeats.get(i));
+                if (x.commander() == null || x.commander().isEmpty()) commander = false;
+            }
             List<RegisteredPlayer> players = new ArrayList<>();
             JSONArray lobby = new JSONArray(), started = new JSONArray();
+            java.util.Map<RegisteredPlayer, IGuiGame> guis = new java.util.HashMap<>();
             for (int i = 0; i < pendingSeats.size(); i++) {
-                Seat seat = pendingSeats.get(i);
+                Seat seat = guestSeats.getOrDefault(seatId(i), pendingSeats.get(i));
+                ArcanaForgeHost person = null;
+                for (ArcanaForgeHost v : views) if (v.me.equals(seatId(i))) person = v;
                 Map<String, Integer> counts = new LinkedHashMap<>();
                 for (String c : seat.deck()) counts.merge(c, 1, Integer::sum);
                 Deck d = deck(seat.name(), counts);
                 if (commander) d.getOrCreate(forge.deck.DeckSection.Commander).add(card(seat.commander()), 1);
                 RegisteredPlayer rp = commander ? RegisteredPlayer.forCommander(d) : new RegisteredPlayer(d);
-                rp.setPlayer(i == 0 ? GamePlayerUtil.getGuiPlayer() : GamePlayerUtil.createAiPlayer(seat.name(), i));
+                rp.setPlayer(i == 0 ? GamePlayerUtil.getGuiPlayer()
+                        : person != null ? new forge.player.LobbyPlayerHuman(seat.name()) : GamePlayerUtil.createAiPlayer(seat.name(), i));
+                if (person != null) guis.put(rp, person.guiGame());
                 seatIds.put(rp, seatId(i));
                 players.add(rp);
                 lobby.put(new JSONObject().put("playerId", seatId(i)).put("name", seat.name()));
@@ -131,11 +218,19 @@ public final class ArcanaForgeHost {
             if (!unknownCards.isEmpty()) error("Forge doesn't have " + unknownCards.size() + " card(s), left out: " + String.join(", ", unknownCards));
             if (!aliasedCards.isEmpty()) System.out.println("Forge matched card names: " + String.join("; ", aliasedCards));
             match = GuiBase.getInterface().hostMatch();
-            sink.accept(new JSONObject().put("type", "quickGameLobbyState").put("lobbyId", "offline").put("youPlayerId", HUMAN_ID)
-                    .put("vsAi", true).put("players", lobby));
-            sink.accept(new JSONObject().put("type", "gameStarted").put("players", started));
+            for (ArcanaForgeHost v : views) { // each person: their own seat as "you"
+                v.match = match;
+                JSONArray mine = new JSONArray();
+                for (int i = 0; i < started.length(); i++) {
+                    String id = started.getJSONObject(i).getString("playerId");
+                    mine.put(new JSONObject().put("playerId", id).put("isYou", id.equals(v.me)));
+                }
+                v.sink.accept(new JSONObject().put("type", "quickGameLobbyState").put("lobbyId", "offline").put("youPlayerId", v.me)
+                        .put("vsAi", views.size() == 1).put("players", lobby));
+                v.sink.accept(new JSONObject().put("type", "gameStarted").put("players", mine));
+            }
             applyStartBoard(match);
-        match.startMatch(rules(commander), null, players, players.get(0), guiGame());
+            match.startMatch(rules(commander), null, players, guis, null);
         } catch (Throwable t) {
             error("Forge could not start the game: " + describe(t));
             t.printStackTrace();
@@ -287,8 +382,10 @@ public final class ArcanaForgeHost {
     private void handleUnsafe(JSONObject message) throws Exception {
         if (message.optString("type").equals("submitAction")) lastPlayerActionAt = System.currentTimeMillis();
         String t = message.optString("type");
-        if (t.equals("connect")) { sink.accept(new JSONObject().put("type", "connected").put("playerId", HUMAN_ID).put("token", "offline")); return; }
+        if (t.equals("connect")) { sink.accept(new JSONObject().put("type", "connected").put("playerId", me).put("token", "offline")); return; }
         if (t.equals("ping")) { sink.accept(new JSONObject().put("type", "pong")); return; }
+        if (t.equals("guestLeft") && primary == this) { guestLeft(message.optString("seatId", AI_ID)); return; }
+        if (t.equals("createQuickGameLobby") && primary != this) return; // only the host starts the game
         if (t.equals("createQuickGameLobby") && match == null && pendingSeats != null) { new Thread(this::startPrepared, "forge-start").start(); return; }
         PlayerControllerHuman you = humanController();
         if (you == null) return;
@@ -310,7 +407,12 @@ public final class ArcanaForgeHost {
                 bottom(you, message.optJSONArray("cardIds"));
             }
             case "concede" -> you.concede();
-            case "requestResync" -> scheduleEmit();
+            case "requestResync" -> { // after a reconnect: send the open question or mulligan offer again
+                Input now = you.getInputQueue().getActualInput(you);
+                String kind = inputClassName(now);
+                if (kind.equals("InputConfirmMulligan") || kind.equals("InputLondonMulligan")) lastPrompted = null;
+                if (pending != null) emitDecision(); else scheduleSelf();
+            }
             case "arcanaSaveOffline" -> error("Saving a game isn't available in the Forge build yet.");
             case "requestUndo" -> error("Undo isn't available in the Forge build.");
             case "setRespondToOwnStack" -> respondToOwnStack = message.optBoolean("enabled");
@@ -433,7 +535,13 @@ public final class ArcanaForgeHost {
      * its game thread is busy (AI turns), so the table isn't rebuilt for every callback while the AI is thinking.
      * An update is never dropped: one is always due after the latest callback.
      */
+    /** Anything changed: every person's table updates (each from their own seat). */
     private void scheduleEmit() {
+        for (ArcanaForgeHost v : views) v.scheduleSelf();
+    }
+
+    private void scheduleSelf() {
+        if (left) return;
         long delay = waitingOnPlayer() ? 40 : 300;
         long due = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(delay);
         while (true) {
@@ -490,7 +598,7 @@ public final class ArcanaForgeHost {
     private void emitSafely() {
         try { emit(); }
         catch (java.util.ConcurrentModificationException | IndexOutOfBoundsException race) { // the game moved while being read
-            if (++raceRetries <= 5) { scheduleEmit(); return; }
+            if (++raceRetries <= 5) { scheduleSelf(); return; }
             error("Forge host problem: " + describe(race));
         }
         catch (Throwable t) { error("Forge host problem: " + describe(t)); t.printStackTrace(); }
@@ -498,6 +606,7 @@ public final class ArcanaForgeHost {
     }
 
     private void tuneAi(Game game) {
+        if (primary != this) return; // the host's AI setting
         if (aiTuned == game) return;
         aiTuned = game;
         game.AI_FLAT_MONTE_CARLO = aiStrength != AiStrength.OFF;
@@ -610,12 +719,15 @@ public final class ArcanaForgeHost {
             ok(you);
             return;
         }
+        // Before the first turn there's only the opening hand: Arcana leaves its mulligan screen at the first state, so a
+        // person still waiting for theirs (another player is choosing) gets nothing yet.
+        if (game.getPhaseHandler().getTurn() == 0) return;
         JSONArray legal = new JSONArray();
         offered.clear();
         if (combatInput) legal.put(inputKind.equals("InputAttack") ? attackAction(input, you.getPlayer()) : blockAction(input, you.getPlayer()));
         if (priority) {
             Player me = you.getPlayer();
-            legal.put(action("PassPriority", "Pass priority", new JSONObject().put("type", "PassPriority").put("playerId", HUMAN_ID)));
+            legal.put(action("PassPriority", "Pass priority", new JSONObject().put("type", "PassPriority").put("playerId", me)));
             for (ZoneType z : new ZoneType[]{ZoneType.Hand, ZoneType.Battlefield, ZoneType.Command, ZoneType.Graveyard, ZoneType.Exile}) {
                 for (Card c : me.getCardsIn(z)) {
                     for (SpellAbility sa : c.getAllPossibleAbilities(me, true)) {
@@ -624,7 +736,7 @@ public final class ArcanaForgeHost {
                         String type = sa.isLandAbility() ? "PlayLand" : sa.isSpell() ? "CastSpell" : "ActivateAbility";
                         String cardId = cardId(c);
                         String abilityId = type.equals("ActivateAbility") ? "sa" + sa.getId() : "";
-                        JSONObject a = new JSONObject().put("type", type).put("playerId", HUMAN_ID);
+                        JSONObject a = new JSONObject().put("type", type).put("playerId", me);
                         if (type.equals("ActivateAbility")) a.put("sourceId", cardId).put("abilityId", abilityId); else a.put("cardId", cardId);
                         boolean affordable = sa.isLandAbility() || sa.isManaAbility() || asksWhilePricing(sa)
                                 || forge.ai.ComputerUtilMana.canPayManaCost(sa, me, 0, false);
@@ -820,6 +932,12 @@ public final class ArcanaForgeHost {
     private PlayerControllerHuman humanController() {
         Game game = match == null ? null : match.getGame();
         if (game == null) return null;
+        if (left) return null;
+        if (!seatIds.isEmpty()) { // seated game: this view's own seat (the host's, or a guest's)
+            for (Player p : game.getRegisteredPlayers())
+                if (me.equals(seatIds.get(p.getRegisteredPlayer()))) return p.getController() instanceof PlayerControllerHuman h ? h : null;
+            return null;
+        }
         for (Player p : game.getPlayers()) if (p.getController() instanceof PlayerControllerHuman h) return h;
         // A player who lost leaves game.getPlayers(); find them among everyone who started.
         for (Player p : game.getRegisteredPlayers()) if (p.getController() instanceof PlayerControllerHuman h) return h;
@@ -912,7 +1030,7 @@ public final class ArcanaForgeHost {
 
     private JSONObject decisionBase(String type, String prompt) throws Exception {
         String id = "forge-d" + decisionSeq.incrementAndGet();
-        return new JSONObject().put("type", type).put("id", id).put("playerId", HUMAN_ID).put("prompt", prompt == null ? "" : prompt)
+        return new JSONObject().put("type", type).put("id", id).put("playerId", me).put("prompt", prompt == null ? "" : prompt)
                 .put("context", new JSONObject().put("phase", "RESOLUTION"));
     }
 
@@ -921,7 +1039,33 @@ public final class ArcanaForgeHost {
         answers.clear();
         pending = new Decision(json.getString("id"), json, objects, null);
         emitDecision();
-        try { return answers.take(); } finally { pending = null; }
+        try {
+            JSONObject r = answers.take();
+            return r.optBoolean("left") ? leftAnswer(json) : r;
+        } finally { pending = null; }
+    }
+
+    /** The answer for a person who left mid-question: the minimum, the default split, "no". */
+    private static JSONObject leftAnswer(JSONObject d) throws Exception {
+        JSONObject r = new JSONObject();
+        switch (d.optString("type")) {
+            case "SelectCardsDecision" -> {
+                JSONArray picks = new JSONArray(), opts = d.optJSONArray("options");
+                for (int i = 0; opts != null && i < Math.min(d.optInt("minSelections"), opts.length()); i++) picks.put(opts.get(i));
+                r.put("selectedCards", picks);
+            }
+            case "ChooseOptionDecision" -> r.put("optionIndex", 0);
+            case "ChooseNumberDecision" -> r.put("number", d.optInt("minValue"));
+            case "OrderObjectsDecision" -> r.put("orderedObjects", d.optJSONArray("objects"));
+            case "AssignDamageDecision" -> r.put("assignments", d.optJSONObject("defaultAssignments"));
+            case "DistributeDecision" -> {
+                JSONObject split = new JSONObject(); JSONArray t = d.optJSONArray("targets");
+                if (t != null && t.length() > 0) { for (int i = 0; i < t.length(); i++) split.put(t.getString(i), 0); split.put(t.getString(0), d.optInt("totalAmount")); }
+                r.put("distribution", split);
+            }
+            default -> r.put("choice", false);
+        }
+        return r;
     }
 
     private void openForInput(JSONObject json, Map<String, Object> objects, java.util.function.Consumer<JSONObject> onAnswer) throws Exception {
@@ -1353,7 +1497,7 @@ public final class ArcanaForgeHost {
             for (forge.game.GameEntity d : combat.getDefenders()) if (forge.game.combat.CombatUtil.canAttack(c, d)) targets.put(d instanceof Card dc ? cardId(dc) : idOf(d));
             if (targets.length() > 0) { valid.put(cardId(c)); byAttacker.put(cardId(c), targets); }
         }
-        return action("DeclareAttackers", "Declare attackers", new JSONObject().put("type", "DeclareAttackers").put("playerId", HUMAN_ID).put("attackers", new JSONObject()))
+        return action("DeclareAttackers", "Declare attackers", new JSONObject().put("type", "DeclareAttackers").put("playerId", me).put("attackers", new JSONObject()))
                 .put("validAttackers", valid).put("mandatoryAttackers", new JSONArray()).put("attackTargetsByAttacker", byAttacker).put("validAttackTargets", generic);
     }
 
@@ -1362,7 +1506,7 @@ public final class ArcanaForgeHost {
         JSONArray valid = new JSONArray();
         JSONObject maxBlocks = new JSONObject();
         for (Card c : me.getCreaturesInPlay()) if (forge.game.combat.CombatUtil.canBlock(c, combat)) { valid.put(cardId(c)); maxBlocks.put(cardId(c), 1); }
-        return action("DeclareBlockers", "Declare blockers", new JSONObject().put("type", "DeclareBlockers").put("playerId", HUMAN_ID).put("blockers", new JSONObject()))
+        return action("DeclareBlockers", "Declare blockers", new JSONObject().put("type", "DeclareBlockers").put("playerId", me).put("blockers", new JSONObject()))
                 .put("validBlockers", valid).put("blockerMaxBlockCounts", maxBlocks).put("mandatoryBlockerAssignments", new JSONObject());
     }
 
@@ -1533,6 +1677,7 @@ public final class ArcanaForgeHost {
     }
 
     public void shutdown() {
-        emitter.shutdownNow(); // the shared Forge UI thread stays for the next game
+        for (ArcanaForgeHost v : views) v.emitter.shutdownNow(); // the shared Forge UI thread stays for the next game
+        emitter.shutdownNow();
     }
 }
