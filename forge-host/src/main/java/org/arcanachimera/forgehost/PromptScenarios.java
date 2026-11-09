@@ -1,6 +1,8 @@
 package org.arcanachimera.forgehost;
 
 import forge.game.card.CardView;
+import forge.game.phase.PhaseType;
+import forge.game.player.PlayerView;
 import forge.gui.interfaces.IGuiGame;
 import org.json.JSONArray;
 import org.json.JSONObject;
@@ -33,9 +35,9 @@ public final class PromptScenarios {
     public static void main(String[] args) throws Exception {
         forgeDir = args.length > 0 ? args[0] : "../forge-gui/";
         List<String> failures = new ArrayList<>();
-        for (String name : List.of("A-ghalta-order", "B-combat-damage", "C-mulligan", "D-trample-short", "E-stack", "F-mana-convoke", "G-you-lose")) {
+        for (String name : List.of("A-ghalta-order", "B-combat-damage", "C-mulligan", "D-trample-short", "E-stack", "F-mana-convoke", "G-you-lose", "H-prompt-safety")) {
             String r;
-            try { r = name.startsWith("A") ? ghalta() : name.startsWith("B") ? combatDamage() : name.startsWith("C") ? mulligan() : name.startsWith("D") ? trampleShort() : name.startsWith("E") ? stack() : name.startsWith("F") ? manaAndConvoke() : youLose(); }
+            try { r = name.startsWith("A") ? ghalta() : name.startsWith("B") ? combatDamage() : name.startsWith("C") ? mulligan() : name.startsWith("D") ? trampleShort() : name.startsWith("E") ? stack() : name.startsWith("F") ? manaAndConvoke() : name.startsWith("G") ? youLose() : promptSafety(); }
             catch (Throwable t) { t.printStackTrace(); r = "FAIL: " + t; }
             System.out.println("SCENARIO " + name + " " + r);
             if (!r.startsWith("PASS")) failures.add(name);
@@ -602,6 +604,82 @@ public final class PromptScenarios {
                 s.send(new JSONObject().put("type", "PassPriority").put("playerId", ArcanaForgeHost.HUMAN_ID));
             }
             return "FAIL: no gameOver after losing";
+        } finally { s.close(); }
+    }
+
+    // ------------------------------------------------------------------ H. no implicit GUI answers, and response windows remain available
+
+    private static JSONObject nextChoice(Session s) throws Exception {
+        long deadline = System.currentTimeMillis() + 25_000;
+        while (System.currentTimeMillis() < deadline) {
+            JSONObject m = s.next(5);
+            JSONObject d = m.optJSONObject("pendingDecision");
+            if (d == null || !s.fresh(d)) continue;
+            if (!d.optString("type").equals("ChooseOptionDecision"))
+                throw new IllegalStateException("expected ChooseOptionDecision, got " + d.optString("type"));
+            return d;
+        }
+        throw new IllegalStateException("no choice reached Arcana");
+    }
+
+    /** Real adapter/UI message route; choose a non-default option, verify pending choice blocks stale PassPriority. */
+    private static String promptSafety() throws Exception {
+        Session s = new Session(String.join("\n",
+                "activeplayer=human", "activephase=MAIN1", "removesummoningsickness=true",
+                "humanlife=20", "ailife=20", "humanlibrary=" + LIBRARY, "ailibrary=" + LIBRARY,
+                "humanbattlefield=Forest;Island", "humanhand=", "aibattlefield=", "aihand="), "Island");
+        try {
+            IGuiGame gui = s.host.guiForTest();
+            for (Object view : s.host.playerViewsForTest()) {
+                PlayerView player = (PlayerView) view;
+                for (PhaseType phase : List.of(PhaseType.UPKEEP, PhaseType.DRAW, PhaseType.MAIN1,
+                        PhaseType.COMBAT_BEGIN, PhaseType.COMBAT_DECLARE_BLOCKERS, PhaseType.END_OF_TURN)) {
+                    if (gui.isUiSetToSkipPhase(player, phase))
+                        return "FAIL: skipped response window " + phase + " for player " + player.getId();
+                }
+            }
+
+            AtomicReference<Object> optionResult = new AtomicReference<>();
+            Thread optionThread = new Thread(() -> {
+                try { optionResult.set(gui.showOptionDialog(
+                        "Choose an effect", "Forge", null, List.of("Left", "Middle", "Right"), 0)); }
+                catch (Throwable t) { optionResult.set(t); }
+            }, "option-safety");
+            optionThread.start();
+            JSONObject choice = nextChoice(s);
+            if (choice.getJSONArray("options").length() != 3 || !optionThread.isAlive())
+                return "FAIL: option was answered without the human";
+            // This stale action used to be able to press OK while the game thread awaited the GUI decision.
+            s.send(new JSONObject().put("type", "PassPriority").put("playerId", ArcanaForgeHost.HUMAN_ID));
+            if (!optionThread.isAlive()) return "FAIL: stale PassPriority answered the GUI choice";
+            s.answer(choice, new JSONObject().put("type", "OptionChosenResponse").put("optionIndex", 2));
+            optionThread.join(10_000);
+            if (optionThread.isAlive() || !(optionResult.get() instanceof Integer i) || i != 2)
+                return "FAIL: option dialog did not honor non-default index 2; got " + optionResult.get();
+
+            AtomicReference<Object> inputResult = new AtomicReference<>();
+            Thread inputThread = new Thread(() -> {
+                try { inputResult.set(gui.showInputDialog(
+                        "Choose a label", "Forge", null, "Default", List.of("Alpha", "Beta"), false)); }
+                catch (Throwable t) { inputResult.set(t); }
+            }, "input-options-safety");
+            inputThread.start();
+            JSONObject inputChoice = nextChoice(s);
+            if (inputChoice.getJSONArray("options").length() != 2 || !inputThread.isAlive())
+                return "FAIL: input option was answered without the human";
+            s.answer(inputChoice, new JSONObject().put("type", "OptionChosenResponse").put("optionIndex", 1));
+            inputThread.join(10_000);
+            if (inputThread.isAlive() || !"Beta".equals(inputResult.get()))
+                return "FAIL: input options ignored the user's Beta selection; got " + inputResult.get();
+
+            boolean freeTextRefused = false;
+            try {
+                gui.showInputDialog("Free text needs an editor", "Forge", null, "AutoChosen", List.of(), false);
+            } catch (UnsupportedOperationException expected) { freeTextRefused = true; }
+            if (!freeTextRefused) return "FAIL: unsupported free text was silently chosen";
+            if (!s.host.defaultedPrompts.isEmpty()) return "FAIL: silent defaults " + s.host.defaultedPrompts;
+            return "PASS: neither player's nor AI's phase windows skipped; option and fixed-input prompts"
+                    + " waited for non-default human answers; stale pass blocked; unsupported free text refused";
         } finally { s.close(); }
     }
 }
