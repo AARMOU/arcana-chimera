@@ -148,11 +148,14 @@ object ChimeraDeckImport {
             }
             i++
         }
+        // The list starts over where a run of (quantity, name) repeats the start of the list (sections can differ
+        // between the grid and list views, so they aren't compared); keep the first copy.
+        fun key(e: E) = e.qty to e.name.lowercase(Locale.ROOT)
         var list: List<E> = entries
-        for (skip in 0..3) { // a commander shown in the page header comes before the list itself
-            val rest = entries.drop(skip)
-            if (rest.size >= 2 && rest.size % 2 == 0 && rest.subList(0, rest.size / 2) == rest.subList(rest.size / 2, rest.size)) {
-                list = rest.subList(0, rest.size / 2); break
+        val run = minOf(8, entries.size / 2)
+        search@ for (start in 0..minOf(3, entries.size - 1)) { // a commander shown in the page header comes before the list
+            for (k in start + run until entries.size - run + 1) {
+                if ((0 until run).all { key(entries[start + it]) == key(entries[k + it]) }) { list = entries.subList(start, k); break@search }
             }
         }
         val d = Deck()

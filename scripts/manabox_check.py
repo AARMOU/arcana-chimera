@@ -28,11 +28,16 @@ def manabox_text(html):
             if len(name) > 1 and not name.isdigit() and not HEADING.match(name) and any(c.isalpha() for c in name):
                 entries.append((section, int(line), name)); i += 2; continue
         i += 1
-    lst = entries
-    for skip in range(4):
-        rest = entries[skip:]
-        if len(rest) >= 2 and len(rest) % 2 == 0 and rest[:len(rest) // 2] == rest[len(rest) // 2:]:
-            lst = rest[:len(rest) // 2]; break
+    key = lambda e: (e[1], e[2].lower())
+    lst, run = entries, min(8, len(entries) // 2)
+    found = False
+    for start in range(0, min(4, len(entries))):
+        for k in range(start + run, len(entries) - run + 1):
+            if all(key(entries[start + t]) == key(entries[k + t]) for t in range(run)):
+                lst, found = entries[start:k], True
+                break
+        if found:
+            break
     totals = {}
     for sec, q, name in lst:
         where = ("commander" if sec.startswith("commander") else "companion" if sec.startswith("companion")
