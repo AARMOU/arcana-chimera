@@ -217,6 +217,20 @@ patch("StudioInspector.kt", [
      '                    if(like>0 && runtime.group.size<like)StudioChip("Select all ${like+1} like it",true,"studio-select-like"){runtime.selectAllLike(control.id)}\n'),
 ])
 
+# Hand drawer opacity (owner, Nov 9: 0-100%, ChimeraDrawer). Only the drawer's background fades, and the shade over
+# the table behind it fades with it; cards and buttons stay solid. Set in Arcana Studio -> Hand, under the palette.
+patch("TableOverlays.kt", [
+    (".background(if (studioFrame) studioLayout!!.colors(LocalTableColors.current).panel else Panel)",
+     ".background((if (studioFrame) studioLayout!!.colors(LocalTableColors.current).panel else Panel).copy(alpha = ChimeraDrawer.opacity))"),
+    ("Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.5f)).clickable { showHand = false }",
+     "Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.5f * ChimeraDrawer.opacity)).clickable { showHand = false }"),
+])
+patch("StudioHandEditor.kt", [
+    ('    StudioChip("Restore native hand",store.load()!=null || store.enabled(),"studio-hand-restore") {',
+     '    StudioStepper("Drawer opacity",ChimeraDrawer.label,"chimera-drawer-opacity",{ChimeraDrawer.step(-1)},{ChimeraDrawer.step(1)})\n'
+     '    StudioChip("Restore native hand",store.load()!=null || store.enabled(),"studio-hand-restore") {'),
+])
+
 # Import-time "not in Argentum" messages: Argentum no longer runs the game, so don't report against it.
 patch("DeckSupport.kt", [
     ('''        append("Argentum check: $argentumCopies in Argentum")
