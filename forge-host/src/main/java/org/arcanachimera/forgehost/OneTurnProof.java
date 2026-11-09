@@ -17,6 +17,8 @@ import java.util.concurrent.TimeUnit;
 public final class OneTurnProof {
     private static final String CREATURE = "Gray Ogre";
     public static void main(String[] args) throws Exception {
+        // Same shuffles and AI choices every run: an unseeded game sometimes ended before the checks (Nov 8)
+        forge.util.MyRandom.setRandom(new java.util.Random(Long.getLong("proof.seed", 1L)));
         LinkedBlockingQueue<JSONObject> inbox = new LinkedBlockingQueue<>();
         ProtocolGuard protocol = new ProtocolGuard(); // Goose's contract guard (PR #17)
         ArcanaForgeHost host = new ArcanaForgeHost(m -> { protocol.observe(m); inbox.add(m); });
