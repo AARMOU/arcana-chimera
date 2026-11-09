@@ -145,6 +145,28 @@ patch("TableEffects.kt", [
      "        if (argentumSnapshot !== snapshot || argentumAwaitingUpdate) return@LaunchedEffect // decide from the newest state only\n"),
 ])
 
+# Hand drawer card size (owner, Nov 9: "the hand drawer still doesn't resize the cards"; chose "auto-resize, never
+# smaller than now"). Arcana's Nov 6 drawer kept every card at 92 x 132 (x card size) whatever the drawer's height.
+# Now the hand is fitted to the drawer (cards grow as you drag it up, up to Arcana's maximum card size) and never
+# shrinks below that 92 x 132 size: below it, rows scroll as before. Single-row keeps Arcana's own layout.
+patch("HandLayout.kt", [
+    ("        val width = areaWidth.coerceAtLeast(1f)\n        val target = 92f * sizeScale.coerceIn(.6f, 1.6f)\n",
+     "        val width = areaWidth.coerceAtLeast(1f)\n        val target = 92f * sizeScale.coerceIn(.6f, 1.6f)\n"
+     "        if (cardCount > 0) { // the largest cards that show the whole hand in the drawer\n"
+     "            var fitWidth = 0f; var fitColumns = 1\n"
+     "            for (r in 1..cardCount) {\n"
+     "                val c = ceil(cardCount / r.toFloat()).toInt()\n"
+     "                val w = min((width - (c - 1) * 4f) / c, ((areaHeight - (r - 1) * 4f) / r) * 92f / 132f)\n"
+     "                if (w > fitWidth) { fitWidth = w; fitColumns = c }\n"
+     "            }\n"
+     "            if (fitWidth >= target) {\n"
+     "                val w = min(fitWidth, BASE_MAX_CARD_WIDTH * sizeScale.coerceIn(.6f, 1.6f))\n"
+     "                val r = ceil(cardCount / fitColumns.toFloat()).toInt()\n"
+     "                return HandGrid(fitColumns, r, w, w * 132f / 92f, false)\n"
+     "            }\n"
+     "        }\n"),
+])
+
 # Import-time "not in Argentum" messages: Argentum no longer runs the game, so don't report against it.
 patch("DeckSupport.kt", [
     ('''        append("Argentum check: $argentumCopies in Argentum")
