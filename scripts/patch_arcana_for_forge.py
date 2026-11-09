@@ -59,6 +59,23 @@ patch("engine/OfflineGame.kt", [
      "val toLoad = (supported + cmd).toSet().filter { registry.getCard(it) == null && library.canonical(it) != null }.toSet()"),
 ])
 
+# Game-loading screen (owner, Nov 9): "Your game is loading, please wait" with a progress bar from the bridge's real
+# start-up steps (ChimeraLoading), instead of Argentum's connecting/room wording and the "offline" room code.
+patch("TableOverlays.kt", [
+    ('StudioText("TableOverlays.Text.6", "Dialogs and overlays", false, "ARGENTUM GAME",',
+     'StudioText("TableOverlays.Text.6", "Dialogs and overlays", false, "LOADING",'),
+    ('argentumStatus == ArgentumConnectionStatus.CONNECTING -> "Connecting to Argentum…"',
+     'argentumStatus == ArgentumConnectionStatus.CONNECTING -> "Your game is loading, please wait"'),
+    ('argentumInbound?.optString("type") == "quickGameLobbyState" -> if (argentumVsAiLobby) "Your practice table is ready when Argentum finishes preparing it." else "Your room is open. Share its code so other players can join."',
+     'argentumInbound?.optString("type") == "quickGameLobbyState" -> "Your game is loading, please wait"'),
+    ('else -> if (argentumVsAiLobby) "Connected. Creating your practice table…" else "Connected. Creating your Argentum room…"',
+     'else -> "Your game is loading, please wait"'),
+    ('if (!lobbyId.isNullOrBlank()) {',
+     'if (!lobbyId.isNullOrBlank() && lobbyId != "offline") {'),
+    ('"Your Arcana table and card presentation stay here. Argentum validates the deck and controls every game action.",\n                    color = Muted, fontSize = 14.sp, modifier = Modifier.padding(top = 14.dp)\n                )',
+     '"",\n                    color = Muted, fontSize = 1.sp, modifier = Modifier\n                )\n                com.arcanatable.engine.ChimeraLoadingBar(barColor = Mint, trackColor = Panel, textColor = Muted)'),
+])
+
 # Import-time "not in Argentum" messages: Argentum no longer runs the game, so don't report against it.
 patch("DeckSupport.kt", [
     ('''        append("Argentum check: $argentumCopies in Argentum")

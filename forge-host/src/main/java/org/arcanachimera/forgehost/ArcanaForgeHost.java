@@ -188,9 +188,20 @@ public final class ArcanaForgeHost {
 
     private static String seatId(int i) { return i == 0 ? HUMAN_ID : i == 1 ? AI_ID : AI_ID + "-" + i; }
 
+    /** The loading screen's progress bar (fraction 0..1, what's happening); set by the app. */
+    public static volatile java.util.function.BiConsumer<Float, String> progress;
+
+    private static void progress(float f, String what) {
+        java.util.function.BiConsumer<Float, String> p = progress;
+        if (p != null) try { p.accept(f, what); } catch (RuntimeException ignored) { }
+    }
+
     private void startPrepared() {
         try {
-            initForge(assetsDir.get(), this);
+            progress(0.04f, "Starting Forge…");
+            String dir = assetsDir.get(); // unpacks Forge's files the first time after an install (reports its own progress)
+            if (!forgeLoaded) progress(0.35f, "Loading Forge's card rules…");
+            initForge(dir, this);
             boolean commander = true;
             for (int i = 0; i < pendingSeats.size(); i++) {
                 Seat x = guestSeats.getOrDefault(seatId(i), pendingSeats.get(i));
@@ -201,6 +212,7 @@ public final class ArcanaForgeHost {
             java.util.Map<RegisteredPlayer, IGuiGame> guis = new java.util.HashMap<>();
             for (int i = 0; i < pendingSeats.size(); i++) {
                 Seat seat = guestSeats.getOrDefault(seatId(i), pendingSeats.get(i));
+                progress(0.6f + 0.25f * i / pendingSeats.size(), "Building decks (" + (i + 1) + " of " + pendingSeats.size() + ")…");
                 ArcanaForgeHost person = null;
                 for (ArcanaForgeHost v : views) if (v.me.equals(seatId(i))) person = v;
                 Map<String, Integer> counts = new LinkedHashMap<>();
@@ -231,7 +243,9 @@ public final class ArcanaForgeHost {
                 v.sink.accept(new JSONObject().put("type", "gameStarted").put("players", mine));
             }
             applyStartBoard(match);
+            progress(0.9f, "Shuffling and dealing opening hands…");
             match.startMatch(rules(commander), null, players, guis, null);
+            progress(1f, "Ready");
         } catch (Throwable t) {
             error("Forge could not start the game: " + describe(t));
             t.printStackTrace();
