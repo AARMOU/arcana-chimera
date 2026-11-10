@@ -96,12 +96,12 @@ internal object ChimeraTerminalPrefs {
     var glow by mutableStateOf(prefs?.getBoolean("term_glow", false) ?: false); private set
     var settingsOpen by mutableStateOf(false)
 
-    fun setLayout(v: String) { layout = v; prefs?.edit()?.putString("term_layout", v)?.apply() }
-    fun setTheme(v: String) { theme = v; prefs?.edit()?.putString("term_theme", v)?.apply() }
-    fun setCustom(v: Color) { custom = v; theme = "custom"; prefs?.edit()?.putInt("term_custom", v.toArgb())?.putString("term_theme", "custom")?.apply() }
-    fun setSize(v: Int) { size = v.coerceIn(MIN_SIZE, MAX_SIZE); prefs?.edit()?.putInt("term_size", size)?.apply() }
-    fun setScanlines(v: Boolean) { scanlines = v; prefs?.edit()?.putBoolean("term_scan", v)?.apply() }
-    fun setGlow(v: Boolean) { glow = v; prefs?.edit()?.putBoolean("term_glow", v)?.apply() }
+    fun changeLayout(v: String) { layout = v; prefs?.edit()?.putString("term_layout", v)?.apply() }
+    fun changeTheme(v: String) { theme = v; prefs?.edit()?.putString("term_theme", v)?.apply() }
+    fun changeCustom(v: Color) { custom = v; theme = "custom"; prefs?.edit()?.putInt("term_custom", v.toArgb())?.putString("term_theme", "custom")?.apply() }
+    fun changeSize(v: Int) { size = v.coerceIn(MIN_SIZE, MAX_SIZE); prefs?.edit()?.putInt("term_size", size)?.apply() }
+    fun changeScanlines(v: Boolean) { scanlines = v; prefs?.edit()?.putBoolean("term_scan", v)?.apply() }
+    fun changeGlow(v: Boolean) { glow = v; prefs?.edit()?.putBoolean("term_glow", v)?.apply() }
 
     /** bg, text, dim, hot = "you can act on this now", alt = "theirs", warn = danger/low life. */
     data class Palette(val bg: Color, val text: Color, val dim: Color, val hot: Color, val alt: Color, val warn: Color)
@@ -522,24 +522,24 @@ internal fun ChimeraTerminalSettings(onDismiss: () -> Unit) {
             Text("Terminal settings", color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Black)
             TLabel("LAYOUT")
             FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                p.LAYOUTS.forEach { (id, name) -> TChip(name, p.layout == id, "terminal-layout-$id") { p.setLayout(id) } }
+                p.LAYOUTS.forEach { (id, name) -> TChip(name, p.layout == id, "terminal-layout-$id") { p.changeLayout(id) } }
             }
             TLabel("COLOURS")
             FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                p.THEMES.forEach { (id, name) -> TChip(name, p.theme == id, "terminal-theme-$id") { p.setTheme(id) } }
+                p.THEMES.forEach { (id, name) -> TChip(name, p.theme == id, "terminal-theme-$id") { p.changeTheme(id) } }
             }
             if (p.theme == "custom") FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 p.SWATCHES.forEachIndexed { i, sw -> Box(Modifier.size(40.dp).clip(CircleShape).background(sw)
-                    .border(if (p.custom == sw) 3.dp else 0.dp, Color.White, CircleShape).clickable { p.setCustom(sw) }.testTag("terminal-swatch-$i")) }
+                    .border(if (p.custom == sw) 3.dp else 0.dp, Color.White, CircleShape).clickable { p.changeCustom(sw) }.testTag("terminal-swatch-$i")) }
             }
             TLabel("TEXT SIZE")
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                TChip("A−", false, "terminal-size-down") { p.setSize(p.size - 1) }
+                TChip("A−", false, "terminal-size-down") { p.changeSize(p.size - 1) }
                 Text("${p.size} sp", color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.Bold)
-                TChip("A+", false, "terminal-size-up") { p.setSize(p.size + 1) }
+                TChip("A+", false, "terminal-size-up") { p.changeSize(p.size + 1) }
             }
-            Row(verticalAlignment = Alignment.CenterVertically) { Text("Scanlines", color = Color.White, modifier = Modifier.weight(1f)); Switch(p.scanlines, { p.setScanlines(it) }) }
-            Row(verticalAlignment = Alignment.CenterVertically) { Text("Glow", color = Color.White, modifier = Modifier.weight(1f)); Switch(p.glow, { p.setGlow(it) }) }
+            Row(verticalAlignment = Alignment.CenterVertically) { Text("Scanlines", color = Color.White, modifier = Modifier.weight(1f)); Switch(p.scanlines, { p.changeScanlines(it) }) }
+            Row(verticalAlignment = Alignment.CenterVertically) { Text("Glow", color = Color.White, modifier = Modifier.weight(1f)); Switch(p.glow, { p.changeGlow(it) }) }
             // A sample in the chosen look.
             Column(Modifier.fillMaxWidth().background(pal.bg).border(1.dp, pal.dim).padding(8.dp)) {
                 TLine("arcana@forge:~/game$ sample", pal.dim)
