@@ -247,3 +247,68 @@ patch("StudioTablePanel.kt", [
             }
 """),
 ])
+
+# ================================================================== speed (owner, Nov 9 22:00: "quick and easy one-offs")
+# Pass to my turn on your own turn: Forge offers only "declare attackers" there, so auto-pass declares no attack
+# (or only the creatures that must attack) instead of stopping.
+patch("ArgentumPassing.kt", [
+    ('''        /** Stop and hand control back: something needs the player. */
+        INTERRUPTED,''',
+     '''        /** Stop and hand control back: something needs the player. */
+        INTERRUPTED,
+        /** Your own declare-attackers step: declare no attack (Forge offers no plain pass there). */
+        NO_ATTACK,'''),
+    ('''        "DeclareAttackers" in legalActionTypes && "PassPriority" !in legalActionTypes -> Outcome(Step.INTERRUPTED, "You can declare attackers.")''',
+     '''        "DeclareAttackers" in legalActionTypes && "PassPriority" !in legalActionTypes ->
+            if (activePlayer == localSeat) Outcome(Step.NO_ATTACK) else Outcome(Step.INTERRUPTED, "You can declare attackers.")'''),
+])
+patch("TableEffects.kt", [
+    ('''        delay(300) // let a burst of updates settle before answering
+        if (argentumSnapshot !== snapshot || argentumAwaitingUpdate) return@LaunchedEffect // decide from the newest state only''',
+     '''        delay(150) // let a burst of updates settle before answering (was 300; owner, Nov 9: speed)
+        if (argentumSnapshot !== snapshot || argentumAwaitingUpdate) return@LaunchedEffect // decide from the newest state only'''),
+    ('''            ArgentumPassing.Step.PASS -> sendArgentumPriority()''',
+     '''            ArgentumPassing.Step.PASS -> sendArgentumPriority()
+            ArgentumPassing.Step.NO_ATTACK -> {
+                val plan = snapshot.legalActions.firstNotNullOfOrNull { ArgentumAttackPlan.from(it) }
+                val epoch = plan?.let { ArgentumActions.epochFor(it.legalAction, snapshot.interactionEpoch) }
+                val must = plan?.options.orEmpty().filter { it.mandatory }.associate { it.attackerId to it.targets.first() }
+                if (plan != null && epoch != null && submitArgentumAction(plan.buildAction(must), epoch)) {
+                    recordDiagnostic("Pass to my turn: declared ${if (must.isEmpty()) "no attack" else "${must.size} required attacker(s)"}", DiagnosticCategory.ACTION)
+                } else {
+                    passToMyTurnFrom = null
+                    recordDiagnostic("Pass to my turn: stopped (You can declare attackers.)", DiagnosticCategory.ACTION)
+                    android.widget.Toast.makeText(context, "You can declare attackers.", android.widget.Toast.LENGTH_LONG).show()
+                }
+            }'''),
+])
+
+# A non-debug build (still signed with the same test key): Android runs a debuggable app's code with fewer
+# optimisations, and Forge's AI is the heaviest code in the app. Arcana's preview-only features followed the debug
+# flag; they now follow PREVIEW, which this build keeps on.
+gradle = Path(sys.argv[1]) / "build.gradle.kts"
+g = gradle.read_text()
+for old, new in [
+    ('''        buildConfigField("boolean", "STUDIO_ENABLED", "false")''',
+     '''        buildConfigField("boolean", "STUDIO_ENABLED", "false")
+        buildConfigField("boolean", "PREVIEW", "false")'''),
+    ('''            buildConfigField("boolean", "STUDIO_ENABLED", "true")''',
+     '''            buildConfigField("boolean", "STUDIO_ENABLED", "true")
+            buildConfigField("boolean", "PREVIEW", "true")
+            isDebuggable = false // Chimera (owner, Nov 9): the AI runs with full optimisation'''),
+]:
+    if g.count(old) != 1:
+        sys.exit(f"patch_arcana_nov9c: build.gradle.kts: expected 1 match, found {g.count(old)}: {old[:80]!r}")
+    g = g.replace(old, new)
+gradle.write_text(g)
+print("patched build.gradle.kts (2 edits)")
+for rel in ["TableController.kt", "ReleaseFeatures.kt"]:
+    path = app / rel
+    t = path.read_text()
+    if "BuildConfig.DEBUG" not in t:
+        sys.exit(f"patch_arcana_nov9c: {rel}: BuildConfig.DEBUG not found")
+    path.write_text(t.replace("BuildConfig.DEBUG", "BuildConfig.PREVIEW"))
+    print(f"patched {rel} (debug flag -> PREVIEW)")
+left = [f.name for f in app.rglob("*.kt") if "BuildConfig.DEBUG" in f.read_text() and f.name != "DeckBuilderScreen.kt"]
+if left:
+    sys.exit("patch_arcana_nov9c: BuildConfig.DEBUG still used in " + ", ".join(left))

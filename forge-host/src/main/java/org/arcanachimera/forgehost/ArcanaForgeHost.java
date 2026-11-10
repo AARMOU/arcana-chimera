@@ -72,6 +72,27 @@ public final class ArcanaForgeHost {
     public volatile AiStrength aiStrength = AiStrength.LITE;
     private volatile Game aiTuned;
     private volatile long lastPlayerActionAt;
+    private volatile long gcMsAtAction = -1;
+    /**
+     * Owner, Nov 9 ("is there any way to speed this up?"): the longest any one AI decision may think, in seconds.
+     * Forge's default is 5; 3 cuts the slowest waits (attack planning, big boards) and rarely changes the choice.
+     */
+    public static volatile int aiTimeoutSeconds = 3;
+
+    /** Total garbage-collection time so far, in ms (Android's runtime stat, else the JVM's), or -1 if unknown. */
+    private static long gcMs() {
+        try {
+            Object v = Class.forName("android.os.Debug").getMethod("getRuntimeStat", String.class).invoke(null, "art.gc.gc-time");
+            if (v != null && !String.valueOf(v).isEmpty()) return Long.parseLong(String.valueOf(v));
+        } catch (Throwable ignored) { }
+        try {
+            Object beans = Class.forName("java.lang.management.ManagementFactory").getMethod("getGarbageCollectorMXBeans").invoke(null);
+            long total = 0;
+            for (Object b : (java.util.List<?>) beans) total += (Long) b.getClass().getMethod("getCollectionTime").invoke(b);
+            return total;
+        } catch (Throwable ignored) { }
+        return -1;
+    }
     private volatile String lastBuild = "";
     private final Map<String, SpellAbility> offered = new ConcurrentHashMap<>();
     private volatile HostedMatch match;
@@ -395,7 +416,7 @@ public final class ArcanaForgeHost {
     }
 
     private void handleUnsafe(JSONObject message) throws Exception {
-        if (message.optString("type").equals("submitAction")) lastPlayerActionAt = System.currentTimeMillis();
+        if (message.optString("type").equals("submitAction")) { lastPlayerActionAt = System.currentTimeMillis(); gcMsAtAction = gcMs(); }
         String t = message.optString("type");
         if (t.equals("connect")) { sink.accept(new JSONObject().put("type", "connected").put("playerId", me).put("token", "offline")); return; }
         if (t.equals("ping")) { sink.accept(new JSONObject().put("type", "pong")); return; }
@@ -663,6 +684,7 @@ public final class ArcanaForgeHost {
         if (primary != this) return; // the host's AI setting
         if (aiTuned == game) return;
         aiTuned = game;
+        game.AI_TIMEOUT = Math.max(1, Math.min(game.AI_TIMEOUT, aiTimeoutSeconds)); // copies for rollouts inherit it
         game.AI_FLAT_MONTE_CARLO = aiStrength != AiStrength.OFF;
         game.AI_FLAT_MONTE_CARLO_MAX = aiStrength == AiStrength.MAX;
         game.AI_FLAT_MONTE_CARLO_LITE = aiStrength == AiStrength.LITE;
@@ -828,6 +850,9 @@ public final class ArcanaForgeHost {
             if (lastPlayerActionAt > 0) update.put("engineMs", now - lastPlayerActionAt);
             update.put("engineTimingsMs", new JSONObject().put("build", (System.nanoTime() - buildStart) / 1_000_000)
                     .put("kb", update.toString().length() / 1024).put("heapMb", Runtime.getRuntime().maxMemory() >> 20)
+                    // Owner, Nov 9: is memory costing time? Memory in use now, and time spent cleaning it since your action.
+                    .put("usedMb", (Runtime.getRuntime().totalMemory() - Runtime.getRuntime().freeMemory()) >> 20)
+                    .put("gcMs", gcMsAtAction >= 0 && gcMs() >= 0 ? gcMs() - gcMsAtAction : -1)
                     .put("ai", aiStrength.name()));
             lastPlayerActionAt = 0;
         }
