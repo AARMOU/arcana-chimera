@@ -36,6 +36,14 @@ def text(chapter, step_id, must_contain, title=None, body=None, **fields):
     count += 1
 
 
+def drop(chapter, step_id):
+    global count
+    c = chapters[chapter]
+    step(chapter, step_id)
+    c["steps"] = [s for s in c["steps"] if s["id"] != step_id]
+    count += 1
+
+
 def chapter_text(chapter, must_contain, **fields):
     global count
     c = chapters[chapter]
@@ -47,13 +55,19 @@ def chapter_text(chapter, must_contain, **fields):
 
 # ---- Quick Start
 text("first-turn", "complete", "Settings › Learn & tutorials",
-     body="You played a land, made mana, cast a creature and passed priority. More lessons are in the menu (⋮) or Settings, "
-          "under Learn & tutorials, whenever you want them.")
+     body="You played a land, made mana, cast a creature and passed priority. More lessons are in Settings › Learn & "
+          "tutorials whenever you want them.")
 
 # ---- Home, setup
 text("home", "settings", "Settings controls card size",
-     body="Settings has card size, gameplay behavior, notifications and help. The look of the whole game, from colours to "
-          "button layouts, is edited in Arcana Studio.")
+     body="Settings has gameplay behavior, notifications, help and these lessons. The look of the whole game, from card size "
+          "and colours to button layouts, is edited in Arcana Studio, on Home or in the ⋮ menu.")
+# Saved offline games aren't part of this version (Forge games can't be saved yet).
+text("home", "resume", "saved offline game", title="Back to a running game",
+     body="If Arcana closes while a game is still running, Home offers to resume it or end it.")
+text("setup", "save-note", "never replace your saved offline game",
+     body="Practice lessons are separate games and never touch a game in progress. Choosing a deck or AI deck here is a "
+          "real choice, and stays for your next game.")
 text("setup", "mode", "Argentum runs locally",
      body="Forge, the rules engine, runs on your phone. You don't need an internet connection for an offline match.")
 text("setup", "two", "choose Play with a friend",
@@ -93,8 +107,8 @@ text("commander", "legal", "Let Argentum adjudicate", title="Let the game adjudi
 
 # ---- Quick actions, opponents
 text("quick-actions", "configure", "Adjust UI lets you choose",
-     body="Arcana Studio lets you choose which buttons appear, where they sit and how they look. Open it from Settings or the menu.",
-     screen="settings", target="setting-adjust-ui")
+     body="Arcana Studio lets you choose which buttons appear, where they sit and how they look. Open it from Home or the ⋮ menu.",
+     screen="board", target=None)
 text("opponents", "inspect", "turn that off in Adjust UI",
      body="Tap a recent-play notice to see the card large. When the AI plays a card, a pop-up shows it too.")
 
@@ -108,9 +122,11 @@ text("decks", "search", "YOUR OTHER DECKS",
 
 # ---- Settings and layout: Arcana Studio replaced the old Adjust UI editor in this version
 chapter_text("settings", "readable and comfortable", description="Make the game readable and comfortable, and find Arcana Studio.")
+text("settings", "size", "Card size",
+     body="Card size, like everything about how the game looks, is set in Arcana Studio; the presets change it too.", target=None)
 text("settings", "layout", "Open the layout editor", title="Arcana Studio",
-     body="ARCANA STUDIO opens the editor for the game's screens: move, resize and restyle buttons, the hand drawer, colours, "
-          "backgrounds and type.", advance={"kind": "next"})
+     body="Arcana Studio, on Home and in the ⋮ menu, edits the game's screens: move, resize and restyle buttons, the hand "
+          "drawer, card size, colours, backgrounds and type.", advance={"kind": "next"}, target=None)
 text("settings", "reorder", "Resize the table", title="Start from a preset",
      body="In Studio, Layout › Presets restyles the whole game in one tap; every preset can then be changed piece by piece. "
           "Screen layouts are whole-screen designs, each with its own menu.", screen="settings", target=None)
@@ -123,19 +139,20 @@ text("settings", "restore", "Undo and restore", title="Draft, apply and undo",
 
 # ---- Menus
 text("tools", "menu", "Adjust UI and Options",
-     body="The three-dot button holds Learn & tutorials, Game tools, Room & game, What's new, Arcana Studio and Options.")
+     body="The three-dot button holds Game tools, Room & game, Arcana Studio and Options.")
 text("tools", "legal", "Argentum supplies",
      body="The rules engine supplies the allowed actions for the current state, not the tutorial itself.")
 text("tools", "room", "Resume, save or return",
      body="Return to the home screen, open the lobby in an online game, or reset.")
 text("tools", "reset", "Resetting is destructive",
      body="Room & game holds Reset game and Reset and clear all data. They end your match or erase your data. To give up a "
-          "game instead, use Concede in Game tools. Lessons never use either; only choose them when you mean it.")
+          "game instead, use Concede in Room & game. Lessons never use either; only choose them when you mean it.")
 text("mobile", "layout", "Adjust UI lets you rearrange",
      body="Arcana Studio lets you rearrange the game controls. Use one design for every orientation, or turn on separate "
-          "portrait and landscape designs; Arcana fits the design to the folded or unfolded screen.")
+          "portrait and landscape designs; Arcana fits the design to the folded or unfolded screen.", target=None)
 
 # ---- Help
+drop("help", "self-test")  # the engine self-test left Settings (Nov 10)
 text("help", "status", "while Argentum works",
      body="Turn this on to show a banner with the elapsed time while Forge works out a big turn.")
 

@@ -516,3 +516,54 @@ for n in (19, 20, 22, 23, 24, 25):
     _lines[hits[0]] = _lines[hits[0]].replace("if (", "if (false && ", 1)
 _menu.write_text("\n".join(_lines))
 print("patched TableMainLayout.kt (6 menu items removed)")
+
+# ================================================================== menus and options audit (owner, Nov 10 09:05: "Remove and merge")
+def _hide_lines(rel, markers):
+    """Puts `if (false)` in front of the composable on the one line holding each marker (Kotlin: `if (a) if (false) X(...)`)."""
+    path = app / rel
+    lines = path.read_text().split("\n")
+    for marker, call in markers:
+        hits = [i for i, l in enumerate(lines) if marker in l]
+        if len(hits) != 1 or call not in lines[hits[0]]:
+            sys.exit(f"patch_arcana_nov9c: {rel}: {marker!r} not found once with {call!r}")
+        lines[hits[0]] = lines[hits[0]].replace(call, "if (false) " + call, 1)
+    path.write_text("\n".join(lines))
+    print(f"patched {rel} ({len(markers)} items hidden)")
+
+# Game menu: Learn & tutorials and What's new (tutorials stay in Settings, reachable from Home too), Save full offline
+# game (Forge games can't be saved yet), and the two greyed-out items that never worked (Start Forge game, Online room).
+_hide_lines("TableMainLayout.kt", [
+    ('"TableMainLayout.Text.11"', "StudioDropdownMenuItem("),
+    ('"TableMainLayout.Text.14"', "StudioDropdownMenuItem("),
+    ('"TableMainLayout.Text.32"', "StudioDropdownMenuItem("),
+    ('"TableMainLayout.Text.34"', "StudioDropdownMenuItem("),
+    ('"TableMainLayout.Text.35"', "StudioDropdownMenuItem("),
+])
+# The turn label's session/turn timer menu and its hold-to-hide: whether the turn time shows is a Studio piece ("timer").
+patch("TableMainLayout.kt", [
+    ('''enabled = !onlineMode || localSeat == 0, onClick = { run { timerMenuOpen = true } }, onLongClick = { turnTimerVisible = !turnTimerVisible }''',
+     '''enabled = false, onClick = { }, onLongClick = { }'''),
+])
+# Settings: card size, the Arcana Studio button (Studio is on Home and in the menu), Show turn timer (a Studio piece),
+# What's new (Arcana's own release notes), and the engine self-test (a check with Arcana's old Portal set).
+_hide_lines("TableDialogs.kt", [
+    ('StudioText("TableDialogs.Text.124"', 'StudioText("TableDialogs.Text.124"'),
+    ('SettingsToggle("Show turn timer"', 'SettingsToggle("Show turn timer"'),
+    ('LinkRow("What\'s new"', 'LinkRow("What\'s new"'),
+])
+patch("TableDialogs.kt", [
+    ('''                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    listOf(0.82f to "SMALL", 1f to "STANDARD", 1.18f to "LARGE").forEach { (scale, label) ->''',
+     '''                if (false) Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    listOf(0.82f to "SMALL", 1f to "STANDARD", 1.18f to "LARGE").forEach { (scale, label) ->'''),
+    ('''                if (onOpenStudio != null) {''', '''                if (false && onOpenStudio != null) {'''),
+    ('''                } else StudioTextButton("TableDialogs.TextButton.27"''', '''                } else if (false) StudioTextButton("TableDialogs.TextButton.27"'''),
+    ('''                if (onEngineSelfTest != null) LinkRow(''', '''                if (false && onEngineSelfTest != null) LinkRow('''),
+])
+# Home: the saved offline game card (Forge games can't be saved yet; "the game may still be running" stays).
+patch("HomeScreen.kt", [
+    ('''            if (offlineResumeAvailable && !argentumActive) Column(''', '''            if (false && offlineResumeAvailable && !argentumActive) Column('''),
+])
+patch("TableDialogs.kt", [
+    ('''"20 chapters, 160 lessons and a Magic glossary · works offline"''', '''"20 chapters and a Magic glossary · works offline"'''),
+])
