@@ -3,7 +3,8 @@
 
 Nothing uploads, publishes, retrieves secrets, or changes the donor repository.
 The caller supplies the ORIGINAL upload key and Play Console upload-certificate
-SHA-256 using environment variables. Do not put any signing material in Git.
+SHA-256 pinned from Play Console in this public file. Private key and passwords
+must come from a trusted local environment; never put them in Git.
 """
 import argparse
 import os
@@ -14,6 +15,9 @@ import sys
 
 EXPECTED_PACKAGE = "com.arcanatable"
 EXPECTED_ALIAS = "arcana-upload"
+# Public SHA-256 fingerprint supplied from the Play Console upload certificate by the owner
+# on 2026-11-10. Verify again in Console before distribution.
+PINNED_UPLOAD_CERT_SHA256 = "FD522A674B8A038AD8C2084B9BF8BDBF9B89809E0DC2F1197F88AD1C956803F7"
 GRADLE_MARKER = "// CHIMERA PLAY SIGNED RELEASE OVERLAY"
 MIN_VERSION_CODE = 143  # Build 142 in the pinned donor. Play Console may require higher.
 
@@ -36,7 +40,6 @@ def require_signing_environment():
     required = (
         "CHIMERA_UPLOAD_KEYSTORE", "CHIMERA_UPLOAD_STORE_PASSWORD",
         "CHIMERA_UPLOAD_KEY_PASSWORD", "CHIMERA_UPLOAD_ALIAS",
-        "CHIMERA_EXPECTED_UPLOAD_CERT_SHA256",
     )
     missing = [name for name in required if not os.environ.get(name)]
     if missing:
@@ -46,7 +49,11 @@ def require_signing_environment():
     store = Path(os.environ["CHIMERA_UPLOAD_KEYSTORE"]).expanduser().resolve()
     if not store.is_file() or store.stat().st_size == 0:
         raise ValueError("Original upload keystore file is missing or empty")
-    return store, fingerprint(os.environ["CHIMERA_EXPECTED_UPLOAD_CERT_SHA256"])
+    # Optional override is a cross-check, never authority to change the Play certificate.
+    supplied = os.environ.get("CHIMERA_EXPECTED_UPLOAD_CERT_SHA256")
+    if supplied and fingerprint(supplied) != PINNED_UPLOAD_CERT_SHA256:
+        raise ValueError("Supplied upload-certificate SHA-256 differs from the pinned Play Console value")
+    return store, PINNED_UPLOAD_CERT_SHA256
 
 
 def run_checked(command):
