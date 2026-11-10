@@ -5,6 +5,13 @@ set -euo pipefail
 ARCANA_SHA="${ARCANA_SHA:-a5c428ad3da42b7325adf6630238ec992fee3113}"
 FORGE_SHA="${FORGE_SHA:-7c34365c749ca46ab71336c5f267340d6088e600}"
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+# Fail before network/Forge compilation if the approved assistant GIFs were not supplied.
+for gif in gooseclippy_idle.gif gooseclippy_react.gif; do
+  [ -s "$ROOT/arcana-overlay/app/src/main/assets/$gif" ] || {
+    echo "ERROR: Missing owner-approved GooseClippy asset $gif in Chimera's arcana-overlay/app/src/main/assets/"
+    exit 1
+  }
+done
 WORK="$ROOT/third_party"; mkdir -p "$WORK"
 ARCANA="$WORK/arcana"; FORGE="$WORK/forge"
 [ -d "$ARCANA/.git" ] || git clone --quiet --filter=blob:none --no-checkout https://github.com/AARMOU/arcana_table.git "$ARCANA"
@@ -78,9 +85,8 @@ mkdir -p "$APP/src/main/assets/chimera_xp" && cp "$ROOT"/arcana-overlay/app/src/
 # GooseClippy belongs exclusively to Chimera's XP overlay. Never modify Arcana source.
 mkdir -p "$APP/src/test/java/com/arcanatable"
 cp "$ROOT"/arcana-overlay/app/src/test/java/com/arcanatable/GooseClippy*Test.kt "$APP/src/test/java/com/arcanatable/"
-# Required approved transparent GIFs; fail closed rather than ship a fake character.
+# Copy owner-approved transparent GIFs (preflight above already verified both).
 for gif in gooseclippy_idle.gif gooseclippy_react.gif; do
-  [ -f "$ROOT/arcana-overlay/app/src/main/assets/$gif" ] || { echo "ERROR: Missing owner-approved GooseClippy asset $gif"; exit 1; }
   cp "$ROOT/arcana-overlay/app/src/main/assets/$gif" "$APP/src/main/assets/"
 done
 python3 "$ROOT/scripts/patch_arcana_nov9.py" "$APP" # owner's Nov 9 list: drawer, Commander, presets, fan/catalogue, backgrounds, log detail
