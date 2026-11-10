@@ -431,6 +431,8 @@ internal fun ChimeraXpDesktop(ui: SkinUi) {
             Taskbar(g, wins, onReset = { XpDesk.reset(if (wide) landscapeDefaults(g, XpDesk.deskW, XpDesk.deskH) else portraitDefaults(XpDesk.deskW, XpDesk.deskH, narrowScreen),
                 if (wide) setOf("hand") else setOf("hand", "stack")) })
         }
+        // Owner's optional assistant: card art and Forge remain untouched.
+        GooseClippyAssistant(observation = g.t.gooseClippyObservation())
     }
     XpAlertWatch(g)
 }
@@ -546,6 +548,9 @@ private fun Taskbar(g: SkinGame, wins: List<XpWinInfo>, onReset: () -> Unit) {
                 Text("start", color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Bold, fontStyle = androidx.compose.ui.text.font.FontStyle.Italic, fontFamily = Xp.font)
             }
             DropdownMenu(expanded = startOpen, onDismissRequest = { startOpen = false }) {
+                val (gooseEnabled, setGooseEnabled) = rememberGooseClippySwitch()
+                DropdownMenuItem(text = { Text(if (gooseEnabled) "✓ GooseClippy: On" else "GooseClippy: Off", fontFamily = Xp.font) },
+                    onClick = { setGooseEnabled(!gooseEnabled); startOpen = false })
                 listOf("Reset layout" to onReset, "Board summary" to { ChimeraFeatures.boardOpen = true },
                     "Game history" to { ChimeraFeatures.historyOpen = true }, "Game log" to { g.log() }, "Options" to { g.t.optionsOpen = true },
                     "Classic screen" to { ChimeraSkins.set("") }, "Concede" to { ChimeraConcede.asking = true }, "Leave game…" to { g.t.argentumLeaveConfirm = true })
