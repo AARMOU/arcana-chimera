@@ -155,9 +155,11 @@ internal object ChimeraHandLayouts {
                 layout(w, h, o, top(w, o) + slots(16f, w - 16f, y0) + r1 + r2, "row",
                     t(theme("#1B1D18", "#23261F", "#30342B", "#9DB08A", "#EEE6D3", "#A9A38F", "#D8C79A")))
             }
-            "Battlefield First" -> { // a short drawer: every button on one compact strip, cards in a row
-                val strip = row(BUTTONS + COUNTERS, 12f, w - 12f, y0, 38f, gap = 4f, fs = 9f, weights = mapOf("pass" to 1.4f, "commander" to 1.3f, "metric2" to 1.2f))
-                layout(w, h, o, top(w, o) + strip + slots(12f, w - 12f, y0 + 46f, 77f, 110f), "row", emptyMap())
+            "Battlefield First" -> { // a short drawer: two slim strips of square buttons, small cards in one row
+                val s1 = row(BUTTONS, 12f, w - 12f, y0, 36f, gap = 4f, fs = 10f, shape = "square", weights = mapOf("pass" to 1.4f, "actions" to 1.2f))
+                val s2 = row(COUNTERS, 12f, w - 12f, y0 + 40f, 36f, gap = 4f, fs = 9f, shape = "square", weights = mapOf("commander" to 1.3f, "metric2" to 1.2f), strongPass = false)
+                layout(w, h, o, top(w, o) + s1 + s2 + slots(12f, w - 12f, y0 + 84f, 77f, 110f), "row",
+                    t(theme("#14181D", "#1A1F25", "#262D35", "#E07A5F", "#EDEFF2", "#98A2AD", "#E9C46A")))
             }
             else -> null
         }?.let(ChimeraHandDesign::upgrade)?.takeIf { it.problems().isEmpty() }
@@ -173,14 +175,28 @@ internal object ChimeraPresets {
 
     private val skin = mapOf("Duel Arena" to "arena", "Orbit" to "orbit", "Across the Table" to "across", "Feed" to "feed",
         "Terminal" to "terminal", "Focus" to "focus", "Storybook" to "storybook")
-    private val font = mapOf("Glass Cockpit" to "condensed", "Command Center" to "mono")
-    private val opacity = mapOf("Glass Cockpit" to 0.25f)
-    private val backdrop = mapOf("Glass Cockpit" to "starfield", "Command Center" to "slate")
+    private val font = mapOf("Glass Cockpit" to "condensed", "Command Center" to "mono", "Grimoire" to "serif", "Arcade Cabinet" to "mono",
+        "War Table" to "condensed", "Duelist's Gauntlet" to "condensed", "Zen Garden" to "serif")
+    private val opacity = mapOf("Glass Cockpit" to 0.8f, "Zen Garden" to 0.9f) // was 0.25: the board showed through the drawer too much (owner, Nov 9)
+    private val backdrop = mapOf("Glass Cockpit" to "starfield", "Command Center" to "slate", "Grimoire" to "parchment", "Arcade Cabinet" to "neon",
+        "War Table" to "felt", "Duelist's Gauntlet" to "wood", "Zen Garden" to "dusk", "Battlefield First" to "slate")
     /** Table colours for the presets on Arcana's own screen (the hand designs carry theirs). */
     private val tableTheme = mapOf(
         "Glass Cockpit" to mapOf("background" to "#050D16", "panel" to "#0B1B2B", "raised" to "#12283D", "accent" to "#5CC8FF", "text" to "#E4F3FF", "muted" to "#87A3BA", "gold" to "#9AD8FF"),
         "Command Center" to mapOf("background" to "#12161B", "panel" to "#181E25", "raised" to "#232B34", "accent" to "#6FA8DC", "text" to "#E3E9EF", "muted" to "#8D99A6", "gold" to "#C9B26B"),
+        // Owner, Nov 9: more presets made only from editor settings (colours, background, typeface, hand design,
+        // card style, button shapes, sizes, density, drawer opacity), each as far from the others as the editor goes.
+        "Grimoire" to mapOf("background" to "#1E1410", "panel" to "#2A1C16", "raised" to "#3B2820", "accent" to "#B0413E", "text" to "#F3E6C8", "muted" to "#B9A586", "gold" to "#D8B76A"),
+        "Arcade Cabinet" to mapOf("background" to "#0B0614", "panel" to "#120A1F", "raised" to "#24113A", "accent" to "#FF2BD6", "text" to "#E8F7FF", "muted" to "#8A7CA8", "gold" to "#19E3FF"),
+        "War Table" to mapOf("background" to "#0E1A13", "panel" to "#13241A", "raised" to "#1D3426", "accent" to "#C9A24A", "text" to "#F1E8D0", "muted" to "#9DAA94", "gold" to "#E3C46B"),
+        "Duelist's Gauntlet" to mapOf("background" to "#101518", "panel" to "#161D21", "raised" to "#222C31", "accent" to "#2EC4B6", "text" to "#E6F1F0", "muted" to "#8FA3A8", "gold" to "#D9B65B"),
+        "Zen Garden" to mapOf("background" to "#1B1D18", "panel" to "#23261F", "raised" to "#30342B", "accent" to "#9DB08A", "text" to "#EEE6D3", "muted" to "#A9A38F", "gold" to "#D8C79A"),
+        "Big & Bold" to mapOf("background" to "#000000", "panel" to "#111111", "raised" to "#262626", "accent" to "#F2C14E", "text" to "#FFFFFF", "muted" to "#BDBDBD", "gold" to "#F2C14E"),
+        "Battlefield First" to mapOf("background" to "#14181D", "panel" to "#1A1F25", "raised" to "#262D35", "accent" to "#E07A5F", "text" to "#EDEFF2", "muted" to "#98A2AD", "gold" to "#E9C46A"),
     )
+
+    /** The seven whole-screen layouts (Studio lists them apart from the presets: Studio can't edit them). */
+    fun isLayout(name: String) = name in skin
 
     fun opacity(name: String) = opacity[name] ?: 1f
 

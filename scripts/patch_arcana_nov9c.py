@@ -312,3 +312,124 @@ for rel in ["TableController.kt", "ReleaseFeatures.kt"]:
 left = [f.name for f in app.rglob("*.kt") if "BuildConfig.DEBUG" in f.read_text() and f.name != "DeckBuilderScreen.kt"]
 if left:
     sys.exit("patch_arcana_nov9c: BuildConfig.DEBUG still used in " + ", ".join(left))
+
+# ================================================================== owner, Nov 9 21:21 list (screenshots and the 21:44 game log)
+# Player chips and the commander button: Forge's internal "Commander Effect" was taken for the commander once the real
+# one left the command zone (the bridge no longer sends it; the commander is now found by its commander flag first).
+patch("ArgentumBackend.kt", [
+    ('''                val commander = command.firstOrNull() ?: (battlefield + hand + graveyard + exile).firstOrNull { it.isCommander }''',
+     '''                val commander = command.firstOrNull { it.isCommander } ?: (battlefield + hand + graveyard + exile).firstOrNull { it.isCommander }
+                    ?: command.firstOrNull { !it.type.contains("Emblem", ignoreCase = true) }'''),
+])
+# Token pictures come from a Scryfall search (a list): take the first result's picture.
+patch("CardImages.kt", [
+    ('''    internal fun imageFromJson(json: JSONObject, version: String): String? {
+        fun from(uris: JSONObject?) = uris?.optString(version)?.takeIf { it.isNotBlank() }''',
+     '''    internal fun imageFromJson(list: JSONObject, version: String): String? {
+        val json = list.optJSONArray("data")?.optJSONObject(0) ?: list // a search (tokens): its first result
+        fun from(uris: JSONObject?) = uris?.optString(version)?.takeIf { it.isNotBlank() }'''),
+])
+# The bottom bar (Pass · Hand · Table) hides while the hand drawer is open: it showed through a see-through drawer,
+# giving two Pass buttons and the card caption over it. Its space stays, so the board doesn't jump.
+patch("TableMainLayout.kt", [
+    ('''            Row(Modifier.fillMaxWidth().padding(top = 5.dp).testTag("bottom-bar").tutorialTarget("bottom-bar"), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.Bottom) {''',
+     '''            Row(Modifier.fillMaxWidth().padding(top = 5.dp).graphicsLayer { alpha = if (showHand) 0f else 1f }.testTag("bottom-bar").tutorialTarget("bottom-bar"), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.Bottom) {'''),
+])
+
+# ================================================================== presets (owner, Nov 9 21:25: the three that showcase the
+# editor are Classic, Glass Cockpit and Command Center; keep all ten; the seven whole-screen layouts get their own section;
+# more presets made only from editor settings)
+patch("StudioPresets.kt", [
+    ('''        StudioPreset("Duel Arena",''',
+     '''        StudioPreset("Grimoire","A spellbook: serif type on parchment, bookmark tabs down the right edge, wine and gold",StudioLook(1.05f,1.1f,0.95f,1.05f),"Balanced",
+            emptySet(),"round",null),
+        StudioPreset("Arcade Cabinet","A neon cabinet: mono type on a neon grid, chunky square controls, a scoreboard, one row of cards",StudioLook(0.95f,0.9f,1.15f,1f),"Balanced",
+            emptySet(),"turn",null),
+        StudioPreset("War Table","An officer's console on felt: condensed type, every button in a column, a ticker of counts",StudioLook(0.9f,0.85f,0.95f,0.95f),"Detailed",
+            emptySet(),"both",null),
+        StudioPreset("Duelist's Gauntlet","One-handed on the folded phone: a fan of cards over dark wood, Pass under your thumb",StudioLook(1f,1f,1.05f,1.1f),"Balanced",
+            emptySet(),"turn",null),
+        StudioPreset("Zen Garden","Calm: serif type at dusk, soft pills, one row of cards, room to breathe, fewer labels",StudioLook(1f,1.25f,0.95f,1f),"Balanced",
+            setOf("fullTableLabel","engineThinking","timer"),"hidden",null),
+        StudioPreset("Big & Bold","Easy to see: black and yellow, oversized buttons and text, big cards",StudioLook(1.2f,1.1f,1.25f,1.2f),"Balanced",
+            emptySet(),"both",null),
+        StudioPreset("Battlefield First","The board gets the room: a short drawer of slim square strips, small cards in one row",StudioLook(0.85f,0.9f,0.85f,0.8f),"Detailed",
+            setOf("fullTableLabel"),"round",null),
+        StudioPreset("Duel Arena",'''),
+])
+patch("StudioEditorPanels.kt", [
+    ('''            StudioSection("Presets")
+            Row(Modifier.hintedHorizontalScroll()) {
+                StudioPresets.all.forEach {preset->
+                    StudioChip(preset.name,true,"studio-preset-${preset.name}",selected=tryingPreset==preset.name){
+                        if(trying==null)trying=runtime.draft to look.read()''',
+     '''            StudioSection("Presets")
+            Text("Made only with Studio's own settings: everything in them can be changed here.",color=darkTableColors.muted,fontSize=11.sp)
+            val chimeraTry:(StudioPreset)->Unit={preset->
+                        if(trying==null)trying=runtime.draft to look.read()'''),
+    ('''                        StudioLog.add("Preset tried: ${preset.name}${if(keepColours)" (kept my colours)" else ""}")
+                    }
+                }
+            }''',
+     '''                        StudioLog.add("Preset tried: ${preset.name}${if(keepColours)" (kept my colours)" else ""}")
+            }
+            Row(Modifier.hintedHorizontalScroll()) {
+                StudioPresets.all.filter{!ChimeraPresets.isLayout(it.name)}.forEach{preset->
+                    StudioChip(preset.name,true,"studio-preset-${preset.name}",selected=tryingPreset==preset.name){chimeraTry(preset)}
+                }
+            }
+            StudioSection("Screen layouts")
+            Text("Whole screens built into Chimera. Studio edits the classic screen; each layout's menu has \\"Classic screen\\".",color=darkTableColors.muted,fontSize=11.sp)
+            Row(Modifier.hintedHorizontalScroll()) {
+                StudioPresets.all.filter{ChimeraPresets.isLayout(it.name)}.forEach{preset->
+                    StudioChip(preset.name,true,"studio-preset-${preset.name}",selected=tryingPreset==preset.name){chimeraTry(preset)}
+                }
+            }'''),
+])
+# The typeface the presets use, as a Studio setting of its own (so presets are entirely editor settings).
+patch("StudioTablePanel.kt", [
+    ('''            // Chimera (owner, Nov 9): the Terminal preset's layouts, colours, text size, scanlines and glow.''',
+     '''            // Chimera (owner, Nov 9): the typeface of Arcana's screen.
+            Row(Modifier.hintedHorizontalScroll(rememberScrollState()),verticalAlignment=Alignment.CenterVertically) {
+                Text("Typeface",color=darkTableColors.muted,fontSize=12.sp,modifier=Modifier.padding(end=6.dp))
+                listOf("" to "Arcana","serif" to "Serif","mono" to "Mono","condensed" to "Condensed").forEach{(id,label)->
+                    StudioChip(label,true,"chimera-font-${id.ifEmpty{"arcana"}}",selected=ChimeraSkins.classicFontName==id){ChimeraSkins.setClassicFont(id)}}
+            }
+            // Chimera (owner, Nov 9): the Terminal preset's layouts, colours, text size, scanlines and glow.'''),
+])
+
+# ================================================================== the hand editor shows the design at its in-play size
+# (owner, Nov 9 21:17: "The hand drawer drastically changes size when going into the studio"). The editor used to zoom
+# the design to the full width (twice its size on the open Fold); it now uses the game's size and spread, and edits are
+# converted back to design units. The side column the game uses on short, wide screens is a Studio switch.
+patch("StudioHandCanvas.kt", [
+    ('''        val scale = if (editing) chimeraRaw else ChimeraAdapt.scale(chimeraRaw)
+        val chimeraSx = chimeraRaw / scale''',
+     '''        val scale = ChimeraAdapt.scale(chimeraRaw) // owner, Nov 9 21:17: the editor shows the design at its in-play size
+        val chimeraSx = if (editing) 1f else chimeraRaw / scale'''),
+    ('''            .let { if (fitHeight != androidx.compose.ui.unit.Dp.Unspecified && fitHeight.value > 0f)
+                ChimeraAdapt.columnize(''',
+     '''            .let { if (ChimeraAdapt.sideColumn && fitHeight != androidx.compose.ui.unit.Dp.Unspecified && fitHeight.value > 0f)
+                ChimeraAdapt.columnize('''),
+])
+patch("StudioHandEditor.kt", [
+    ('''                val unit=constraints.maxWidth/layout.canvasWidth.coerceIn(240f,2000f)''',
+     '''                val chimeraRaw=maxWidth.value/layout.canvasWidth.coerceIn(240f,2000f)
+                val unit=constraints.maxWidth/layout.canvasWidth.coerceIn(240f,2000f)*(ChimeraAdapt.scale(chimeraRaw)/chimeraRaw) // matches the canvas (in-play size)'''),
+    ('''        Switch(chimeraSeparate,{v->runtime.prefs.edit().putBoolean(ChimeraOrientation.SEPARATE,v).apply();chimeraSeparate=v;onApplied()},
+            modifier=Modifier.testTag("chimera-separate-landscape"))
+    }
+''',
+     '''        Switch(chimeraSeparate,{v->runtime.prefs.edit().putBoolean(ChimeraOrientation.SEPARATE,v).apply();chimeraSeparate=v;onApplied()},
+            modifier=Modifier.testTag("chimera-separate-landscape"))
+    }
+    Row(Modifier.fillMaxWidth().heightIn(min=48.dp),verticalAlignment=Alignment.CenterVertically) {
+        Column(Modifier.weight(1f)) {
+            Text("Buttons beside the cards on wide screens",color=darkTableColors.text)
+            Text("In play on a short, wide drawer (open Fold, landscape) the button rows move into a column so the cards keep their height. The editor shows the design as you laid it out.",
+                color=darkTableColors.muted,fontSize=11.sp)
+        }
+        Switch(ChimeraAdapt.sideColumn,{ChimeraAdapt.changeSideColumn(it)},modifier=Modifier.testTag("chimera-side-column"))
+    }
+'''),
+])

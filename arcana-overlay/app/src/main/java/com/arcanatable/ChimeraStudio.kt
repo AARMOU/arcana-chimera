@@ -46,6 +46,18 @@ internal object ChimeraAdapt {
     const val MIN = 0.8f
     const val MAX = 1.25f
 
+    private val prefs: SharedPreferences? by lazy {
+        runCatching {
+            val app = Class.forName("android.app.ActivityThread").getMethod("currentApplication").invoke(null) as android.content.Context
+            app.getSharedPreferences("chimera_skin", android.content.Context.MODE_PRIVATE)
+        }.getOrNull()
+    }
+
+    /** Studio switch (owner, Nov 9): on short, wide screens the button rows move into a column beside the cards. */
+    var sideColumn by mutableStateOf(prefs?.getBoolean("side_column", true) ?: true)
+        private set
+    fun changeSideColumn(on: Boolean) { sideColumn = on; prefs?.edit()?.putBoolean("side_column", on)?.apply() }
+
     /** Heights and text grow or shrink at most 25%; widths and positions follow the screen. */
     fun scale(raw: Float): Float = raw.coerceIn(MIN, MAX)
 

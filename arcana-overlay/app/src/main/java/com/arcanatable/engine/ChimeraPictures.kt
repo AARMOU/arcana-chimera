@@ -45,11 +45,24 @@ object ChimeraPictures {
 
     fun clearChosen() = chosen.clear()
 
-    fun picture(name: String, seatId: String?): String? {
+    fun picture(rawName: String, seatId: String?): String? {
+        // Owner, Nov 9 diagnostics: Forge names like "Lasting Fayth (134)'s Adventure" become the card's own name.
+        val name = rawName.replace(Regex(" \\(\\d+\\)"), "").removeSuffix("'s Adventure").trim()
         val key = name.lowercase(Locale.ROOT)
         seatId?.let { chosen[it]?.get(key)?.let { url -> return url } }
         if (seatId == HOST_SEAT) com.arcanatable.ChimeraArt.get(name)?.let { return it } // your Change art choice
         val m = map
-        return m?.get(key) ?: m?.get(key.substringBefore(" // ")) ?: com.arcanatable.artByName(name, false)
+        return m?.get(key) ?: m?.get(key.substringBefore(" // ")) ?: token(name) ?: com.arcanatable.artByName(name, false)
+    }
+
+    /**
+     * Tokens ("Plant Token", "Kor Ally Token"): Scryfall's lookup by name only finds cards, so tokens use a search for a
+     * token of that name (the app takes the first result's picture).
+     */
+    private fun token(name: String): String? {
+        if (!name.endsWith(" Token")) return null
+        val base = name.removeSuffix(" Token").trim().takeIf { it.isNotEmpty() } ?: return null
+        val q = java.net.URLEncoder.encode("!\"$base\" t:token", "UTF-8")
+        return "https://api.scryfall.com/cards/search?q=$q&unique=art&format=image&version=normal"
     }
 }

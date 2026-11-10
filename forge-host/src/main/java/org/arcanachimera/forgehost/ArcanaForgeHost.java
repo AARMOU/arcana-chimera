@@ -895,9 +895,16 @@ public final class ArcanaForgeHost {
                 Collection<Card> in = p.getCardsIn(z);
                 boolean visible = z != ZoneType.Library && (z != ZoneType.Hand || p == viewer);
                 JSONArray ids = new JSONArray();
-                if (visible) for (Card c : in) { ids.put(cardId(c)); cards.put(cardId(c), card(c, z)); }
+                int shown = 0;
+                if (visible) for (Card c : in) {
+                    // Owner, Nov 9: Forge keeps an invisible "Commander Effect" in the command zone; Arcana took it for the
+                    // commander once the real one left (blank player chips, "Co…" commander button). Emblems stay.
+                    if (z == ZoneType.Command && internalEffect(c)) continue;
+                    ids.put(cardId(c)); cards.put(cardId(c), card(c, z)); shown++;
+                }
+                int size = z == ZoneType.Command && visible ? shown : in.size();
                 zones.put(new JSONObject().put("zoneId", new JSONObject().put("zoneType", zoneName(z)).put("ownerId", pid))
-                        .put("cardIds", ids).put("size", in.size()).put("isVisible", visible).put("positions", JSONObject.NULL));
+                        .put("cardIds", ids).put("size", size).put("isVisible", visible).put("positions", JSONObject.NULL));
             }
             players.put(fillPlayer(new JSONObject().put("playerId", pid).put("name", p.getName()).put("life", p.getLife())
                     .put("handSize", p.getCardsIn(ZoneType.Hand).size()).put("librarySize", p.getCardsIn(ZoneType.Library).size())
@@ -1013,7 +1020,8 @@ public final class ArcanaForgeHost {
         cardDetails(card, c);
         // The picture: Arcana's mulligan screen shows only this field, and the table otherwise looks every card up
         // on Scryfall one at a time (owner, Nov 8 23:06: blank cards, no art on the mulligan screen).
-        if (!card.optBoolean("isFaceDown") || c.getController() == youPlayer()) {
+        // Forge's internal effect objects ("Commander Effect") have no picture (owner, Nov 9 diagnostics).
+        if ((!card.optBoolean("isFaceDown") || c.getController() == youPlayer()) && !internalEffect(c)) {
             String img = picture(c.getName(), c.getOwner() == null ? null : playerId(c.getOwner()));
             if (img != null) card.put("imageUri", img);
         }
@@ -1027,6 +1035,11 @@ public final class ArcanaForgeHost {
     public static volatile java.util.function.BiFunction<String, String, String> pictures;
 
     /** {@code ownerSeat}: whose deck the card is from, for the art chosen in that deck (Change art). */
+    /** Forge's rule-keeping objects (commander effect and the like): not cards a player has; emblems are kept. */
+    private static boolean internalEffect(Card c) {
+        return c.isImmutable() && !c.isEmblem();
+    }
+
     private static String picture(String name, String ownerSeat) {
         java.util.function.BiFunction<String, String, String> f = pictures;
         if (f == null || name == null || name.isBlank()) return null;
