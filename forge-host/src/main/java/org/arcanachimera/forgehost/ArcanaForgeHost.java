@@ -1658,12 +1658,39 @@ public final class ArcanaForgeHost {
             forge.card.mana.ManaCost cost = sa.getPayCosts().getTotalMana();
             int xs = cost.countX();
             if (xs <= 0) return max;
-            int available = forge.ai.ComputerUtilMana.getAvailableManaEstimate(sa.getActivatingPlayer() != null ? sa.getActivatingPlayer() : humanController().getPlayer(), true);
-            int cap = Math.max(min, (available - cost.getCMC()) / xs);
-            return Math.min(max, cap);
+            Player p = sa.getActivatingPlayer() != null ? sa.getActivatingPlayer() : humanController().getPlayer();
+            // Owner, Nov 10: "Can it be configured for all available mana sources?" Forge's own payment check decides each
+            // X (every source it can use: lands, rocks, creatures, Treasures and other sacrifice-for-mana, the pool, cost
+            // reductions, commander tax); the largest payable X is found by halving the range.
+            int estimate = forge.ai.ComputerUtilMana.getAvailableManaEstimate(p, true);
+            int hi = Math.min(max, Math.max(min, (estimate + 20) / xs)), lo = min;
+            Integer before = sa.getXManaCostPaid();
+            try {
+                if (!payableWithX(sa, p, lo)) lo = min; // even the smallest X: leave it to Forge
+                else while (lo < hi) { int mid = (lo + hi + 1) / 2; if (payableWithX(sa, p, mid)) lo = mid; else hi = mid - 1; }
+            } finally { sa.setXManaCostPaid(before); }
+            // Paid without mana, which Forge's check doesn't count: each untapped creature (convoke) or artifact
+            // (improvise) pays one, and delve exiles graveyard cards for generic mana.
+            Card host = sa.getHostCard();
+            int extra = 0;
+            boolean convoke = host.hasKeyword(forge.game.keyword.Keyword.CONVOKE), improvise = host.hasKeyword(forge.game.keyword.Keyword.IMPROVISE);
+            for (Card c : p.getCardsIn(ZoneType.Battlefield)) {
+                if (c.isTapped()) continue;
+                if ((convoke && c.isCreature()) || (improvise && c.isArtifact() && !c.isCreature())) extra++;
+            }
+            if (host.hasKeyword(forge.game.keyword.Keyword.DELVE)) extra += p.getCardsIn(ZoneType.Graveyard).size();
+            return Math.min(max, Math.max(min, lo + extra / xs));
         } catch (RuntimeException e) {
             return max;
         }
+    }
+
+    private boolean payableWithX(SpellAbility sa, Player p, int x) {
+        sa.setXManaCostPaid(x);
+        PRICING.set(true);
+        try { return forge.ai.ComputerUtilMana.canPayManaCost(sa, p, 0, false); }
+        catch (AskedWhilePricing asked) { return true; } // Forge would ask while paying: let it
+        finally { PRICING.set(false); }
     }
 
     private int askNumber(String prompt, int min, int max) throws Exception {
