@@ -600,3 +600,10 @@ patch("TableOverlays.kt", [
     ('''if (false) StudioTextButton("TableOverlays.TextButton.14"''',
      '''if (decision.decisionDisplayText("yesText", "Yes").equals("Yes", ignoreCase = true)) StudioTextButton("TableOverlays.TextButton.14"'''),
 ])
+
+# Combat cards centred in their tiles (owner, Nov 10): the pile keeps 10dp on the right for the cards stacked behind;
+# a single card now sits in the middle of that space.
+patch("CombatStackBoard.kt", [
+    ('''        Box(Modifier.offset(y = if (chosen > 0) 6.dp else 10.dp).width(cardWidth).clip(shape)''',
+     '''        Box(Modifier.offset(x = if (count > 1) 0.dp else 5.dp, y = if (chosen > 0) 6.dp else 10.dp).width(cardWidth).clip(shape)'''),
+])
