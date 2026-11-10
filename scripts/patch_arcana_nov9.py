@@ -437,6 +437,8 @@ patch("StudioPresets.kt", [
         StudioPreset("Focus","Only the decision in front of you; everything else behind a tab bar",CLASSIC_LOOK,"Balanced",emptySet(),"both",null),
         StudioPreset("Storybook","Comic panels on paper: inked borders, the opponent's moves as story, bold lettering",CLASSIC_LOOK,"Balanced",
             emptySet(),"both",null),
+        StudioPreset("Windows XP","Resizable desktop, classic error windows, 228-line GooseClippy",
+            StudioLook(0.9f,0.75f,1.1f,1f),"Balanced",emptySet(),"both","Light","Windows XP"),
     )
 '''),
 ])
