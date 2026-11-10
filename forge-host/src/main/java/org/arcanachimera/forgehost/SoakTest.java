@@ -327,7 +327,7 @@ public final class SoakTest {
         /** Checks that apply at the end of any game. Null if clean. */
         String verdict(ArcanaForgeHost host) {
             List<String> defaulted = new ArrayList<>();
-            for (String d : host.defaultedPrompts) if (!d.startsWith("play or draw")) defaulted.add(d);
+            for (String d : host.defaultedPrompts) if (!d.startsWith("play or draw") && !d.startsWith("coin toss")) defaulted.add(d); // both decided on purpose (owner, Nov 9)
             if (!defaulted.isEmpty()) return "FAIL DEFAULTED " + defaulted;
             if (!guard.clean()) return "FAIL PROTOCOL " + guard.failures();
             for (Game g : guests) if (!g.guard.clean()) return "FAIL PROTOCOL (seat " + g.me + ") " + g.guard.failures();
