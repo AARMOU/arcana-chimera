@@ -602,7 +602,18 @@ public final class ArcanaForgeHost {
      * "up to" reductions...; asked on this (non-game) thread, that question would wait forever (scenario F; soak 517:
      * an Eldrazi Emerge spell). Any such question aborts the check; the spell is offered and Forge asks when you cast.
      */
+    /** Owner, Nov 9 ("Not enough mana for that"): abilities whose payment failed, with the mana you had then. */
+    private final Map<String, String> failedPayments = new java.util.concurrent.ConcurrentHashMap<>();
+    private static String payKey(SpellAbility sa) { return (sa.getHostCard() == null ? "" : sa.getHostCard().getId()) + "|" + sa.getDescription(); }
+    private static String manaNow(Player me) {
+        int untapped = 0;
+        for (Card c : me.getCardsIn(ZoneType.Battlefield)) if (!c.isTapped() && !c.getManaAbilities().isEmpty()) untapped++;
+        return untapped + "/" + me.getManaPool().totalMana() + "/" + me.getGame().getPhaseHandler().getTurn();
+    }
+
     private boolean affordable(SpellAbility sa, Player me) {
+        String failed = failedPayments.get(payKey(sa));
+        if (failed != null) { if (failed.equals(manaNow(me))) return false; failedPayments.remove(payKey(sa)); }
         if (asksWhilePricing(sa)) return true;
         PlayerControllerHuman you = humanController();
         Input before = you == null ? null : you.getInputQueue().getInput();
@@ -701,7 +712,10 @@ public final class ArcanaForgeHost {
             // waiting for the answer; once you said "pay" and it still isn't paid, cancel below instead of waiting forever
             if (optionalTrigger && input == lastPrompted && input != lastAutoPaid) return;
             // Spells and abilities you chose: auto-pay (Argentum's default); if that can't pay, cancel instead of looping
-            if (input != lastAutoPaid) { lastAutoPaid = input; ok(you); } else { cancel(you); error("Not enough mana for that, so it was cancelled."); }
+            if (input != lastAutoPaid) { lastAutoPaid = input; ok(you); } else {
+                if (paidFor != null) failedPayments.put(payKey(paidFor), manaNow(you.getPlayer())); // don't offer it again until your mana changes
+                cancel(you); error("Not enough mana for that, so it was cancelled.");
+            }
             return;
         }
         if (input != null && input != lastPrompted) {
@@ -1164,7 +1178,7 @@ public final class ArcanaForgeHost {
 
     /** Forge's combat rule messages, the way a player says them (and without Forge's object numbers). */
     static String plain(String text) {
-        String t = text.replaceAll(" \\(\\d+\\)", "").trim();
+        String t = humanTypes(text.replaceAll(" \\(\\d+\\)", "")).trim();
         java.util.regex.Matcher m;
         if ((m = java.util.regex.Pattern.compile("^(.+?) cannot be blocked with (\\d+) creatures you've assigned\\.?$").matcher(t)).find())
             return m.group(1) + " can't be blocked by just " + m.group(2) + (m.group(2).equals("1") ? " creature" : " creatures")
@@ -1176,6 +1190,45 @@ public final class ArcanaForgeHost {
         if ((m = java.util.regex.Pattern.compile("^(.+?) must still block (.+?)\\.?$").matcher(t)).find())
             return m.group(1) + " must block " + m.group(2) + ".";
         return t;
+    }
+
+    /**
+     * Owner, Nov 9: "Select 1 Permanent.Other(s) to sacrifice" -> "Select 1 other permanent to sacrifice". Forge's card
+     * filters (Type.Property+Property) read as words; "(s)" becomes the right plural for the number in front.
+     */
+    static String humanTypes(String t) {
+        java.util.regex.Matcher m = java.util.regex.Pattern.compile("(?:(\\d+) )?\\b([A-Z][a-zA-Z]*)((?:[.+][A-Za-z]+)+)(\\(s\\))?").matcher(t);
+        StringBuilder out = new StringBuilder();
+        while (m.find()) {
+            String n = m.group(1), type = m.group(2), props = m.group(3), plural = m.group(4);
+            if (!props.contains(".") && !props.startsWith("+")) { m.appendReplacement(out, java.util.regex.Matcher.quoteReplacement(m.group())); continue; }
+            java.util.List<String> before = new ArrayList<>(), after = new ArrayList<>();
+            for (String p : props.split("[.+]")) {
+                if (p.isEmpty()) continue;
+                switch (p) {
+                    case "Other" -> before.add("other");
+                    case "nonToken", "nonToken+YouCtrl" -> before.add("nontoken");
+                    case "token" -> before.add("token");
+                    case "YouCtrl" -> after.add("you control");
+                    case "OppCtrl" -> after.add("an opponent controls");
+                    case "YouOwn" -> after.add("you own");
+                    case "untapped" -> before.add("untapped");
+                    case "tapped" -> before.add("tapped");
+                    case "attacking" -> before.add("attacking");
+                    case "nonLand" -> before.add("nonland");
+                    case "nonCreature" -> before.add("noncreature");
+                    default -> before.add(p.replaceAll("([a-z])([A-Z])", "$1 $2").toLowerCase(java.util.Locale.ROOT));
+                }
+            }
+            boolean many = plural != null && (n == null || !n.equals("1"));
+            String noun = type.toLowerCase(java.util.Locale.ROOT) + (many ? (type.endsWith("y") ? "" : "s") : "");
+            if (many && type.endsWith("y")) noun = noun.substring(0, noun.length() - 1) + "ies";
+            String words = (n == null ? "" : n + " ") + String.join(" ", before) + (before.isEmpty() ? "" : " ") + noun
+                    + (after.isEmpty() ? "" : " " + String.join(" ", after));
+            m.appendReplacement(out, java.util.regex.Matcher.quoteReplacement(words));
+        }
+        m.appendTail(out);
+        return out.toString().replaceAll("\\b1 ([A-Za-z ]+?)\\(s\\)", "1 $1").replace("(s)", "s").replace(" an other ", " another ").replace(" a other ", " another ");
     }
 
     // ---------------------------------------------------------------- player decisions (Argentum pendingDecision)
@@ -1191,7 +1244,7 @@ public final class ArcanaForgeHost {
 
     private JSONObject decisionBase(String type, String prompt) throws Exception {
         String id = "forge-d" + decisionSeq.incrementAndGet();
-        return new JSONObject().put("type", type).put("id", id).put("playerId", me).put("prompt", prompt == null ? "" : prompt)
+        return new JSONObject().put("type", type).put("id", id).put("playerId", me).put("prompt", prompt == null ? "" : plain(prompt))
                 .put("context", new JSONObject().put("phase", "RESOLUTION"));
     }
 
@@ -1287,18 +1340,26 @@ public final class ArcanaForgeHost {
     }
 
     private JSONObject cardInfo(Object o) throws Exception {
+        // Owner, Nov 9: tap a card or ability name in a choice to see the card, so every entry carries its picture.
         if (o instanceof forge.game.spellability.SpellAbilityView v) {
             String host = v.getHostCard() == null ? "" : v.getHostCard().getName();
-            return new JSONObject().put("name", host.isEmpty() ? v.toString() : host).put("typeLine", "Ability").put("manaCost", "").put("text", v.toString());
+            return withPicture(new JSONObject().put("name", host.isEmpty() ? v.toString() : host).put("typeLine", "Ability").put("manaCost", "").put("text", plain(v.toString())), host);
         }
         if (o instanceof forge.game.replacement.ReplacementEffectView r) {
             String host = r.getHostCard() == null ? "" : r.getHostCard().getName();
-            return new JSONObject().put("name", host.isEmpty() ? r.getDescription() : host).put("typeLine", "Replacement effect").put("manaCost", "").put("text", r.getDescription());
+            return withPicture(new JSONObject().put("name", host.isEmpty() ? r.getDescription() : host).put("typeLine", "Replacement effect").put("manaCost", "").put("text", plain(r.getDescription())), host);
         }
         String name = o instanceof Card c ? c.getName() : o instanceof forge.game.card.CardView cv ? cv.getName() : label(o);
         String type = o instanceof Card c ? c.getType().toString() : "";
         String cost = o instanceof Card c && c.getManaCost() != null ? c.getManaCost().getShortString() : "";
-        return new JSONObject().put("name", name).put("typeLine", type).put("manaCost", cost);
+        JSONObject info = new JSONObject().put("name", name).put("typeLine", type).put("manaCost", cost);
+        return o instanceof Card || o instanceof forge.game.card.CardView ? withPicture(info, name) : info;
+    }
+
+    private JSONObject withPicture(JSONObject info, String cardName) throws Exception {
+        if (cardName == null || cardName.isEmpty()) return info;
+        String img = picture(cardName, null);
+        return img == null ? info : info.put("imageUri", img);
     }
 
     /** Pick min..max of the choices: cards via SelectCardsDecision, anything else (single pick) via ChooseOptionDecision. */
@@ -1773,10 +1834,28 @@ public final class ArcanaForgeHost {
         return false;
     }
 
+    /** Owner, Nov 9: the auto-pass stops set on the phone's phase bar ("mine:MAIN 1", "opp:END", ...); this phone's seat only. */
+    public static volatile java.util.function.Supplier<java.util.Set<String>> phaseStops = java.util.Set::of;
+
+    private static String stopGroup(PhaseType phase) {
+        return switch (phase) {
+            case UPKEEP -> "BEGIN";
+            case MAIN1 -> "MAIN 1";
+            case COMBAT_BEGIN -> "COMBAT";
+            case MAIN2 -> "MAIN 2";
+            case END_OF_TURN -> "END";
+            default -> null;
+        };
+    }
+
     private boolean skipPhase(Object turnPlayer, PhaseType phase) {
         boolean yourTurn = false;
         PlayerControllerHuman you = humanController();
         if (you != null && turnPlayer instanceof forge.game.player.PlayerView pv) yourTurn = pv.getId() == you.getPlayer().getId();
+        String group = stopGroup(phase);
+        if (group != null && this == primary) {
+            try { if (phaseStops.get().contains((yourTurn ? "mine:" : "opp:") + group)) return false; } catch (RuntimeException ignored) { }
+        }
         if (!yourTurn) { // AI turns: stop after blocks (and for anything on the stack), and at their end step if you can act
             if (phase == PhaseType.COMBAT_DECLARE_BLOCKERS) return false;
             if (phase == PhaseType.END_OF_TURN && you != null && canActNow(you.getPlayer())) return false;

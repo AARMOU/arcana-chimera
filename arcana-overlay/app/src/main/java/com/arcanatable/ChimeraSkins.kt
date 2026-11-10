@@ -515,60 +515,7 @@ private fun SkinFeed(ui: SkinUi) {
 // ---------------------------------------------------------------- 8 · Terminal
 
 @Composable
-private fun SkinTerminal(ui: SkinUi) {
-    val g = ui.g
-    val green = Color(0xFF7CF29A); val dim = Color(0xFF3E8A55); val hot = Color(0xFFE8FF7A)
-    val look = SkinLook(Color(0xFF050805), Color(0xFF050805), Color(0xFF050805), green, green, dim, Color(0xFF050805), ChimeraSkins.font("mono"), 0.dp, line = dim)
-    Screen(look) {
-        Column(Modifier.fillMaxSize().padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                SkinText("arcana@forge:~/game$ status", look, 12.sp, dim, modifier = Modifier.weight(1f)); SkinMenu(g, look, "[menu]")
-            }
-            SkinText("TURN %02d  PHASE %s  ACTIVE %s".format(g.snap.turnNumber, g.step.uppercase().replace(' ', '_'), if (g.myTurn) "you" else "them"), look, 12.sp)
-            SkinText("LIFE   you ${g.me?.life ?: 0}" + g.opponents.joinToString("") { " | ${it.name.lowercase().take(10)} ${it.life}" }, look, 12.sp)
-            SkinText("MANA   " + listOf("white" to "W", "blue" to "U", "black" to "B", "red" to "R", "green" to "G", "colorless" to "C")
-                .joinToString(" ") { (k, s) -> "$s${g.me?.manaPool?.get(k) ?: 0}" }, look, 12.sp)
-            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                ChimeraPhaseStops.PHASES.forEach { p ->
-                    SkinText("[${p.lowercase().replace(" ", "")}]", look, 11.sp, if (p == g.phase) look.bg else dim, FontWeight.Bold,
-                        Modifier.background(if (p == g.phase) green else Color.Transparent).padding(horizontal = 4.dp).chimeraPhaseStop(p))
-                }
-            }
-            Column(Modifier.weight(1f).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                SkinText("arcana@forge:~/game$ board", look, 12.sp, dim)
-                (g.opponents.flatMap { o -> o.battlefield.map { o.name.lowercase().take(6) to it } } + g.me?.battlefield.orEmpty().map { "you" to it }).forEach { (who, c) ->
-                    SkinText("%-6s %-22s %s".format(who, c.name.take(22), listOfNotNull(c.power?.let { p -> "$p/${c.toughness}" }, if (c.tapped) "tapped" else null).joinToString(" ")),
-                        look, 12.sp, if (who == "you" && c.id in g.playable && !g.busy) hot else green,
-                        modifier = Modifier.fillMaxWidth().combinedClickable(onClick = { g.tapPermanent(c, who == "you") }, onLongClick = { g.preview(c) }))
-                }
-                SkinText("arcana@forge:~/game$ hand", look, 12.sp, dim)
-                g.hand.forEachIndexed { i, c ->
-                    val star = g.castable(c)
-                    SkinText("${i + 1}${if (star) "*" else " "} %-20s %s".format(c.name.take(20), c.manaCost.orEmpty()) + if (c.id == ui.selected?.id) "  <" else "",
-                        look, 12.sp, if (star) hot else green, modifier = Modifier.fillMaxWidth().combinedClickable(onClick = { ui.pick(c) }, onLongClick = { g.preview(c) }))
-                }
-                SkinText("   * playable now · tap to select · hold to look", look, 11.sp, dim)
-                SkinText("arcana@forge:~/game$ log -4", look, 12.sp, dim)
-                g.log.takeLast(4).forEach { SkinText(it.description, look, 11.sp, Color(0xFF4FB46C)) }
-            }
-            val tl = look.copy(raised = Color.Transparent)
-            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                SkinButton("[undo]", tl, { g.undo() }, Modifier.weight(1f), enabled = g.canUndo, size = 11.sp)
-                SkinButton("[actions ${g.actions.size}]", tl, { g.openActions() }, Modifier.weight(1.3f), enabled = g.actions.isNotEmpty(), size = 11.sp)
-                SkinButton("[cast]", tl, { g.cast(ui.selected) }, Modifier.weight(1f), enabled = !g.busy, size = 11.sp)
-                SkinButton("[commander]", tl, ui.openCommander, Modifier.weight(1.4f), glow = g.commanderGlow, size = 11.sp, ink = hot, outline = hot)
-            }
-            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                SkinButton("[library ${g.me?.library?.size ?: 0}]", tl, {}, Modifier.weight(1f), size = 11.sp)
-                SkinButton("[grave ${g.me?.graveyard?.size ?: 0}]", tl, { g.graveyard() }, Modifier.weight(1f), size = 11.sp)
-                SkinButton("[exile ${g.me?.exile?.size ?: 0}]", tl, { g.exile() }, Modifier.weight(1f), size = 11.sp)
-                SkinButton("[stack ${g.stackCount}]", tl, { g.stack() }, Modifier.weight(1f), size = 11.sp)
-            }
-            PassButton(g, look, Modifier.fillMaxWidth().height(52.dp), RoundedCornerShape(0.dp), 14.sp,
-                "$ " + g.passLabel.lowercase().replace(' ', '_').replace("_·_", " ") + " █")
-        }
-    }
-}
+private fun SkinTerminal(ui: SkinUi) = ChimeraTerminal(ui) // reworked with five layouts and settings: ChimeraTerminal.kt
 
 // ---------------------------------------------------------------- 9 · Focus
 

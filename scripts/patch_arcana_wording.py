@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build-time: no "Argentum" on screen (owner, Nov 9: "It still says argentum in the game tools menu").
+"""Build-time: no "Argentum" or "ARGENTUM" on screen (owner, Nov 9: "It still says argentum in the game tools menu").
 
 Forge is the rules engine now. Every user-visible text in Arcana's Kotlin that names Argentum is reworded (a few by
 hand, the rest "Argentum" -> "Forge"); code names, Studio IDs and Studio screen names stay as they are, so saved
@@ -34,15 +34,32 @@ BY_HAND = {
     "Find an Argentum-supported card": "Find a card",
     "Import your deck, then choose Play with Argentum.": "Import your deck, then choose Play.",
     "Argentum's engine can't run": "Forge can't run",
+    "Argentum client": "Forge (on this device)",
+}
+# Capitals (labels, headings, buttons): owner, Nov 9: "ARGENTUM" in any capitalisation goes too.
+BY_HAND_UPPER = {
+    "ARGENTUM AI · READY": "FORGE AI · READY",
+    "ARGENTUM ENGINE": "FORGE ENGINE",
+    "ARGENTUM ROOM CODE": "ROOM CODE",
+    "ARGENTUM GAME MAY STILL BE RUNNING": "THE GAME MAY STILL BE RUNNING",
+    "ARGENTUM RUNS THE RULES": "FORGE RUNS THE RULES",
+    "CHECKING DECK WITH ARGENTUM…": "CHECKING DECK…",
+    "PLAY ON ARGENTUM WITHOUT THEM": "PLAY WITHOUT THEM",
+    "PLAY WITH ARGENTUM": "PLAY",
+    "SEARCH ARGENTUM": "SEARCH CARDS",
+    "SUGGEST ARGENTUM SWAPS": "SUGGEST SWAPS",
+    "SUGGESTED ARGENTUM SWAPS": "SUGGESTED SWAPS",
+    "WAITING FOR ARGENTUM": "WAITING FOR FORGE",
 }
 WORD = re.compile(r"\bArgentum\b")
+ANY = re.compile(r"\b(?:Argentum|ARGENTUM)\b")  # what reads on screen, in either capitalisation
 ID_LIKE = re.compile(r"^[A-Za-z]+(\.[A-Za-z0-9]+)*\.\d+$|^[A-Z][A-Za-z]*( [A-Z][A-Za-z]*)* \d+$")
 STUDIO_ARG = re.compile(r"[Ss]tudio\w*\(\s*(\"(?:[^\"\\]|\\.)*\"\s*,\s*)?$")
 
 
-def scan(text):
-    """Yields (start, end, is_first_text_segment, literal_start) for the text parts of every string literal."""
-    i, n = 0, len(text)
+def scan(text, i=0, n=None):
+    """Yields (start, end, literal_start) for the text parts of every string literal, including literals nested in ${...}."""
+    n = len(text) if n is None else n
     while i < n:
         c = text[i]
         if text.startswith("//", i):
@@ -92,13 +109,16 @@ def string(text, i):
         if text[j] == '"':
             yield (seg, j, i); return
         if text.startswith("${", j):
-            yield (seg, j, i); j = skip_code(text, j + 2); seg = j; continue
+            yield (seg, j, i); end = skip_code(text, j + 2)
+            yield from scan(text, j + 2, end - 1)  # e.g. "Role: ${if (x) "Argentum client" else ...}"
+            j = end; seg = j; continue
         j += 1
 
 
 def visible(text, lit_start, whole):
     if ID_LIKE.match(whole): return False
     line_start = text.rfind("\n", 0, lit_start) + 1
+    if re.search(r"\bTAG\s*=\s*$", text[line_start:lit_start]): return False  # Android log tag
     return not STUDIO_ARG.search(text[line_start:lit_start])
 
 
@@ -111,11 +131,11 @@ changed_files, changed, left = 0, 0, []
 for f in sorted(app.rglob("*.kt")):
     if f.name.startswith("Chimera"): continue
     text = f.read_text()
-    if "Argentum" not in text: continue
+    if "rgentum" not in text and "RGENTUM" not in text: continue
     edits = []
     for (a, b, lit) in scan(text):
         part = text[a:b]
-        if not WORD.search(part): continue
+        if not ANY.search(part): continue
         if not visible(text, lit, literal_text(text, lit)): continue
         new = part
         for old, rep in sorted(BY_HAND.items(), key=lambda kv: -len(kv[0])):
@@ -124,13 +144,16 @@ for f in sorted(app.rglob("*.kt")):
         new = re.sub(r"\bAn Argentum\b", "A Forge", new)
         new = new.replace("Argentum's", "Forge's")
         new = WORD.sub("Forge", new)
+        for old, rep in sorted(BY_HAND_UPPER.items(), key=lambda kv: -len(kv[0])):
+            new = new.replace(old, rep)
+        new = re.sub(r"\bARGENTUM\b", "FORGE", new)
         if new != part: edits.append((a, b, new))
     if edits:
         for a, b, new in reversed(edits):
             text = text[:a] + new + text[b:]
         f.write_text(text); changed_files += 1; changed += len(edits)
     for (a, b, lit) in scan(text):
-        if WORD.search(text[a:b]) and visible(text, lit, literal_text(text, lit)):
+        if ANY.search(text[a:b]) and visible(text, lit, literal_text(text, lit)):
             left.append(f"{f.name}: {text[a:b][:80]}")
 
 print(f"patch_arcana_wording: reworded {changed} text(s) in {changed_files} file(s)")

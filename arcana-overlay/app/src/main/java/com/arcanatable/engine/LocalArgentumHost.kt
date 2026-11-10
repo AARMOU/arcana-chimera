@@ -55,6 +55,8 @@ class LocalArgentumHost(
         // Card pictures for the table and the mulligan screen (ChimeraPictures: a small build-time file, loaded in the
         // background; Scryfall's lookup by name until then).
         ChimeraPictures.warm(app())
+        // Owner, Nov 9: phase-bar stops make Forge give this phone priority in those phases.
+        org.arcanachimera.forgehost.ArcanaForgeHost.phaseStops = java.util.function.Supplier { com.arcanatable.ChimeraPhaseStops.stops }
         ChimeraLoading.reset()
         ChimeraLoading.hosting = true
         ArcanaForgeHost.progress = java.util.function.BiConsumer { f, what -> ChimeraLoading.report(f, what) }
