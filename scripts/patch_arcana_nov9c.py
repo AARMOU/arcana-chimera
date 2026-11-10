@@ -659,3 +659,11 @@ patch("CombatStackBoard.kt", [
      '''            if (missing.isNotEmpty()) StudioText("CombatStackBoard.Text.31", "Combat and targets", true, "Must attack: ${missing.joinToString { piece(it).name }}", color = CounterGold, fontSize = 11.sp)
             ChimeraCombatExtras(selection.entries.mapNotNull { (attacker, target) -> piece(attacker).card?.let { c -> c to (riskFor(c, listOf(target))?.warn == true) } })'''),
 ])
+
+# The hidden Settings buttons above lost Kotlin's null smart cast ("if (false && x != null)"): call them null-safely.
+patch("TableDialogs.kt", [
+    ('''TextButton(onClick = onOpenStudio, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).clip(RoundedCornerShape(8.dp)).background(PanelLight).tutorialTarget("setting-adjust-ui")''',
+     '''TextButton(onClick = { onOpenStudio?.invoke() }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).clip(RoundedCornerShape(8.dp)).background(PanelLight).tutorialTarget("setting-adjust-ui")'''),
+    ('''onClick = { if (engineTrialResult?.startsWith("Running") != true) onEngineSelfTest() })''',
+     '''onClick = { if (engineTrialResult?.startsWith("Running") != true) onEngineSelfTest?.invoke() })'''),
+])
