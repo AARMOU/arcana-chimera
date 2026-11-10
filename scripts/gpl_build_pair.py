@@ -22,6 +22,8 @@ SKIP_DIRS = {".git", ".gradle", "node_modules", "__pycache__", "build", "target"
 SECRET_NAMES = {"local.properties", "google-services.json", "secrets.properties",
                 ".env", ".env.local", "credentials.json", "id_rsa"}
 SECRET_SUFFIXES = {".pem", ".key", ".p12", ".pfx", ".keystore", ".jks", ".apk", ".aab"}
+# The repo ships this public-only RSA handoff key. Never whitelist other PEMs.
+PUBLIC_PEM_ALLOWLIST = {"scripts/delivery/frankenarcana-public.pem"}
 MAX_BYTES = 8 * 1024**3
 
 
@@ -63,9 +65,16 @@ def files(repo, name):
             raise RuntimeError("Unsafe source path: " + rel)
         if any(part in SKIP_DIRS for part in path.parts):
             continue
-        if path.name.lower() in SECRET_NAMES or path.suffix.lower() in SECRET_SUFFIXES:
-            raise RuntimeError("Potential credential/release binary in source: " + rel)
         full = repo / rel
+        permitted_public_pem = (
+            name == "chimera" and rel in PUBLIC_PEM_ALLOWLIST
+            and full.is_file() and full.stat().st_size < 16384
+            and full.read_bytes().lstrip().startswith(b"-----BEGIN PUBLIC KEY-----")
+        )
+        if path.name.lower() in SECRET_NAMES or (
+            path.suffix.lower() in SECRET_SUFFIXES and not permitted_public_pem
+        ):
+            raise RuntimeError("Potential credential/release binary in source: " + rel)
         if full.is_symlink():
             raise RuntimeError("Symlink needs human audit: " + rel)
         if full.is_file():
