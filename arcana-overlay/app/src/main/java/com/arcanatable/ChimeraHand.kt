@@ -191,12 +191,12 @@ internal object ChimeraHandDesign {
             if (it.binding == "metric0") it.copy(binding = "commander", label = if (it.label.trim().uppercase().startsWith("STACK")) "COMMANDER" else it.label) else it
         }
         if (els.none { it.binding in setOf("status", "close", "menu") } && els.size <= 61) {
-            val o = l.originY; val w = l.canvasWidth; val strip = 36f
+            val o = l.originY; val w = l.canvasWidth; val strip = 44f
             els = els.map { if (it.y >= o - 1f) it.copy(y = it.y + strip) else it }
             els = els + listOf(
-                StudioElement("chimera-status", "status", "Hand 7 · Main 1 · 2 playable", 12f, o + 6f, (w / 2f - 40f).coerceAtLeast(96f), 24f, fs = 11f, r = 0f, binding = "status"),
-                StudioElement("chimera-menu", "icon", "⋮", w - 88f, o + 2f, 36f, 32f, fs = 16f, r = 8f, binding = "menu"),
-                StudioElement("chimera-close", "icon", "✕", w - 46f, o + 2f, 36f, 32f, fs = 15f, r = 8f, binding = "close"))
+                StudioElement("chimera-status", "status", "Hand 7 · Main 1 · 2 playable", 12f, o + 8f, (w / 2f - 40f).coerceAtLeast(96f), 24f, fs = 11f, r = 0f, binding = "status"),
+                StudioElement("chimera-menu", "icon", "⋮", w - 100f, o, 44f, 40f, fs = 16f, r = 8f, binding = "menu"),
+                StudioElement("chimera-close", "icon", "✕", w - 52f, o, 44f, 40f, fs = 15f, r = 8f, binding = "close"))
         }
         return l.copy(elements = els, chimera = VERSION)
     }

@@ -8,6 +8,7 @@ from __future__ import annotations
 import argparse
 import datetime as dt
 import hashlib
+import http.client
 import json
 import re
 import tarfile
@@ -40,7 +41,7 @@ COLORS = "WUBRG"
 def download(url: str, dst: Path, max_bytes: int = 250_000_000) -> None:
     if not url.startswith(API + "/"):
         raise ValueError("Refusing non-MTGJSON source")
-    for attempt in range(3):
+    for attempt in range(5):
         try:
             req = urllib.request.Request(url, headers={"User-Agent": AGENT, "Accept": "application/octet-stream"})
             with urllib.request.urlopen(req, timeout=90) as src, dst.open("wb") as out:
@@ -51,9 +52,10 @@ def download(url: str, dst: Path, max_bytes: int = 250_000_000) -> None:
                         raise ValueError("Download size cap exceeded")
                     out.write(chunk)
             return
-        except (OSError, TimeoutError):
-            if attempt == 2:
+        except (OSError, TimeoutError, http.client.HTTPException):  # IncompleteRead: a cut-off transfer, try again
+            if attempt == 4:
                 raise
+            time.sleep(2 * (attempt + 1))
             time.sleep(attempt + 1)
 
 def verified(name: str, folder: Path) -> tuple[Path, str]:

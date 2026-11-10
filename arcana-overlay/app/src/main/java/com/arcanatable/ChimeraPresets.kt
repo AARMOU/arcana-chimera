@@ -21,10 +21,10 @@ internal object ChimeraHandLayouts {
             fs = fs, r = r, strong = strong, binding = binding, color = color, textColor = text, shape = shape)
 
     private fun top(w: Float, o: Float, text: String? = null) = listOf(
-        StudioElement("chimera-status", "status", "Hand 7 · Main 1 · 2 playable", 12f, o + 6f, (w / 2f - 40f).coerceAtLeast(96f), 24f, fs = 11f, r = 0f,
+        StudioElement("chimera-status", "status", "Hand 7 · Main 1 · 2 playable", 12f, o + 8f, (w / 2f - 40f).coerceAtLeast(96f), 24f, fs = 11f, r = 0f,
             binding = "status", textColor = text),
-        StudioElement("chimera-menu", "icon", "⋮", w - 88f, o + 2f, 36f, 32f, fs = 16f, r = 8f, binding = "menu", textColor = text),
-        StudioElement("chimera-close", "icon", "✕", w - 46f, o + 2f, 36f, 32f, fs = 15f, r = 8f, binding = "close", textColor = text))
+        StudioElement("chimera-menu", "icon", "⋮", w - 100f, o, 44f, 40f, fs = 16f, r = 8f, binding = "menu", textColor = text),
+        StudioElement("chimera-close", "icon", "✕", w - 52f, o, 44f, 40f, fs = 15f, r = 8f, binding = "close", textColor = text))
 
     /** Two card slots spanning [x0]..[x1]: the drawer lays the real hand out in that area. */
     private fun slots(x0: Float, x1: Float, y: Float, cw: Float = 92f, ch: Float = 132f, r: Float = 5f): List<StudioElement> {
@@ -86,7 +86,7 @@ internal object ChimeraHandLayouts {
     // ---------------------------------------------------------------- the presets' hands
 
     fun forPreset(name: String, w: Float, h: Float, keepColours: Boolean): StudioLayout? {
-        val o = origin(w, h); val y0 = o + 40f
+        val o = origin(w, h); val y0 = o + 46f
         fun t(m: Map<String, String>) = if (keepColours) emptyMap() else m
         return when (name) {
             "Classic" -> null // Arcana as it ships: the hand you had before trying presets
@@ -126,18 +126,21 @@ internal object ChimeraHandLayouts {
                     t(theme("#0B0614", "#120A1F", "#24113A", "#FF2BD6", "#E8F7FF", "#8A7CA8", "#19E3FF")))
             }
             "Glass Cockpit" -> { // see-through drawer, a slim Pass bar on top, thin controls hugging the bottom
-                val pass = e("pass", "PASS", 12f, y0, w - 24f, 34f, fs = 11f, strong = true, shape = "pill")
-                val cy = y0 + 44f
+                val pass = e("pass", "PASS", 12f, y0, w - 24f, 44f, fs = 12f, strong = true, shape = "pill")
+                val cy = y0 + 52f
                 val by = cy + 150f + 12f
-                val bottom = row(listOf("undo" to "UNDO", "actions" to "ACTIONS", "metric1" to "LIBRARY", "metric2" to "GRAVEYARD",
-                    "metric3" to "EXILE", "cast" to "CAST", "commander" to "COMMANDER"), 12f, w - 12f, by, 42f, gap = 5f, fs = 9f, shape = "pill", strongPass = false)
-                layout(w, h, o, top(w, o) + pass + slots(12f, w - 12f, cy, 104f, 150f) + bottom, "catalogue",
+                // Owner, Nov 9 audit: at most four to a row on the folded phone, so every label fits.
+                val r1 = row(listOf("undo" to "UNDO", "actions" to "ACTIONS", "cast" to "CAST", "commander" to "COMMANDER"), 12f, w - 12f, by, 44f,
+                    gap = 6f, fs = 11f, shape = "pill", weights = mapOf("commander" to 1.4f, "actions" to 1.3f), strongPass = false)
+                val r2 = row(listOf("metric1" to "LIBRARY", "metric2" to "GRAVEYARD", "metric3" to "EXILE"), 12f, w - 12f, by + 50f, 44f,
+                    gap = 6f, fs = 10f, shape = "pill", strongPass = false)
+                layout(w, h, o, top(w, o) + pass + slots(12f, w - 12f, cy, 104f, 150f) + r1 + r2, "catalogue",
                     t(theme("#07121E", "#0B1B2B", "#12283D", "#5CC8FF", "#E4F3FF", "#87A3BA", "#9AD8FF")))
             }
             "Command Center" -> { // dense: small cards, every counter, tight spacing
-                val r1 = row(BUTTONS, 12f, w - 12f, y0, 40f, gap = 4f, fs = 10f)
-                val r2 = row(COUNTERS, 12f, w - 12f, y0 + 44f, 40f, gap = 4f, fs = 9f, strongPass = false)
-                layout(w, h, o, top(w, o) + r1 + r2 + slots(12f, w - 12f, y0 + 92f, 72f, 103f), "grid",
+                val r1 = row(BUTTONS, 12f, w - 12f, y0, 44f, gap = 4f, fs = 10f, weights = mapOf("pass" to 1.4f, "actions" to 1.2f))
+                val r2 = row(COUNTERS, 12f, w - 12f, y0 + 48f, 44f, gap = 4f, fs = 9f, weights = mapOf("commander" to 1.3f, "metric2" to 1.2f), strongPass = false)
+                layout(w, h, o, top(w, o) + r1 + r2 + slots(12f, w - 12f, y0 + 100f, 72f, 103f), "grid",
                     t(theme("#12161B", "#181E25", "#232B34", "#6FA8DC", "#E3E9EF", "#8D99A6", "#C9B26B")))
             }
             "Big & Bold" -> { // oversized buttons with large text, big cards, maximum contrast
@@ -161,24 +164,33 @@ internal object ChimeraHandLayouts {
     }
 }
 
-/** What each preset sets besides Arcana's own look values: its hand, the drawer's opacity and a built-in background. */
+/**
+ * What each preset sets besides Arcana's own look values (owner, Nov 9, round 2 of the mock-ups): its screen layout
+ * (seven are whole-screen layouts, ChimeraSkins), typeface, hand design, drawer opacity, colours and a built-in background.
+ */
 internal object ChimeraPresets {
-    data class Before(val hand: StudioLayout?, val opacity: Float)
+    data class Before(val hand: StudioLayout?, val opacity: Float, val skin: String = ChimeraSkins.id, val font: String = ChimeraSkins.classicFontName)
 
-    private val opacity = mapOf("Glass Cockpit" to 0.25f, "Zen Garden" to 0.9f)
-    private val backdrop = mapOf("War Table" to "felt", "Grimoire" to "wood", "Arcade Cabinet" to "neon", "Glass Cockpit" to "starfield",
-        "Command Center" to "slate", "Zen Garden" to "dusk")
-    /** Table colours for presets with a look of their own (the hand designs carry theirs). */
+    private val skin = mapOf("Duel Arena" to "arena", "Orbit" to "orbit", "Across the Table" to "across", "Feed" to "feed",
+        "Terminal" to "terminal", "Focus" to "focus", "Storybook" to "storybook")
+    private val font = mapOf("Glass Cockpit" to "condensed", "Command Center" to "mono")
+    private val opacity = mapOf("Glass Cockpit" to 0.25f)
+    private val backdrop = mapOf("Glass Cockpit" to "starfield", "Command Center" to "slate")
+    /** Table colours for the presets on Arcana's own screen (the hand designs carry theirs). */
     private val tableTheme = mapOf(
-        "Duelist's Gauntlet" to mapOf("background" to "#0C1114", "panel" to "#141B1F", "raised" to "#1F292E", "accent" to "#2EC4B6", "text" to "#E6F1F0", "muted" to "#8FA3A8", "gold" to "#D9B65B"),
-        "War Table" to mapOf("background" to "#0B150F", "panel" to "#112018", "raised" to "#1B3024", "accent" to "#C9A24A", "text" to "#F1E8D0", "muted" to "#9DAA94", "gold" to "#E3C46B"),
-        "Grimoire" to mapOf("background" to "#171009", "panel" to "#241812", "raised" to "#35241C", "accent" to "#A13A3A", "text" to "#F3E6C8", "muted" to "#B9A586", "gold" to "#D8B76A"),
-        "Arcade Cabinet" to mapOf("background" to "#08040F", "panel" to "#120A1F", "raised" to "#24113A", "accent" to "#FF2BD6", "text" to "#E8F7FF", "muted" to "#8A7CA8", "gold" to "#19E3FF"),
         "Glass Cockpit" to mapOf("background" to "#050D16", "panel" to "#0B1B2B", "raised" to "#12283D", "accent" to "#5CC8FF", "text" to "#E4F3FF", "muted" to "#87A3BA", "gold" to "#9AD8FF"),
-        "Zen Garden" to mapOf("background" to "#171914", "panel" to "#23261F", "raised" to "#30342B", "accent" to "#9DB08A", "text" to "#EEE6D3", "muted" to "#A9A38F", "gold" to "#D8C79A"),
+        "Command Center" to mapOf("background" to "#12161B", "panel" to "#181E25", "raised" to "#232B34", "accent" to "#6FA8DC", "text" to "#E3E9EF", "muted" to "#8D99A6", "gold" to "#C9B26B"),
     )
 
     fun opacity(name: String) = opacity[name] ?: 1f
+
+    /** Switches the screen layout and typeface for [name] (Back restores them from [Before]). */
+    fun screen(name: String) {
+        ChimeraSkins.set(skin[name].orEmpty())
+        ChimeraSkins.setClassicFont(font[name].orEmpty())
+    }
+
+    fun restore(before: Before) { ChimeraSkins.set(before.skin); ChimeraSkins.setClassicFont(before.font); ChimeraDrawer.set(before.opacity) }
 
     /** The controls project with the preset's own colours and background (unless you keep your colours). */
     fun project(context: Context, project: StudioControlProject, name: String, keepColours: Boolean): StudioControlProject {

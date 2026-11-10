@@ -152,7 +152,7 @@ patch("StudioLayout.kt", [
     ("""            } else if (e.binding !in bindings) add("${e.id}: unknown action binding.")""",
      """            } else if (e.binding !in bindings && e.binding !in ChimeraHandDesign.EXTRA_BINDINGS) add("${e.id}: unknown action binding.")"""),
     ("""            if (e.kind != "card" && (e.w < 44 || e.h < 44)) put(e.id, "Hard to tap: smaller than 44.")""",
-     """            if (e.kind != "card" && e.kind != "status" && (e.w < 44 || e.h < 44)) put(e.id, "Hard to tap: smaller than 44.")"""),
+     """            if (e.kind != "card" && e.kind != "status" && e.kind != "icon" && (e.w < 44 || e.h < 44)) put(e.id, "Hard to tap: smaller than 44.")"""),
     ("""                    e.optDouble("alpha",1.0).toFloat())
             }, obj.optInt("snap",8),""",
      """                    e.optDouble("alpha",1.0).toFloat(), e.optString("shape").takeIf { it in setOf("square","pill","round") }.orEmpty())
@@ -421,24 +421,22 @@ patch("StudioPresets.kt", [
     // None uses "Minimal" (it hides live text, including some button text) and none hides the main button row.
     val all=listOf(
         StudioPreset("Classic","Arcana as it ships",CLASSIC_LOOK,"Balanced",emptySet(),"both","Table default"),
-        StudioPreset("Duelist's Gauntlet","One hand on the folded phone: Pass under your thumb, cards fanned above",StudioLook(0.95f,0.85f,1.1f,1.1f),"Balanced",
-            setOf("fullTableLabel"),"turn",null),
-        StudioPreset("War Table","For the open Fold: a console of buttons beside big cards, brass on green felt",StudioLook(1.1f,1.1f,1f,1.15f),"Balanced",
-            setOf("fullTableLabel"),"both",null),
-        StudioPreset("Grimoire","Your hand as a spellbook with bookmark tabs, parchment and oxblood on dark wood",StudioLook(1f,1.2f,1f,1.05f),"Balanced",
-            setOf("fullTableLabel","timer"),"round",null),
-        StudioPreset("Arcade Cabinet","Chunky cabinet controls, scoreboard counters, neon on black",StudioLook(1.05f,0.9f,1.2f,1.15f),"Balanced",
-            setOf("fullTableLabel"),"turn",null),
-        StudioPreset("Glass Cockpit","A see-through drawer so the battlefield always shows; cards in a carousel",StudioLook(1f,1f,0.95f,1f),"Balanced",
+        StudioPreset("Glass Cockpit","A see-through cockpit over a starfield: condensed type, outlined pills, a card carousel",StudioLook(1f,1f,0.95f,1f),"Balanced",
             setOf("fullTableLabel","engineThinking"),"turn",null),
-        StudioPreset("Command Center","Every number and piece of information, dense and small",StudioLook(0.85f,0.8f,0.9f,0.85f),"Detailed",
-            emptySet(),"both","Slate"),
-        StudioPreset("Big & Bold","Oversized buttons and cards, maximum contrast",StudioLook(1.2f,1.1f,1.3f,1.3f),"Balanced",
-            setOf("fullTableLabel","timer"),"turn","Monochrome"),
-        StudioPreset("Zen Garden","Calm: one row of cards, soft pills, room to breathe",StudioLook(1.05f,1.9f,1.05f,1.05f),"Balanced",
-            setOf("fullTableLabel","engineThinking","timer"),"round",null),
-        StudioPreset("Battlefield First","The table takes over: big battlefield cards, every hand button on one compact strip",StudioLook(1.3f,1.15f,0.9f,0.9f),"Balanced",
-            setOf("fullTableLabel","engineThinking","timer"),"round",null),
+        StudioPreset("Command Center","A data dashboard: mono numbers, slate panels, dense small cards, every count shown",StudioLook(0.85f,0.8f,0.9f,0.85f),"Detailed",
+            emptySet(),"both",null),
+        StudioPreset("Duel Arena","Portraits and life rings, cards facing off across a centre line, a fanned hand and a Pass orb",CLASSIC_LOOK,"Balanced",
+            emptySet(),"both",null),
+        StudioPreset("Orbit","A phase dial, life rings, an arc of cards and buttons circling a Pass orb",CLASSIC_LOOK,"Balanced",emptySet(),"both",null),
+        StudioPreset("Across the Table","Two playmats on a wooden table, the opponent's turned to face them, every button in a rail",CLASSIC_LOOK,"Balanced",
+            emptySet(),"both",null),
+        StudioPreset("Feed","The game as a chat: what happened as messages, your hand as attachments, buttons as reply chips",CLASSIC_LOOK,"Balanced",
+            emptySet(),"both",null),
+        StudioPreset("Terminal","Green on black, all text: lists for the board and hand, commands for the buttons",CLASSIC_LOOK,"Balanced",
+            emptySet(),"both",null),
+        StudioPreset("Focus","Only the decision in front of you; everything else behind a tab bar",CLASSIC_LOOK,"Balanced",emptySet(),"both",null),
+        StudioPreset("Storybook","Comic panels on paper: inked borders, the opponent's moves as story, bold lettering",CLASSIC_LOOK,"Balanced",
+            emptySet(),"both",null),
     )
 '''),
 ])
@@ -456,6 +454,7 @@ patch("StudioEditorPanels.kt", [
                         runtime.change(StudioPresets.project(trying!!.first,preset,keepColours))""",
      """                        if(trying==null)trying=runtime.draft to look.read()
                         if(chimeraBefore==null)chimeraBefore=ChimeraPresets.Before(if(runtime.hasPendingHand())runtime.handDraft() else null,ChimeraDrawer.opacity)
+                        ChimeraPresets.screen(preset.name)
                         tryingPreset=preset.name
                         look.write(preset.look)
                         // Chimera: the preset's hand design, colours, background and drawer opacity come with it (Back undoes all).
@@ -465,7 +464,7 @@ patch("StudioEditorPanels.kt", [
     ("""                    Button(onClick={trying=null;StudioLog.add("Preset kept: $tryingPreset");tryingPreset=null},""",
      """                    Button(onClick={trying=null;chimeraBefore=null;StudioLog.add("Preset kept: $tryingPreset");tryingPreset=null},"""),
     ("""                    OutlinedButton(onClick={look.write(before);runtime.change(project);trying=null;""",
-     """                    OutlinedButton(onClick={look.write(before);runtime.change(project,chimeraBefore?.hand);chimeraBefore?.let{ChimeraDrawer.set(it.opacity)};chimeraBefore=null;trying=null;"""),
+     """                    OutlinedButton(onClick={look.write(before);runtime.change(project,chimeraBefore?.hand);chimeraBefore?.let{ChimeraPresets.restore(it)};chimeraBefore=null;trying=null;"""),
 ])
 
 # ================================================================== Nov 9, second list (owner: "Go")
@@ -697,4 +696,16 @@ patch("TableOverlays.kt", [
         ArgentumBlockBoard(sample, StudioPreviews::piece, busy = false, onConfirm = {}, onDismiss = { studioPreview = null })
     }
     if (previewing == "Opening hand" && !argentumMulliganPrompt) StudioScreen("Opening hand") { ArgentumOpeningHandScreen("""),
+])
+
+# ================================================================== stage 3: whole-screen layouts and app-wide typeface
+patch("MainActivity.kt", [
+    ("""            TableMainLayout()
+            TableOverlays()""",
+     """            if (ChimeraSkins.active(t)) ChimeraSkinScreen(t) else TableMainLayout() // owner, Nov 9: preset screen layouts
+            TableOverlays()"""),
+    ("""        CompositionLocalProvider(LocalStudioControls provides studioRuntime,""",
+     """        CompositionLocalProvider(androidx.compose.material3.LocalTextStyle provides androidx.compose.material3.LocalTextStyle.current.merge(
+            androidx.compose.ui.text.TextStyle(fontFamily = ChimeraSkins.classicFont())), // preset typeface (Glass Cockpit, Command Center)
+            LocalStudioControls provides studioRuntime,"""),
 ])
