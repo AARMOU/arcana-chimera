@@ -686,8 +686,11 @@ public final class ArcanaForgeHost {
         aiTuned = game;
         game.AI_TIMEOUT = Math.max(1, Math.min(game.AI_TIMEOUT, aiTimeoutSeconds)); // copies for rollouts inherit it
         game.AI_FLAT_MONTE_CARLO = aiStrength != AiStrength.OFF;
-        game.AI_FLAT_MONTE_CARLO_MAX = aiStrength == AiStrength.MAX;
-        game.AI_FLAT_MONTE_CARLO_LITE = aiStrength == AiStrength.LITE;
+        // Owner, Nov 10: the app now gets more memory (less time cleaning it up), but Brutal keeps the phone-sized search it
+        // has always had here; Forge would switch to its slower desktop search once the app has over 768 MB.
+        boolean phoneSearch = onAndroid() && aiStrength == AiStrength.MAX;
+        game.AI_FLAT_MONTE_CARLO_MAX = aiStrength == AiStrength.MAX && !phoneSearch;
+        game.AI_FLAT_MONTE_CARLO_LITE = aiStrength == AiStrength.LITE || phoneSearch;
         System.out.println("Forge AI strength " + aiStrength + ", heap " + (Runtime.getRuntime().maxMemory() >> 20) + " MB");
     }
 
@@ -1044,6 +1047,10 @@ public final class ArcanaForgeHost {
     public static volatile java.util.function.BiFunction<String, String, String> pictures;
 
     /** {@code ownerSeat}: whose deck the card is from, for the art chosen in that deck (Change art). */
+    private static boolean onAndroid() {
+        try { Class.forName("android.os.Build"); return true; } catch (Throwable e) { return false; }
+    }
+
     private static boolean allPlayers(Iterable<?> choices) {
         boolean any = false;
         for (Object o : choices) { if (!(o instanceof Player)) return false; any = true; }

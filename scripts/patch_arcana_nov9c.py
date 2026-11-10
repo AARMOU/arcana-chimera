@@ -476,3 +476,15 @@ patch("MainActivity.kt", [
                     }
                 }'''),
 ])
+
+# More memory for the app (owner, Nov 10): memory clean-up took about a third of the AI's thinking time at 512 MB.
+manifest = Path(sys.argv[1]) / "src/main/AndroidManifest.xml"
+m = manifest.read_text()
+old = '''    <application
+        android:allowBackup="true"'''
+if m.count(old) != 1:
+    sys.exit(f"patch_arcana_nov9c: AndroidManifest.xml: expected 1 match, found {m.count(old)}")
+manifest.write_text(m.replace(old, '''    <application
+        android:largeHeap="true"
+        android:allowBackup="true"'''))
+print("patched AndroidManifest.xml (large heap)")
