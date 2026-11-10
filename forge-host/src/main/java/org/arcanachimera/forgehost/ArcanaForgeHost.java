@@ -1783,8 +1783,19 @@ public final class ArcanaForgeHost {
             for (forge.game.GameEntity d : combat.getDefenders()) if (forge.game.combat.CombatUtil.canAttack(c, d)) targets.put(d instanceof Card dc ? cardId(dc) : idOf(d));
             if (targets.length() > 0) { valid.put(cardId(c)); byAttacker.put(cardId(c), targets); }
         }
+        // Creatures that must attack ("attacks each combat if able", goad): Forge rejects any declaration without them
+        // (owner, Nov 9 23:22: "Pass to my turn" declared no attack and Forge said "Attack declaration invalid" forever).
+        JSONArray mandatory = new JSONArray();
+        try {
+            forge.game.combat.AttackConstraints constraints = new forge.game.combat.AttackConstraints(combat);
+            Map<Card, forge.game.GameEntity> legal = constraints.getLegalAttackers().getLeft();
+            for (Map.Entry<Card, forge.game.combat.AttackRequirement> r : constraints.getRequirements().entrySet()) {
+                if (r.getValue() != null && r.getValue().hasRequirement() && legal.containsKey(r.getKey()) && byAttacker.has(cardId(r.getKey())))
+                    mandatory.put(cardId(r.getKey()));
+            }
+        } catch (RuntimeException ignored) { } // the declaration board still works; Forge reports a bad declaration
         return action("DeclareAttackers", "Declare attackers", new JSONObject().put("type", "DeclareAttackers").put("playerId", this.me).put("attackers", new JSONObject()))
-                .put("validAttackers", valid).put("mandatoryAttackers", new JSONArray()).put("attackTargetsByAttacker", byAttacker).put("validAttackTargets", generic);
+                .put("validAttackers", valid).put("mandatoryAttackers", mandatory).put("attackTargetsByAttacker", byAttacker).put("validAttackTargets", generic);
     }
 
     private JSONObject blockAction(Input input, Player me) throws Exception {

@@ -188,3 +188,9 @@ internal object ChimeraHomeArt {
     fun fullCard(url: String): String =
         CardImages.atSize(url, "normal").replace("version=art_crop", "version=normal")
 }
+
+/** Small bits of in-game memory for Chimera's automatic steps. */
+internal object ChimeraPlayState {
+    /** The turn "Pass to my turn" last declared an attack for you on (it tries once per turn). */
+    @Volatile var autoAttackTurn = -1
+}

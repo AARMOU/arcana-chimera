@@ -273,7 +273,11 @@ patch("TableEffects.kt", [
                 val plan = snapshot.legalActions.firstNotNullOfOrNull { ArgentumAttackPlan.from(it) }
                 val epoch = plan?.let { ArgentumActions.epochFor(it.legalAction, snapshot.interactionEpoch) }
                 val must = plan?.options.orEmpty().filter { it.mandatory }.associate { it.attackerId to it.targets.first() }
-                if (plan != null && epoch != null && submitArgentumAction(plan.buildAction(must), epoch)) {
+                // Once per turn: if Forge rejects it (a creature must attack), stop and let you declare (owner, Nov 9 23:22:
+                // it used to try again forever).
+                val again = ChimeraPlayState.autoAttackTurn == snapshot.turnNumber
+                ChimeraPlayState.autoAttackTurn = snapshot.turnNumber
+                if (!again && plan != null && epoch != null && submitArgentumAction(plan.buildAction(must), epoch)) {
                     recordDiagnostic("Pass to my turn: declared ${if (must.isEmpty()) "no attack" else "${must.size} required attacker(s)"}", DiagnosticCategory.ACTION)
                 } else {
                     passToMyTurnFrom = null
