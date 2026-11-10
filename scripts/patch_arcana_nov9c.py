@@ -614,3 +614,48 @@ patch("CardZoom.kt", [
      '''                ChimeraZoomCounters(card, width)
                 if (!card.imageUrl.isNullOrBlank() && card.type.endsWith("ability", ignoreCase = true)) card.oracleText?.let { what ->'''),
 ])
+
+# ---- Owner, Nov 10, chosen features (ChimeraFeatures.kt): coach, combat preview extras, board summary, opponents'
+# decks after a game, deck stats and goldfishing, game history and replays.
+patch("TableArgentum.kt", [
+    ('''        "mulliganComplete" -> { argentumMulliganPrompt = false;''',
+     '''        "chimeraCoach" -> ChimeraCoach.answer = incoming.optString("text").ifBlank { "The coach had nothing to say." }
+        "mulliganComplete" -> { argentumMulliganPrompt = false;'''),
+    ('''            argentumMatchUnfinished = incoming.optBoolean("matchUnfinished")
+            setArgentumGameActive(false)''',
+     '''            argentumMatchUnfinished = incoming.optBoolean("matchUnfinished")
+            ChimeraReveal.data = incoming.optJSONObject("chimeraReveal")
+            setArgentumGameActive(false)'''),
+])
+patch("TableOverlays.kt", [
+    ('''    ChimeraConcedeDialog { recordDiagnostic("Player conceded", DiagnosticCategory.ACTION);''',
+     '''    ChimeraFeatureLayer()
+    ChimeraConcedeDialog { recordDiagnostic("Player conceded", DiagnosticCategory.ACTION);'''),
+    ('''"Turn ${argentumSnapshot?.turnNumber ?: turnNumber} · ${formatClock(elapsedGameSeconds)}", color = Muted, fontSize = 12.sp, modifier = Modifier.padding(top = 6.dp))''',
+     '''"Turn ${argentumSnapshot?.turnNumber ?: turnNumber} · ${formatClock(elapsedGameSeconds)}", color = Muted, fontSize = 12.sp, modifier = Modifier.padding(top = 6.dp))
+                    ChimeraGameOverExtras()'''),
+])
+patch("TableMainLayout.kt", [
+    ('''                                StudioDropdownMenuItem("TableMainLayout.DropdownMenuItem.24",''',
+     '''                                if (argentumEnabled && gameInProgress) DropdownMenuItem(text = { Text("Board summary") }, onClick = { topMenuExpanded = false; topMenuSection = null; ChimeraFeatures.boardOpen = true })
+                                if (argentumEnabled && gameInProgress && ChimeraFeatureSettings.coach) DropdownMenuItem(text = { Text("Coach: what would the AI do?") }, onClick = { topMenuExpanded = false; topMenuSection = null; ChimeraCoach.ask(this@TableMainLayout) })
+                                DropdownMenuItem(text = { Text("Game history") }, onClick = { topMenuExpanded = false; topMenuSection = null; ChimeraFeatures.historyOpen = true })
+                                StudioDropdownMenuItem("TableMainLayout.DropdownMenuItem.24",'''),
+])
+patch("HomeScreen.kt", [
+    ('''                            ) { StudioText("HomeScreen.Text.15", "Home and setup", false, "Import new", color = SoftWhite, fontWeight = FontWeight.Bold) }
+                        }''',
+     '''                            ) { StudioText("HomeScreen.Text.15", "Home and setup", false, "Import new", color = SoftWhite, fontWeight = FontWeight.Bold) }
+                        }
+                        ChimeraHomeButtons(enabled = true)'''),
+])
+patch("TableDialogs.kt", [
+    ('''                ChimeraVibrationSetting()''',
+     '''                ChimeraVibrationSetting()
+                ChimeraFeatureSettingsRows()'''),
+])
+patch("CombatStackBoard.kt", [
+    ('''            if (missing.isNotEmpty()) StudioText("CombatStackBoard.Text.31", "Combat and targets", true, "Must attack: ${missing.joinToString { piece(it).name }}", color = CounterGold, fontSize = 11.sp)''',
+     '''            if (missing.isNotEmpty()) StudioText("CombatStackBoard.Text.31", "Combat and targets", true, "Must attack: ${missing.joinToString { piece(it).name }}", color = CounterGold, fontSize = 11.sp)
+            ChimeraCombatExtras(selection.entries.mapNotNull { (attacker, target) -> piece(attacker).card?.let { c -> c to (riskFor(c, listOf(target))?.warn == true) } })'''),
+])

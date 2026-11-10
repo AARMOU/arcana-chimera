@@ -449,6 +449,14 @@ public final class ArcanaForgeHost {
                 bottom(you, message.optJSONArray("cardIds"));
             }
             case "concede" -> you.concede();
+            case "coachRequest" -> { // owner, Nov 10: coach mode, "What would the AI do?"
+                Thread t = new Thread(() -> {
+                    String text;
+                    try { text = coach(); } catch (Throwable e) { text = "The coach couldn't think this one through (" + e.getClass().getSimpleName() + ")."; }
+                    try { sink.accept(new JSONObject().put("type", "chimeraCoach").put("text", text)); } catch (Exception ignored) { }
+                }, "forge-coach");
+                t.setDaemon(true); t.start();
+            }
             case "requestResync" -> { // after a reconnect: send the open question or mulligan offer again
                 Input now = you.getInputQueue().getActualInput(you);
                 String kind = inputClassName(now);
@@ -556,6 +564,8 @@ public final class ArcanaForgeHost {
             Input now = you.getInputQueue().getActualInput(you);
             String kind = inputClassName(now);
             if (pending != null || !(now instanceof InputPassPriority || kind.equals("InputAttack") || kind.equals("InputBlock"))) {
+                // Owner list, Nov 10: Pass while a question is open brings the question back instead of a refusal.
+                if (pending != null) { emitDecision(); return; }
                 reject("Forge isn't offering a pass right now; answer the open question first.");
                 scheduleEmit();
                 return;
@@ -724,7 +734,7 @@ public final class ArcanaForgeHost {
                 } catch (AskedWhilePricing asked) { payable = true; } // Forge will ask while paying
                 finally { PRICING.set(false); }
                 if (!asksWhilePricing(paidFor) && !payable) {
-                    error("You can't pay " + cost + " for " + source + " right now, so it was skipped.");
+                    note("You can't pay " + cost + " for " + source + " right now, so it was skipped."); // a note, not an error (owner list, Nov 10)
                     cancel(you);
                     return;
                 }
@@ -789,7 +799,8 @@ public final class ArcanaForgeHost {
                     .put("legalActions", new JSONArray()).put("pendingDecision", JSONObject.NULL).put("stateVersion", ++version)
                     .put("interactive", false).put("interactionEpoch", "forge-" + version).put("priorityMode", "auto"), "top"));
             sink.accept(new JSONObject().put("type", "gameOver").put("winnerId", winnerId(game))
-                    .put("reason", you.getPlayer().hasLost() && !game.isGameOver() ? "ELIMINATED" : "GAME_OVER"));
+                    .put("reason", you.getPlayer().hasLost() && !game.isGameOver() ? "ELIMINATED" : "GAME_OVER")
+                    .put("chimeraReveal", reveal(game, you.getPlayer())));
             return;
         }
         if (gameOverSent) return;
@@ -882,6 +893,84 @@ public final class ArcanaForgeHost {
         return fill(new JSONObject().put("type", "stateUpdate").put("state", state(game, you.getPlayer()))
                 .put("legalActions", new JSONArray()).put("pendingDecision", JSONObject.NULL).put("stateVersion", ++version)
                 .put("interactive", false).put("interactionEpoch", "forge-" + version).put("priorityMode", "auto"), "top");
+    }
+
+    /**
+     * After a game (owner, Nov 10): each AI's deck, and the cards that dealt you the most damage (from Forge's log).
+     */
+    private JSONObject reveal(Game game, Player me) {
+        JSONObject out = new JSONObject();
+        try {
+            JSONArray decks = new JSONArray();
+            for (Player p : game.getRegisteredPlayers()) {
+                if (p == me || !p.isAI() || p.getRegisteredPlayer() == null) continue;
+                forge.deck.Deck d = p.getRegisteredPlayer().getDeck();
+                JSONArray cards = new JSONArray();
+                for (Map.Entry<forge.item.PaperCard, Integer> e : d.getMain()) cards.put(new JSONObject().put("name", e.getKey().getName()).put("count", e.getValue()));
+                String commander = d.getCommanders().isEmpty() ? null : d.getCommanders().get(0).getName();
+                decks.put(new JSONObject().put("player", p.getName()).put("commander", commander == null ? JSONObject.NULL : commander)
+                        .put("lost", p.hasLost()).put("cards", cards));
+            }
+            out.put("decks", decks);
+            Map<String, Integer> hurt = new LinkedHashMap<>();
+            java.util.regex.Pattern dmg = java.util.regex.Pattern.compile("^(?:Damage: )?(.+?) deals (\\d+) (?:combat |non-combat |noncombat )?damage to (.+?)\\.?$");
+            for (forge.game.GameLogEntry e : game.getGameLog().getAllEntries()) {
+                if (e.type() != forge.game.GameLogEntryType.DAMAGE) continue;
+                java.util.regex.Matcher m = dmg.matcher(e.message().trim());
+                if (m.find() && m.group(3).trim().startsWith(me.getName()))
+                    hurt.merge(m.group(1).trim().replaceAll(" \\(\\d+\\)$", ""), Integer.parseInt(m.group(2)), Integer::sum);
+            }
+            JSONArray top = new JSONArray();
+            hurt.entrySet().stream().sorted((a, b) -> b.getValue() - a.getValue()).limit(5)
+                    .forEach(en -> top.put(new JSONObject().put("source", en.getKey()).put("damage", en.getValue())));
+            out.put("hurtYou", top);
+        } catch (RuntimeException e) { System.err.println("reveal failed: " + describe(e)); }
+        return out;
+    }
+
+    /**
+     * Coach mode (owner, Nov 10): Forge's AI looks at a copy of the game from your seat and says what it would do now.
+     * The real game is never touched; the copy is thrown away.
+     */
+    private String coach() {
+        Game game = match == null ? null : match.getGame();
+        PlayerControllerHuman you = humanController();
+        if (game == null || you == null) return "The coach needs a game in progress.";
+        Player me = you.getPlayer();
+        if (game.getPhaseHandler().getPriorityPlayer() != me) return "Ask again when it's your move: the coach suggests plays when you have priority.";
+        forge.ai.simulation.GameCopier copier = new forge.ai.simulation.GameCopier(game);
+        Game copy = copier.makeCopy();
+        Player cme = copy.getPlayer(me.getId());
+        if (cme == null || !(cme.getController() instanceof forge.ai.PlayerControllerAi ai)) return "The coach couldn't take your seat in its copy of the game.";
+        List<String> lines = new ArrayList<>();
+        List<SpellAbility> plays = ai.getAi().chooseSpellAbilityToPlay();
+        if (plays != null) for (SpellAbility sa : plays) {
+            if (sa == null) continue;
+            String what = sa.isLandAbility() ? "Play " + sa.getHostCard().getName()
+                    : sa.isSpell() ? "Cast " + sa.getHostCard().getName()
+                    : "Use " + sa.getHostCard().getName() + ": " + sa.getDescription();
+            List<String> targets = new ArrayList<>();
+            for (SpellAbility part = sa; part != null; part = part.getSubAbility())
+                if (part.getTargets() != null) for (Object t : part.getTargets()) targets.add(t instanceof Card c ? c.getName() : t instanceof Player p ? (p == cme ? "you" : p.getName()) : String.valueOf(t));
+            lines.add(what + (targets.isEmpty() ? "" : " → " + String.join(", ", targets)));
+        }
+        boolean myTurn = copy.getPhaseHandler().isPlayerTurn(cme);
+        forge.game.phase.PhaseType ph = copy.getPhaseHandler().getPhase();
+        if (lines.isEmpty() && myTurn && ph != null && ph.isBefore(forge.game.phase.PhaseType.COMBAT_DECLARE_ATTACKERS)) {
+            try {
+                forge.game.combat.Combat combat = new forge.game.combat.Combat(cme);
+                new forge.ai.AiAttackController(cme).declareAttackers(combat);
+                Map<String, List<String>> byDefender = new LinkedHashMap<>();
+                for (Card a : combat.getAttackers()) {
+                    Object d = combat.getDefenderByAttacker(a);
+                    String name = d instanceof Player p ? p.getName() : d instanceof Card c ? c.getName() : "?";
+                    byDefender.computeIfAbsent(name, k -> new ArrayList<>()).add(a.getName());
+                }
+                byDefender.forEach((d, as) -> lines.add("Attack " + d + " with " + String.join(", ", as)));
+            } catch (RuntimeException ignored) { }
+        }
+        if (lines.isEmpty()) return "Pass: the AI wouldn't do anything right now.";
+        return String.join("\n", lines);
     }
 
     private Object winnerId(Game game) {
