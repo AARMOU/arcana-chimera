@@ -585,3 +585,11 @@ patch("TableDialogs.kt", [
      '''                SettingsToggle("Skip AI actions unless needed", "Offline games: pass over AI spells and abilities unless they affect you. Prompts and blocks still stop the game.", quietOpponentTurns, onQuietOpponentTurns, Modifier)
                 ChimeraVibrationSetting()'''),
 ])
+
+# The commander chip in the zone strip (owner, Nov 10: "covered by its power/toughness"): the picture alone, without the
+# battlefield badges (power/toughness, NEW) that covered it at this size.
+patch("TableBoardViews.kt", [
+    ('''                            CardFace(commander, Modifier.width(29.dp), onClick = { if (castable) onCastCommander() else onPublicPreview(commander) }, onLongClick = { onPublicPreview(commander) }, showCounters = false)''',
+     '''                            CardArt(commanderArtOnly(commander.imageUrl) ?: commander.imageUrl.orEmpty(), Modifier.width(34.dp).height(40.dp).clip(RoundedCornerShape(topStart = 9.dp, bottomStart = 9.dp)),
+                                contentScale = ContentScale.Crop, fallbackName = commander.name)'''),
+])
