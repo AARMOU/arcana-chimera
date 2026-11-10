@@ -193,8 +193,11 @@ patch("StudioHandCanvas.kt", [
     ("""                val grow = !editing && e.kind != "card\"""",
      """                val grow = !editing && e.kind != "card" && e.kind != "status" && e.kind != ChimeraHandFit.REGION"""),
     ("""                    if (e.kind=="card" && card!=null) CardFace(card,Modifier.fillMaxSize()""",
-     """                    if (e.kind == ChimeraHandFit.REGION) ChimeraHandCards(layout.cards, state.cards, state.playable, state.selected, state.highlighted,
-                        onCard, onPreview, Modifier.fillMaxSize())
+     """                    if (e.kind == ChimeraHandFit.REGION) Box(Modifier.fillMaxSize()) {
+                        ChimeraHandCards(layout.cards, state.cards, state.playable, state.selected, state.highlighted, onCard, onPreview, Modifier.fillMaxSize())
+                        if (editing) Text("Cards · " + (ChimeraHandDesign.CARD_STYLES.firstOrNull { it.first == layout.cards }?.second ?: "Grid"),
+                            fontSize = 11.sp, color = Panel, modifier = Modifier.align(Alignment.TopStart).background(StudioEditorRequests.chromeGold, RoundedCornerShape(4.dp)).padding(horizontal = 6.dp, vertical = 2.dp))
+                    }
                     else if (e.kind == "status") Box(Modifier.fillMaxSize().testTag("studio-element-${e.id}")
                         .then(if (editing) Modifier.clickable { onSelectElement(e.id) } else ChimeraDrawerTop.drag)
                         .then(e.color?.let(::parseTableColorHex)?.let { Modifier.background(it, shape) } ?: Modifier)
@@ -587,4 +590,111 @@ patch("CardZoom.kt", [
                         modifier = Modifier.width(width).background(Color(0xCC1A1F1D), RoundedCornerShape(10.dp)).padding(10.dp))
                 }
                 StudioText("CardZoom.Text.7", "Dialogs and overlays", false, "Tap anywhere to close","""),
+])
+
+# ================================================================== stage 2: Studio adapts to the screen; the editor stays out of the way
+# 3 + 10. Designs spread or squeeze with the screen (heights and text at most +-25%); landscape moves rows into a column.
+patch("StudioHandCanvas.kt", [
+    ("""        val scale = maxWidth.value / layout.canvasWidth.takeIf {it.isFinite()}?.coerceIn(240f,2000f).let {it ?: 412f}""",
+     """        val chimeraRaw = maxWidth.value / layout.canvasWidth.takeIf {it.isFinite()}?.coerceIn(240f,2000f).let {it ?: 412f}
+        // Chimera (owner, Nov 9): in play a design spreads out or squeezes with the screen instead of zooming; the editor
+        // shows it exactly as designed.
+        val scale = if (editing) chimeraRaw else ChimeraAdapt.scale(chimeraRaw)
+        val chimeraSx = chimeraRaw / scale"""),
+    ("""        val fitted = (if (!editing && fitHeight != androidx.compose.ui.unit.Dp.Unspecified && fitHeight.value > 0f)
+            ChimeraHandFit.fit(renderElements, state.cards.size, fitHeight.value / scale, origin, layout.cards) else renderElements)""",
+     """        val chimeraSpread = if (editing) renderElements else renderElements.map { ChimeraAdapt.spread(it, chimeraSx) }
+            .let { if (fitHeight != androidx.compose.ui.unit.Dp.Unspecified && fitHeight.value > 0f)
+                ChimeraAdapt.columnize(it, maxWidth.value / scale, fitHeight.value / scale, origin) else it }
+        // In the editor, a Fan, Row or Catalogue design shows the cards area as one piece with your real hand in it.
+        val chimeraEditCards = editing && layout.cards != "grid" && chimeraSpread.any { it.kind == "card" }
+        val chimeraEditing = if (!chimeraEditCards) chimeraSpread else chimeraSpread.filter { it.kind != "card" } + chimeraSpread.filter { it.kind == "card" }.let { cs ->
+            val l = cs.minOf { it.x }; val t = cs.minOf { it.y }
+            cs.first().copy(id = ChimeraHandFit.REGION, kind = ChimeraHandFit.REGION, binding = ChimeraHandFit.REGION, x = l, y = t,
+                w = cs.maxOf { it.x + it.w } - l, h = cs.maxOf { it.y + it.h } - t)
+        }
+        val fitted = (if (!editing && fitHeight != androidx.compose.ui.unit.Dp.Unspecified && fitHeight.value > 0f)
+            ChimeraHandFit.fit(chimeraEditing, state.cards.size, fitHeight.value / scale, origin, layout.cards) else chimeraEditing)"""),
+])
+# 10. One hand design for every orientation and fold state (a Studio switch keeps a separate landscape one).
+patch("StudioLayout.kt", [
+    ("""    private val key = "studio_native_v1_hand_$orientation"+if(profile=="Default")"" else "_$profile\"""",
+     """    private val key = "studio_native_v1_hand_${ChimeraOrientation.handKey(prefs, orientation)}"+if(profile=="Default")"" else "_$profile\""""),
+    ("""        check(stage(prefs.edit(),layout).putString("studio_active_v1_$orientation",profile).commit()) { "Could not save layout." }""",
+     """        check(stage(prefs.edit(),layout).putString("studio_active_v1_${ChimeraOrientation.handKey(prefs, orientation)}",profile).commit()) { "Could not save layout." }"""),
+    ("""    private val namesKey="studio_profiles_v1_$orientation"
+    private val activeKey="studio_active_v1_$orientation\"""",
+     """    private val namesKey="studio_profiles_v1_${ChimeraOrientation.handKey(prefs, orientation)}"
+    private val activeKey="studio_active_v1_${ChimeraOrientation.handKey(prefs, orientation)}\""""),
+])
+patch("StudioHandEditor.kt", [
+    # 8. The editor shows only the design's own status line, menu and close (no second top line).
+    ("""            // Owner note 36: the same one-line top the game draws above the design, so editor and game match.
+            Row(Modifier.fillMaxWidth().heightIn(min=44.dp).padding(start=12.dp),verticalAlignment=Alignment.CenterVertically) {
+                Text(compactHandLine(cards.size,"Turn 1 · Precombat main",cards.size,0),color=darkTableColors.text,fontSize=12.sp,
+                    fontWeight=androidx.compose.ui.text.font.FontWeight.Bold,maxLines=1,modifier=Modifier.weight(1f))
+                Box(Modifier.size(44.dp),contentAlignment=Alignment.Center){Icon(Icons.Default.Close,null,tint=darkTableColors.text)}
+            }
+""", ""),
+    # 8. Card slots move and resize together as one cards area.
+    ("""                            if(currentGroup.isEmpty())StudioHandEditing.edit(runtime,l,sel.id){it.copy(x=r[0],y=r[1],w=r[2],h=r[3])}""",
+     """                            if(currentGroup.isEmpty() && sel.kind=="card")ChimeraStudioUi.editCards(runtime,l,sel,r)
+                            else if(currentGroup.isEmpty())StudioHandEditing.edit(runtime,l,sel.id){it.copy(x=r[0],y=r[1],w=r[2],h=r[3])}"""),
+    # 9. Studio's windows fade while something is dragged.
+    ("""                            if(dragging){handle=grabbed;drag=total}""",
+     """                            if(dragging){handle=grabbed;drag=total;ChimeraStudioUi.dragging=true}"""),
+    ("""                        handle=null;drag=Offset.Zero""",
+     """                        handle=null;drag=Offset.Zero;ChimeraStudioUi.dragging=false"""),
+    ("""    ChimeraHandStyleChips(layout){runtime.changeHand(it)}
+""",
+     """    ChimeraHandStyleChips(layout){runtime.changeHand(it)}
+    var chimeraSeparate by remember{mutableStateOf(runtime.prefs.getBoolean(ChimeraOrientation.SEPARATE,false))}
+    Row(Modifier.fillMaxWidth().heightIn(min=48.dp),verticalAlignment=Alignment.CenterVertically) {
+        Column(Modifier.weight(1f)) {
+            Text("Separate landscape design",color=darkTableColors.text)
+            Text("Off: one hand design for portrait, landscape, folded and open.",color=darkTableColors.muted,fontSize=11.sp)
+        }
+        Switch(chimeraSeparate,{v->runtime.prefs.edit().putBoolean(ChimeraOrientation.SEPARATE,v).apply();chimeraSeparate=v;onApplied()},
+            modifier=Modifier.testTag("chimera-separate-landscape"))
+    }
+"""),
+    ("""            Column(Modifier.heightIn(max=260.dp).testTag("studio-inspector-body")""",
+     """            Column(Modifier.heightIn(max=ChimeraStudioUi.bodyMax()).testTag("studio-inspector-body")"""),
+])
+patch("StudioInspector.kt", [
+    ("""            Column(Modifier.heightIn(max=260.dp).testTag("studio-inspector-body")""",
+     """            Column(Modifier.heightIn(max=ChimeraStudioUi.bodyMax()).testTag("studio-inspector-body")"""),
+])
+# 9. The inspector: over the table while you edit the hand, a side column on wide screens, draggable, fades while dragging.
+patch("StudioEditorShell.kt", [
+    ("""            val dockTop=!handMode && selected!=null && selected.window==window && (selected.bounds.center.y-origin.y)>height*0.55f
+            Column(Modifier.align(if(dockTop)Alignment.TopCenter else Alignment.BottomCenter).fillMaxWidth()
+                .then(if(dockTop)Modifier.statusBarsPadding().padding(top=112.dp) else Modifier.navigationBarsPadding()).padding(horizontal=6.dp,vertical=4.dp)) {
+                if(!foreign || selected?.window==window)inspector(Modifier.widthIn(max=640.dp).align(Alignment.CenterHorizontally))
+            }""",
+     """            val chimeraWide=configuration.screenWidthDp>=700
+            val dockTop=handMode || selected!=null && selected.window==window && (selected.bounds.center.y-origin.y)>height*0.55f
+            Column(Modifier.align(if(chimeraWide)Alignment.TopEnd else if(dockTop)Alignment.TopCenter else Alignment.BottomCenter)
+                .then(if(chimeraWide)Modifier.width(400.dp) else Modifier.fillMaxWidth()).chimeraInspectorPlacement()
+                .then(if(dockTop||chimeraWide)Modifier.statusBarsPadding().padding(top=112.dp) else Modifier.navigationBarsPadding()).padding(horizontal=6.dp,vertical=4.dp)) {
+                if(!foreign || selected?.window==window) {
+                    if(handElement!=null || selected!=null || runtime.tablePicked)ChimeraInspectorHandle()
+                    inspector(Modifier.widthIn(max=640.dp).align(Alignment.CenterHorizontally))
+                }
+            }"""),
+])
+# 11. Combat in Studio without a live combat: the attackers sample, and now a blockers sample too.
+patch("MainActivity.kt", [
+    ("""                            put("Opening hand",gameInProgress to {studioCloseAll();homeOpen=false;studioPreview="Opening hand"})""",
+     """                            put("Blockers",gameInProgress to {studioCloseAll();homeOpen=false;if(argentumAttackPlan==null && argentumBlockPlan==null)studioPreview="Blockers"})
+                            put("Opening hand",gameInProgress to {studioCloseAll();homeOpen=false;studioPreview="Opening hand"})"""),
+])
+patch("TableOverlays.kt", [
+    ("""    if (previewing == "Opening hand" && !argentumMulliganPrompt) StudioScreen("Opening hand") { ArgentumOpeningHandScreen(""",
+     """    if (previewing == "Blockers" && argentumBlockPlan == null) {
+        val sample = remember { ArgentumBlockPlan(JSONObject().put("action", JSONObject().put("type", "DeclareBlockers")),
+            listOf("preview-a0", "preview-a1"), listOf("preview-a2", "preview-a3"), emptyMap(), emptyMap()) }
+        ArgentumBlockBoard(sample, StudioPreviews::piece, busy = false, onConfirm = {}, onDismiss = { studioPreview = null })
+    }
+    if (previewing == "Opening hand" && !argentumMulliganPrompt) StudioScreen("Opening hand") { ArgentumOpeningHandScreen("""),
 ])
