@@ -682,3 +682,18 @@ patch("TableOverlaysB.kt", [
     ('''    if (message != null) StudioAlertDialog("Game dialog 6",''',
      '''    if (message != null && !(ChimeraSkins.id == "xp" && ChimeraSkins.active(this@TableOverlaysB))) StudioAlertDialog("Game dialog 6",'''),
 ])
+
+# "Use 5" / "Use all" (owner, Nov 10 15:31): Forge confirms a self-sacrifice cost ("Sacrifice Treasure Token?") on every
+# activation, and the loop used to stop at the first question. Answer yes for the card being used, then continue.
+patch("TableEffects.kt", [
+    ('''        if (argentumPendingDecision != null && argentumPendingDecision?.optString("type") != "PlayCardDecision") { argentumStackUse = null; return@LaunchedEffect }''',
+     '''        argentumPendingDecision?.takeIf { it.optString("type") == "YesNoDecision" }?.optString("prompt")?.trim()?.let { prompt ->
+            val what = prompt.removePrefix("Sacrifice ").removeSuffix("?").trim()
+            if (prompt.startsWith("Sacrifice ") && (what == use.sourceName || what.removeSuffix(" Token") == use.sourceName.removeSuffix(" Token"))) {
+                delay(100)
+                submitArgentumDecision(JSONObject().put("type", "YesNoResponse").put("choice", true))
+                return@LaunchedEffect
+            }
+        }
+        if (argentumPendingDecision != null && argentumPendingDecision?.optString("type") != "PlayCardDecision") { argentumStackUse = null; return@LaunchedEffect }'''),
+])
