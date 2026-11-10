@@ -86,6 +86,24 @@ class GPLPairTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "nonempty APK"):
             self.pair(apk=self.apk.parent / "missing.apk")
 
+    def test_only_explicit_public_pem_is_included(self):
+        chimera = self.repos["chimera"]
+        public = chimera / "scripts/delivery/frankenarcana-public.pem"
+        public.parent.mkdir(parents=True)
+        public.write_text("-----BEGIN PUBLIC KEY-----\\nTEST\\n-----END PUBLIC KEY-----\\n")
+        git(chimera, "add", ".")
+        git(chimera, "commit", "-qm", "track-public-key")
+        manifest = self.pair()
+        with tarfile.open(self.out / manifest["source_name"]) as bundle:
+            self.assertIsNotNone(bundle.getmember(
+                "sources/chimera/scripts/delivery/frankenarcana-public.pem"))
+        secret = chimera / "scripts/delivery/private.pem"
+        secret.write_text("-----BEGIN PRIVATE KEY-----\\nFIXTURE\\n")
+        git(chimera, "add", ".")
+        git(chimera, "commit", "-qm", "track-dangerous-file")
+        with self.assertRaisesRegex(RuntimeError, "Potential credential"):
+            self.pair()
+
     def test_secrets_block_without_leaving_archive(self):
         p = self.repos["arcana"] / "android/app/src/main/assets/credentials.json"
         p.parent.mkdir(parents=True)
