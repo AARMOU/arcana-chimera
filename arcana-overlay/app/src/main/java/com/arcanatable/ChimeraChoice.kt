@@ -193,4 +193,6 @@ internal object ChimeraHomeArt {
 internal object ChimeraPlayState {
     /** The turn "Pass to my turn" last declared an attack for you on (it tries once per turn). */
     @Volatile var autoAttackTurn = -1
+    /** Studio's "Start practice game": reopen Studio once the game is up and the opening hand is kept. */
+    var studioAfterPractice by mutableStateOf(false)
 }

@@ -462,3 +462,17 @@ patch("TableOverlays.kt", [
                         })
                         .verticalScroll(rememberScrollState())'''),
 ])
+
+# Studio's "Start practice game" (owner, Nov 9 23:28: "It opens a game but it's hiding behind the screen"): the game
+# started under the open Studio editor, so its opening hand couldn't be answered. Studio now steps aside (your draft is
+# kept), the game starts, and Studio reopens once the opening hand is kept.
+patch("MainActivity.kt", [
+    ('''                val studioPractice:(()->Unit)?=if(gameInProgress) null else ({studioCloseAll();startOfflineGame()})''',
+     '''                val studioPractice:(()->Unit)?=if(gameInProgress) null else ({studioCloseAll();ChimeraPlayState.studioAfterPractice=true;studio.cancel();startOfflineGame()})
+                LaunchedEffect(ChimeraPlayState.studioAfterPractice,gameInProgress,argentumSnapshot,argentumMulliganPrompt,argentumPendingDecision) {
+                    if(ChimeraPlayState.studioAfterPractice && gameInProgress && argentumSnapshot!=null && !argentumMulliganPrompt && argentumPendingDecision==null) {
+                        ChimeraPlayState.studioAfterPractice=false
+                        studio.begin()
+                    }
+                }'''),
+])
