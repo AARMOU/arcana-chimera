@@ -246,7 +246,7 @@ _new_design = (
     "        Box(Modifier.fillMaxWidth()) {\n"
     + _canvas +
     "            ChimeraGripBar(Modifier.align(Alignment.TopCenter).padding(top = 6.dp))\n"
-    "            Box(Modifier.align(Alignment.TopCenter).size(width = 96.dp, height = 22.dp).then(ChimeraDrawerTop.drag))\n"
+    "            Box(Modifier.align(Alignment.TopCenter).fillMaxWidth(0.5f).height(30.dp).then(ChimeraDrawerTop.drag)) // owner, Nov 9 23:00: a wider grab area\n"
     "            Box(Modifier.align(Alignment.TopEnd)) {\n"
     "                DropdownMenu(expanded = moreOpen, onDismissRequest = { moreOpen = false }) {\n"
     "                    ChimeraHandMenu(stackCount, onStack, commanderCanCast, onCastCommander, { onMoreAction(\"LOG\") }, autoPassing,\n"
@@ -482,7 +482,7 @@ patch("TableOverlays.kt", [
                                 val tracker = androidx.compose.ui.input.pointer.util.VelocityTracker()
                                 val screenHeightPx = with(density) { configuration.screenHeightDp.dp.toPx() }.coerceAtLeast(1f)
                                 val minSwipePx = with(density) { 40.dp.toPx() }
-                                val flingPx = with(density) { 2500.dp.toPx() } // only a deliberate flick closes (owner, Nov 9 22:58)
+                                val flingPx = with(density) { 1100.dp.toPx() } // a flick closes; a slow drag only resizes (owner, Nov 9 22:58, 23:00)
                                 detectVerticalDragGestures(
                                     onDragStart = { tracker.resetTracking(); dragDistance = 0f; startFraction = if (studioFrame) studioHandFraction else handSheetHeightFraction },
                                     onVerticalDrag = { change, amount ->

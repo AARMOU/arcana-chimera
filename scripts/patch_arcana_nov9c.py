@@ -439,3 +439,22 @@ patch("ArgentumCardPick.kt", [
     ('''    val image = imageUrl ?: str("imageUri") ?: artByName(shownName, isToken)''',
      '''    val image = imageUrl ?: str("imageUri") ?: if (isPlayer) null else artByName(shownName, isToken)'''),
 ])
+
+# Swipe down to close, anywhere in the drawer (owner, Nov 9 23:00: "I want the swipe down to close to work more
+# consistently"): a downward flick that the drawer's own scrolling doesn't use (it is at its top) closes it.
+patch("TableOverlays.kt", [
+    ("import androidx.compose.ui.platform.LocalDensity\n", "import androidx.compose.ui.platform.LocalDensity\nimport androidx.compose.ui.input.nestedscroll.nestedScroll\n"),
+    ('''                        .fillMaxHeight(effectiveHandFraction)
+                        .verticalScroll(rememberScrollState())''',
+     '''                        .fillMaxHeight(effectiveHandFraction)
+                        .nestedScroll(run {
+                            val closeSpeed = with(LocalDensity.current) { 1100.dp.toPx() }
+                            remember(closeSpeed) { object : androidx.compose.ui.input.nestedscroll.NestedScrollConnection {
+                                override suspend fun onPostFling(consumed: androidx.compose.ui.unit.Velocity, available: androidx.compose.ui.unit.Velocity): androidx.compose.ui.unit.Velocity {
+                                    if (available.y > closeSpeed) showHand = false
+                                    return androidx.compose.ui.unit.Velocity.Zero
+                                }
+                            } }
+                        })
+                        .verticalScroll(rememberScrollState())'''),
+])
