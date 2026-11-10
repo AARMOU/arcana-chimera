@@ -638,7 +638,7 @@ patch("TableOverlays.kt", [
 patch("TableMainLayout.kt", [
     ('''                                StudioDropdownMenuItem("TableMainLayout.DropdownMenuItem.24",''',
      '''                                if (argentumEnabled && gameInProgress) DropdownMenuItem(text = { Text("Board summary") }, onClick = { topMenuExpanded = false; topMenuSection = null; ChimeraFeatures.boardOpen = true })
-                                if (argentumEnabled && gameInProgress && ChimeraFeatureSettings.coach) DropdownMenuItem(text = { Text("Coach: what would the AI do?") }, onClick = { topMenuExpanded = false; topMenuSection = null; ChimeraCoach.ask(this@TableMainLayout) })
+                                if (argentumEnabled && gameInProgress && ChimeraFeatureSettings.coach) DropdownMenuItem(text = { Text("Coach: what would the AI do?") }, onClick = { topMenuExpanded = false; topMenuSection = null; ChimeraCoach.ask(this@TableMainLayoutBody) })
                                 DropdownMenuItem(text = { Text("Game history") }, onClick = { topMenuExpanded = false; topMenuSection = null; ChimeraFeatures.historyOpen = true })
                                 StudioDropdownMenuItem("TableMainLayout.DropdownMenuItem.24",'''),
 ])
