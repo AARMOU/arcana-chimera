@@ -11,7 +11,7 @@ Owner direction (Nov 10, 2026): **GooseClippy and the XP skin live only in Chime
 
 ## Required owner-approved GIF assets (must be committed to Chimera to pass APK build)
 1. `arcana-overlay/app/src/main/assets/gooseclippy_idle.gif` — transparent stationary/blinking, 240 x 360, 5 frames, 119,843 bytes, SHA-256 `16dde375e89d564b90b160cb460ee42b69dfd2763caaff6d91ce0e3ca8979e92`.
-2. `arcana-overlay/app/src/main/assets/gooseclippy_react.gif` — transparent animated reaction, 240 x 360, 12 frames, 170,569 bytes, SHA-256 `40e4833fdb5b69ce1184859a0f14e176571f22cc25cbdf00f2cec9f771c6d959`.
+2. `arcana-overlay/app/src/main/assets/gooseclippy_react.gif` — transparent animated reaction, 240 x 360, 12 frames, 186,942 bytes, SHA-256 `295cb5ad25e3656f9a7d22beb44b9e54633cd26dc61c709cd11a350ea6c11f3b` (size-matched correction, Nov 10: original visible 210–217px tall, idle 342px tall; uniformly enlarge each reaction pose 1.5944× and align the bottom edge at pixel 353; preserve all 12 poses, frame timings, transparent canvas).
 
 The user has a separately packaged `gooseclippy-android-assets.zip` containing both. Extract the two files to the paths above. **They are not included as binary files in this PR.** The build intentionally fails with a clear missing-asset error instead of silently shipping an unrelated paperclip or placeholder. Verify hashes upon inclusion.
 
