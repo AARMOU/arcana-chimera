@@ -839,7 +839,9 @@ public final class ArcanaForgeHost {
                         if (type.equals("ActivateAbility")) a.put("sourceId", cardId).put("abilityId", abilityId); else a.put("cardId", cardId);
                         boolean affordable = sa.isLandAbility() || sa.isManaAbility() || affordable(sa, me);
                         if (affordable) offered.put(key(type, cardId, abilityId), sa);
-                        JSONObject offer = action(type, sa.isManaAbility() ? "Tap for mana: " + sa : sa.toString(), a).put("isAffordable", affordable);
+                        // Owner, Nov 10: "it only says 'play land'": name the land (Forge's own text for it is "Play land").
+                        String label = sa.isManaAbility() ? "Tap for mana: " + sa : sa.isLandAbility() ? "Play " + c.getName() : sa.toString();
+                        JSONObject offer = action(type, label, a).put("isAffordable", affordable);
                         if (sa.isManaAbility()) offer.put("isManaAbility", true);
                         legal.put(offer);
                     }
