@@ -21,6 +21,13 @@ python3 scripts/play_release_tools.py prepare \
   --version-code "$CHIMERA_PLAY_VERSION_CODE" \
   --version-name "$CHIMERA_PLAY_VERSION_NAME"
 
+# Ship the GPL text and scope with the bundle, even before the in-app
+# About/Licenses UI is finished. This alone does NOT satisfy notice duties.
+mkdir -p "$APP/src/main/assets/legal"
+cp "$ROOT/LICENSE" "$APP/src/main/assets/legal/GPL-3.0.txt"
+cp "$ROOT/LICENSE_SCOPE.md" "$APP/src/main/assets/legal/CHIMERA-LICENSE-SCOPE.md"
+cp "$ROOT/docs/GPLV3_RELEASE_READINESS.md" "$APP/src/main/assets/legal/GPL-RELEASE-NOTICES.md"
+
 (cd "$STAGED" && ./gradlew --no-daemon --max-workers=2 :app:bundleRelease)
 AAB="$APP/build/outputs/bundle/release/app-release.aab"
 python3 scripts/play_release_tools.py verify --bundle "$AAB"
