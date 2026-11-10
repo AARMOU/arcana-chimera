@@ -104,5 +104,5 @@ compliant. No APK or AAB should reach third parties until all of these pass:
 The build script therefore **never automatically uploads** the AAB. Even
 a passing signed AAB remains in HOLD status until the GPL review is complete.
 
-Related PRs: [Forge transplant #16](../pull/16),
-[GPL preflight #21](../pull/21), [source candidate #22](../pull/22).
+Related PRs: [Forge transplant #16](https://github.com/AARMOU/arcana-chimera/pull/16),
+[GPL preflight #21](https://github.com/AARMOU/arcana-chimera/pull/21), [source candidate #22](https://github.com/AARMOU/arcana-chimera/pull/22).
