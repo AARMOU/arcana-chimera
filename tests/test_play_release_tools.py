@@ -7,7 +7,7 @@ from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 from play_release_tools import (  # noqa: E402
-    PINNED_UPLOAD_CERT_SHA256, fingerprint, read_certificate_sha256, prepare_gradle,
+    fingerprint, read_certificate_sha256, prepare_gradle,
     require_signing_environment, validate_version,
 )
 
@@ -29,14 +29,7 @@ class PlayReleaseToolsTests(unittest.TestCase):
         raw = "ab:" * 31 + "ab"
         self.assertEqual(fingerprint(raw), "AB" * 32)
 
-    def test_pinned_console_upload_certificate_is_valid_sha256(self):
-        self.assertEqual(
-            PINNED_UPLOAD_CERT_SHA256,
-            fingerprint("FD:52:2A:67:4B:8A:03:8A:D8:C2:08:4B:9B:F8:BD:BF:"
-                        "9B:89:80:9E:0D:C2:F1:19:7F:88:AD:1C:95:68:03:F7")
-        )
-
-    def test_explicit_certificate_override_cannot_bypass_pin(self):
+    def test_upload_fingerprint_must_be_supplied_explicitly(self):
         with tempfile.TemporaryDirectory() as temp:
             keyfile = Path(temp) / "key.jks"
             keyfile.write_bytes(b"fixture")
@@ -45,26 +38,15 @@ class PlayReleaseToolsTests(unittest.TestCase):
                 "CHIMERA_UPLOAD_STORE_PASSWORD": "fixture",
                 "CHIMERA_UPLOAD_KEY_PASSWORD": "fixture",
                 "CHIMERA_UPLOAD_ALIAS": "arcana-upload",
-                "CHIMERA_EXPECTED_UPLOAD_CERT_SHA256": "AB" * 32,
             }
             with patch.dict(os.environ, env, clear=True):
-                with self.assertRaisesRegex(ValueError, "pinned Play Console"):
+                with self.assertRaisesRegex(ValueError, "CHIMERA_EXPECTED_UPLOAD_CERT_SHA256"):
                     require_signing_environment()
-
-    def test_pinned_certificate_is_returned_when_env_unset(self):
-        with tempfile.TemporaryDirectory() as temp:
-            keyfile = Path(temp) / "key.jks"
-            keyfile.write_bytes(b"fixture")
-            env = {
-                "CHIMERA_UPLOAD_KEYSTORE": str(keyfile),
-                "CHIMERA_UPLOAD_STORE_PASSWORD": "fixture",
-                "CHIMERA_UPLOAD_KEY_PASSWORD": "fixture",
-                "CHIMERA_UPLOAD_ALIAS": "arcana-upload",
-            }
+            env["CHIMERA_EXPECTED_UPLOAD_CERT_SHA256"] = "AB" * 32
             with patch.dict(os.environ, env, clear=True):
                 store, expected = require_signing_environment()
                 self.assertEqual(store, keyfile.resolve())
-                self.assertEqual(expected, PINNED_UPLOAD_CERT_SHA256)
+                self.assertEqual(expected, "AB" * 32)
 
     def test_fingerprint_rejects_missing_certificate(self):
         with self.assertRaises(ValueError):
