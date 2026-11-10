@@ -607,3 +607,10 @@ patch("CombatStackBoard.kt", [
     ('''        Box(Modifier.offset(y = if (chosen > 0) 6.dp else 10.dp).width(cardWidth).clip(shape)''',
      '''        Box(Modifier.offset(x = if (count > 1) 0.dp else 5.dp, y = if (chosen > 0) 6.dp else 10.dp).width(cardWidth).clip(shape)'''),
 ])
+
+# The enlarged card shows its counters (owner, Nov 10).
+patch("CardZoom.kt", [
+    ('''                if (!card.imageUrl.isNullOrBlank() && card.type.endsWith("ability", ignoreCase = true)) card.oracleText?.let { what ->''',
+     '''                ChimeraZoomCounters(card, width)
+                if (!card.imageUrl.isNullOrBlank() && card.type.endsWith("ability", ignoreCase = true)) card.oracleText?.let { what ->'''),
+])
