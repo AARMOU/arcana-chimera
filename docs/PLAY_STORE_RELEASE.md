@@ -69,7 +69,7 @@ The source repo's debug build package remains distinct. Nothing is uploaded,
 released or committed. The original secret file is read from the local path;
 the build never copies the keystore into the repository.
 
-The prepare script also refuses to run if the donor's target SDK is below 36,
+After the signed AAB is checked, the script also stages a **local AAB-matched\nsource candidate** under ignored `reports/gpl-play-aab/`, with checksums.\nThis is NOT a completed or audited GPL source distribution. No file uploads.\n\nThe prepare script also refuses to run if the donor's target SDK is below 36,
 the app-id override is not recognized, or the Play version code is below 143.
 Use `bundletool dump manifest` on the final AAB to separately confirm
 `package=com.arcanatable`, the exact versionCode, and target SDK; verify
@@ -79,8 +79,7 @@ the Play Console accepts that code and certificate.
 
 The #21 and #22 GPL drafts contain the verbatim Forge GPLv3 license and a
 same-job *APK* source-archive candidate. These are foundations **only**.
-They do not, as of this draft, establish that a signed Play AAB is GPL
-compliant. No APK or AAB should reach third parties until all of these pass:
+The Play build now stages an AAB-specific same-job source **candidate** as well.\nNeither candidate establishes that a signed Play AAB is GPL compliant. No APK or AAB should reach third parties until all of these pass:
 
 1. Inventory all included Forge, Arcana, Chimera and other dependencies
    (including transitive Gradle/Maven libraries) and audit their license
@@ -88,8 +87,7 @@ compliant. No APK or AAB should reach third parties until all of these pass:
 2. Create Complete Corresponding Source for the **exact AAB** with the
    generated/modified donor Android project, exact Forge/Arcana revisions,
    resources and controls/scripts needed to rebuild. Review and test a
-   clean rebuild from that archive. The existing APK-oriented candidate
-   manifest is **not** an AAB source-pair certificate.
+   clean rebuild from that archive. The AAB-specific source candidate\n   manifest is **not** a compliance certificate.
 3. Make GPLv3 and other required notices visible in-app, with a link or
    instructions to obtain the source for the installed version.
 4. Preserve a durable, accessible, version-specific source archive and
