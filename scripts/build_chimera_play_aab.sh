@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Local-only signed Google Play AAB preparation. Never uploads, releases or merges.
 # Set the required CHIMERA_UPLOAD_* variables in a trusted local
-# signing environment. The public Play upload SHA-256 is pinned in the
-# preflight script; CHIMERA_EXPECTED_UPLOAD_CERT_SHA256 is an optional check.
+# signing environment. CHIMERA_EXPECTED_UPLOAD_CERT_SHA256 MUST be the SHA-256
+# from Play Console's UPLOAD key certificate, never the app-signing key.
 # Never commit or print any credentials or keystore contents.
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
