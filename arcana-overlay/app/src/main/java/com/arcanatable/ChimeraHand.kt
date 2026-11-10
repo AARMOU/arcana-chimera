@@ -125,17 +125,9 @@ internal object ChimeraCommanders {
     fun clear() = bySeat.clear()
 }
 
-/** The Commander button's two lines: "COMMANDER" and the tax, or where the commander is. */
-internal fun chimeraCommanderLabel(entries: List<ChimeraCommanders.Entry>, castable: Boolean): String {
-    val first = entries.firstOrNull() ?: return "COMMANDER\n—"
-    val tax = entries.maxOf { it.tax }
-    val second = when {
-        castable -> if (tax > 0) "CAST · +$tax" else "CAST"
-        first.zone == "Command zone" -> if (tax > 0) "TAX +$tax" else "READY"
-        else -> first.zone.uppercase()
-    }
-    return "COMMANDER\n$second"
-}
+/** The Commander button's label (owner, Nov 9: just "COMMANDER"; the glow says when it can be cast). */
+@Suppress("UNUSED_PARAMETER")
+internal fun chimeraCommanderLabel(entries: List<ChimeraCommanders.Entry>, castable: Boolean): String = "COMMANDER"
 
 /** A softly pulsing edge for something you can do right now (Commander, Cast). */
 @Composable

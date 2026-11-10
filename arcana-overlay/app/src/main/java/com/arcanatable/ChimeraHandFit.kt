@@ -31,7 +31,9 @@ internal object ChimeraHandFit {
         val left = designed.minOf { it.x }
         val regionW = max(designed.maxOf { it.x + it.w } - left, template.w)
         val others = elements.filter { it.kind != "card" }
-        val extent = (elements.maxOf { it.y + it.h } - origin).coerceAtLeast(1f)
+        // Owner, Nov 9 (catalogue looked small): the extra slots Arcana adds below the design for a big hand are not part
+        // of the design, so they don't count as the buttons' room.
+        val extent = (elements.filter { !it.id.startsWith("overflow") }.maxOf { it.y + it.h } - origin).coerceAtLeast(1f)
         val forCards = availableHeight - (extent - (bottom - top)) // the drawer's room minus the buttons' own room
         val aspect = template.w / template.h
 

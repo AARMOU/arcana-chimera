@@ -180,7 +180,8 @@ patch("StudioHandCanvas.kt", [
 )"""),
     ("""        "metric0","metric1","metric2","metric3" -> element.label""",
      """        "status" -> live
-        "metric0","metric1","metric2","metric3","commander" -> element.label"""),
+        "commander" -> element.label // owner, Nov 9: just "COMMANDER"
+        "metric0","metric1","metric2","metric3" -> element.label"""),
     ("""        val fitted = if (!editing && fitHeight != androidx.compose.ui.unit.Dp.Unspecified && fitHeight.value > 0f)
             ChimeraHandFit.fit(renderElements, state.cards.size, fitHeight.value / scale, origin) else renderElements""",
      """        val fitted = (if (!editing && fitHeight != androidx.compose.ui.unit.Dp.Unspecified && fitHeight.value > 0f)
@@ -462,4 +463,128 @@ patch("StudioEditorPanels.kt", [
      """                    Button(onClick={trying=null;chimeraBefore=null;StudioLog.add("Preset kept: $tryingPreset");tryingPreset=null},"""),
     ("""                    OutlinedButton(onClick={look.write(before);runtime.change(project);trying=null;""",
      """                    OutlinedButton(onClick={look.write(before);runtime.change(project,chimeraBefore?.hand);chimeraBefore?.let{ChimeraDrawer.set(it.opacity)};chimeraBefore=null;trying=null;"""),
+])
+
+# ================================================================== Nov 9, second list (owner: "Go")
+# 5. Swipe down on the drawer's top strip to close it (a slow drag still resizes; below the smallest size closes too).
+patch("TableOverlays.kt", [
+    ("""                                var dragDistance = 0f
+                                val screenHeightPx = with(density) { configuration.screenHeightDp.dp.toPx() }.coerceAtLeast(1f)
+                                val dismissDistancePx = with(density) { 120.dp.toPx() }
+                                detectVerticalDragGestures(
+                                    onVerticalDrag = { change, amount ->
+                                        change.consume()
+                                        dragDistance += amount""",
+     """                                var dragDistance = 0f
+                                var startFraction = 0f
+                                val tracker = androidx.compose.ui.input.pointer.util.VelocityTracker()
+                                val screenHeightPx = with(density) { configuration.screenHeightDp.dp.toPx() }.coerceAtLeast(1f)
+                                val minSwipePx = with(density) { 40.dp.toPx() }
+                                val flingPx = with(density) { 1000.dp.toPx() }
+                                detectVerticalDragGestures(
+                                    onDragStart = { tracker.resetTracking(); dragDistance = 0f; startFraction = if (studioFrame) studioHandFraction else handSheetHeightFraction },
+                                    onVerticalDrag = { change, amount ->
+                                        change.consume()
+                                        tracker.addPosition(change.uptimeMillis, change.position)
+                                        dragDistance += amount"""),
+    ("""                                    onDragEnd = {
+                                        if (studioFrame) optionPrefs.edit()""",
+     """                                    onDragEnd = {
+                                        // Chimera (owner, Nov 9): a quick swipe down closes the drawer from any height, keeping
+                                        // the height it had; dragging past the smallest size closes it too.
+                                        val atMin = (if (studioFrame) studioHandFraction else handSheetHeightFraction) <= 0.385f
+                                        if (dragDistance > minSwipePx && (tracker.calculateVelocity().y > flingPx || atMin)) {
+                                            if (studioFrame) studioHandFraction = startFraction else handSheetHeightFraction = startFraction
+                                            showHand = false
+                                        }
+                                        if (studioFrame) optionPrefs.edit()"""),
+    ("""                                        if (dragDistance > dismissDistancePx && effectiveHandFraction <= 0.40f) showHand = false
+""", ""),
+    # 16. Concede, with a confirmation.
+    ("""    if (argentumLeaveConfirm) StudioAlertDialog("Game dialog 5",""",
+     """    ChimeraConcedeDialog { if (argentumEnabled) argentumSocket.concede() else concede(localSeat) }
+    if (argentumLeaveConfirm) StudioAlertDialog("Game dialog 5","""),
+])
+patch("TableMainLayout.kt", [
+    ("""StudioText("TableMainLayout.Text.36", "Table and player", false, "Propose ending the game") }, modifier = Modifier, onClick = { run {
+                                    topMenuExpanded = false; topMenuSection = null
+                                    if (endProposalBy < 0) { endProposalBy = localSeat; endVotes = mapOf(localSeat to true); logAction(localSeat, "proposed ending the game") }
+                                } })""",
+     """StudioText("TableMainLayout.Text.36", "Table and player", false, "Concede", color = Color(0xFFE9978B)) }, modifier = Modifier, onClick = { run {
+                                    topMenuExpanded = false; topMenuSection = null
+                                    ChimeraConcede.asking = true // owner, Nov 9: Concede replaces "Propose ending the game"
+                                } })"""),
+])
+# 1. Picking a deck while a local game loads must not open the lobby (only a multiplayer room that hasn't started does).
+patch("TableController.kt", [
+    ("""                if (onlineMode && !gameStartedOnline) { showOverview = true; showHand = false; lobbyOpen = true }""",
+     """                if (onlineMode && !argentumEnabled && !gameStartedOnline) { showOverview = true; showHand = false; lobbyOpen = true }"""),
+])
+# 14. Auto-pass stops on the phase bar.
+patch("ArgentumUi.kt", [
+    ("""                modifier = Modifier.weight(1f).clip(RoundedCornerShape(6.dp)).background(if (current) accent else PanelLight).padding(vertical = 4.dp)
+            )
+        }
+    }""",
+     """                modifier = Modifier.weight(1f).chimeraPhaseStop(label).clip(RoundedCornerShape(6.dp)).background(if (current) accent else PanelLight).padding(vertical = 4.dp)
+            )
+        }
+    }
+    ChimeraPhaseStopMenu()"""),
+])
+patch("TableArgentum.kt", [
+    ("""    passToMyTurnFrom = snapshot.turnNumber
+""",
+     """    passToMyTurnFrom = snapshot.turnNumber
+    ChimeraPhaseStops.skip = ChimeraPhaseStops.key(snapshot.turnNumber, snapshot.stepName) // no stop where you started
+"""),
+])
+patch("TableEffects.kt", [
+    ("""        if (argentumSnapshot !== snapshot || argentumAwaitingUpdate) return@LaunchedEffect // decide from the newest state only
+        val outcome = ArgentumPassing.next(""",
+     """        if (argentumSnapshot !== snapshot || argentumAwaitingUpdate) return@LaunchedEffect // decide from the newest state only
+        ChimeraPhaseStops.hit(snapshot.turnNumber, snapshot.stepName, snapshot.activePlayer == localSeat)?.let { label ->
+            passToMyTurnFrom = null
+            recordDiagnostic("Pass to my turn: stopped at the $label stop", DiagnosticCategory.ACTION)
+            android.widget.Toast.makeText(context, "Stopped: $label", android.widget.Toast.LENGTH_SHORT).show()
+            return@LaunchedEffect
+        }
+        val outcome = ArgentumPassing.next("""),
+])
+# 2 and 6. Hand designs: no hairline outlines in play; hold Pass to auto-pass.
+_c = (app / "StudioHandCanvas.kt").read_text()
+(app / "StudioHandCanvas.kt").write_text("@file:OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)\n" + _c)
+patch("StudioHandCanvas.kt", [
+    ("import androidx.compose.foundation.clickable\n", "import androidx.compose.foundation.clickable\nimport androidx.compose.foundation.combinedClickable\n"),
+    ("""    onResize: (String,Float,Float) -> Unit = { _,_,_ -> }, fitHeight: androidx.compose.ui.unit.Dp = androidx.compose.ui.unit.Dp.Unspecified) {""",
+     """    onResize: (String,Float,Float) -> Unit = { _,_,_ -> }, fitHeight: androidx.compose.ui.unit.Dp = androidx.compose.ui.unit.Dp.Unspecified,
+    onActionHold: (String) -> Unit = {}) {"""),
+    ("""        val density = LocalDensity.current
+""",
+     """        val density = LocalDensity.current
+        val haptic = androidx.compose.ui.platform.LocalHapticFeedback.current
+"""),
+    ("""                    .border(if (editing && (selectedElement==e.id || e.id in advice)) 2.dp else 0.dp,
+                        if (e.id in advice) androidx.compose.ui.graphics.Color(0xFFE5534B) else StudioEditorRequests.chromeGold,shape)) {""",
+     """                    // Chimera: a 0dp border still draws a hairline, so no border at all unless the piece is selected or flagged.
+                    .then(if (editing && (selectedElement==e.id || e.id in advice)) Modifier.border(2.dp,
+                        if (e.id in advice) androidx.compose.ui.graphics.Color(0xFFE5534B) else StudioEditorRequests.chromeGold,shape) else Modifier)) {"""),
+    ("""                            .clickable(enabled=enabled) { if (editing) onSelectElement(e.id) else onAction(e.binding) }""",
+     """                            .combinedClickable(enabled=enabled,
+                                onLongClick = if (!editing && e.binding == "pass") ({ haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress); onActionHold(e.binding) }) else null)
+                                { if (editing) onSelectElement(e.id) else onAction(e.binding) }"""),
+])
+patch("TableBoardViews.kt", [
+    ("""                onPreview = { selectedId = it.id; onPreview(it) }, fitHeight = availableHeight - chimeraNavInset - 8.dp)""",
+     """                onPreview = { selectedId = it.id; onPreview(it) }, fitHeight = availableHeight - chimeraNavInset - 8.dp,
+                onActionHold = { b -> if (b == "pass" && (autoPassing || autoPassAvailable && !actionsBusy)) onAutoPass() })"""),
+])
+# 13. An ability on the stack: its source card's picture, and what it will do under it.
+patch("CardZoom.kt", [
+    ("""                StudioText("CardZoom.Text.7", "Dialogs and overlays", false, "Tap anywhere to close",""",
+     """                if (!card.imageUrl.isNullOrBlank() && card.type.endsWith("ability", ignoreCase = true)) card.oracleText?.let { what ->
+                    androidx.compose.material3.Text(what, color = SoftWhite, fontSize = 14.sp, textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                        modifier = Modifier.width(width).background(Color(0xCC1A1F1D), RoundedCornerShape(10.dp)).padding(10.dp))
+                }
+                StudioText("CardZoom.Text.7", "Dialogs and overlays", false, "Tap anywhere to close","""),
 ])

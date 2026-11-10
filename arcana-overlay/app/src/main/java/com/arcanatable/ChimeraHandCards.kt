@@ -54,22 +54,27 @@ private fun ChimeraFanHand(cards: List<GameCard>, playable: Set<Int>, selected: 
     onCard: (GameCard) -> Unit, onPreview: (GameCard) -> Unit, modifier: Modifier) {
     BoxWithConstraints(modifier.fillMaxSize().clipToBounds().testTag("hand-fan")) {
         val n = cards.size
-        val lift = maxHeight * 0.1f
-        val arc = maxHeight * 0.07f
-        val cardH = min((maxHeight - lift - arc * 0.5f).value, (maxWidth * 0.9f).value / 0.716f).dp
-        val cardW = cardH * 0.716f
+        // Owner, Nov 9: no card cut off. Size the cards so the tilt, the arc and the lift of a selected card all fit.
         val spread = min(5f * (n - 1), 34f)
-        val step = if (n <= 1) 0.dp else minOf(cardW * 0.82f, (maxWidth - cardW) / (n - 1))
+        val tilt = Math.toRadians((spread / 2f).toDouble())
+        val sin = kotlin.math.sin(tilt).toFloat()
+        val lift = maxHeight * 0.08f
+        val arc = maxHeight * 0.05f
+        val byHeight = (maxHeight - lift - arc - 6.dp).value / (1f + 0.716f / 2f * sin + 0.02f)
+        val cardH = min(byHeight, (maxWidth * 0.9f).value / 0.716f).coerceAtLeast(40f).dp
+        val cardW = cardH * 0.716f
+        val side = cardH * sin * 0.5f // the outer cards lean this far past their slot
+        val step = if (n <= 1) 0.dp else minOf(cardW * 0.82f, ((maxWidth - side * 2 - cardW) / (n - 1)).coerceAtLeast(cardW * 0.12f))
         val total = cardW + step * (n - 1)
         val x0 = (maxWidth - total) / 2
         cards.forEachIndexed { i, card ->
             val t = if (n <= 1) 0f else i / (n - 1f) * 2f - 1f // -1 .. 1 across the fan
             val up = card.id == selected
             val angle = if (up) t * spread / 2f * 0.3f else t * spread / 2f
-            val y = lift + arc * (t * t) - if (up) lift else 0.dp
+            val y = lift + arc * (t * t) - (if (up) lift else 0.dp)
             CardFace(card,
                 Modifier.offset(x0 + step * i, y).width(cardW).zIndex(if (up) 1000f else i.toFloat())
-                    .graphicsLayer { rotationZ = angle; transformOrigin = TransformOrigin(0.5f, 1.25f) }
+                    .graphicsLayer { rotationZ = angle; transformOrigin = TransformOrigin(0.5f, 1f) }
                     .then(if (up || card.id == highlighted) Modifier.border(3.dp, Mint, RoundedCornerShape(8.dp)) else Modifier)
                     .tutorialTarget("hand-card:${card.name}"),
                 onClick = { onCard(card) }, onLongClick = { onPreview(card) }, showCounters = false,

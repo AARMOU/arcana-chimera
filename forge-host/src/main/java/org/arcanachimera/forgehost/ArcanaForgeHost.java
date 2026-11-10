@@ -1033,8 +1033,14 @@ public final class ArcanaForgeHost {
         JSONObject item = si.isSpell() && src != null ? card(src, ZoneType.Stack)
                 : new JSONObject().put("id", "st" + si.getId()).put("name", src == null ? "Ability" : src.getName())
                     .put("typeLine", si.isTrigger() ? "Triggered ability" : "Activated ability").put("cardTypes", new JSONArray())
-                    .put("oracleText", si.getStackDescription()).put("manaCost", "").put("manaValue", 0)
+                    .put("oracleText", (si.isTrigger() ? "Triggered ability: " : "Activated ability: ") + plain(si.getStackDescription()))
+                    .put("stackText", plain(si.getStackDescription())).put("manaCost", "").put("manaValue", 0)
                     .put("zone", new JSONObject().put("zoneType", "Stack").put("ownerId", JSONObject.NULL));
+        // Owner, Nov 9 (blank cards on the stack): an ability shows the picture of the card it comes from.
+        if (!si.isSpell() && src != null && !item.has("imageUri")) {
+            String img = picture(src.getName(), src.getOwner() == null ? null : playerId(src.getOwner()));
+            if (img != null) item.put("imageUri", img);
+        }
         String controller = playerId(si.getActivatingPlayer());
         item.put("controllerId", controller).put("ownerId", controller);
         JSONArray targets = new JSONArray();
