@@ -660,7 +660,7 @@ public final class ArcanaForgeHost {
         if (game.getStack().isEmpty()) return false;
         forge.game.spellability.SpellAbilityStackInstance top = game.getStack().peek();
         if (top == null) return false;
-        if (top.getActivatingPlayer() == me) return !respondToOwnStack;
+        if (top.getActivatingPlayer() == me) return !(respondToOwnStack || practiceBoard); // lessons show your spell on the stack
         if (!quietOpponentTurns || game.getPhaseHandler().getPlayerTurn() == me) return false;
         forge.game.spellability.TargetChoices tc = top.getTargetChoices();
         if (tc != null) {
@@ -756,6 +756,9 @@ public final class ArcanaForgeHost {
                 input.selectPlayer(you.getPlayer(), null);
                 input.selectButtonOK(); // ignored by Forge if picking one already finished it
                 return;
+            }
+            if (kind.equals("InputConfirmMulligan") && practiceBoard) { // a tutorial lesson's board: its hand is the lesson's
+                lastPrompted = input; defaultedPrompts.add("practice board: kept"); ok(you); return;
             }
             if (kind.equals("InputConfirmMulligan") && (autoKeep || autoMulligan)) { // already answered on Arcana's screen
                 lastPrompted = input;
@@ -1601,6 +1604,13 @@ public final class ArcanaForgeHost {
      * (HostedMatch.setStartGameHook), on Forge's game thread, before the first turn.
      */
     public void setStartBoardForTest(String script) { startBoardForTest = script; }
+
+    /**
+     * Arcana's tutorial lessons (owner, Nov 10: "update the tutorial to work with the current version"): the lesson's
+     * board, applied the same way, and the opening hand is kept for you (the board already chose your hand).
+     */
+    public void setPracticeBoard(String script) { startBoardForTest = script; practiceBoard = script != null; }
+    private volatile boolean practiceBoard;
 
     private void applyStartBoard(HostedMatch m) {
         String script = startBoardForTest;

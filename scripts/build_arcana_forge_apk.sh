@@ -71,11 +71,12 @@ cp "$ROOT/arcana-overlay/app/src/main/java/com/arcanatable/engine/ChimeraLoading
 cp "$ROOT/arcana-overlay/app/src/main/java/com/arcanatable/ChimeraArt.kt" "$APP/src/main/java/com/arcanatable/"
 cp "$ROOT/arcana-overlay/app/src/main/java/com/arcanatable/ChimeraHandFit.kt" "$APP/src/main/java/com/arcanatable/"
 cp "$ROOT/arcana-overlay/app/src/main/java/com/arcanatable/ChimeraDrawer.kt" "$APP/src/main/java/com/arcanatable/"
-for f in ChimeraView ChimeraHand ChimeraHandCards ChimeraBackdrops ChimeraPresets ChimeraPlay ChimeraStudio ChimeraSkins ChimeraChoice ChimeraTerminal; do
+for f in ChimeraView ChimeraHand ChimeraHandCards ChimeraBackdrops ChimeraPresets ChimeraPlay ChimeraStudio ChimeraSkins ChimeraChoice ChimeraTerminal ChimeraTutorialBoards; do
   cp "$ROOT/arcana-overlay/app/src/main/java/com/arcanatable/$f.kt" "$APP/src/main/java/com/arcanatable/"
 done
 python3 "$ROOT/scripts/patch_arcana_nov9.py" "$APP" # owner's Nov 9 list: drawer, Commander, presets, fan/catalogue, backgrounds, log detail
 python3 "$ROOT/scripts/patch_arcana_nov9c.py" "$APP" # owner's third Nov 9 list: choices, pictures, combat, mulligan grid, home picture
+python3 "$ROOT/scripts/patch_arcana_tutorial.py" "$APP" # the tutorial's text for Arcana with Forge (owner, Nov 10)
 python3 "$ROOT/scripts/patch_arcana_wording.py" "$APP" # owner, Nov 9: no "Argentum" on screen (fails the build if any is left)
 # Foreground service: keeps the Forge game alive while the player is in another app.
 python3 - "$APP/src/main/AndroidManifest.xml" <<'PY'

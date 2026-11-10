@@ -497,3 +497,22 @@ if not debug_scenarios.exists() or not release_scenarios.exists():
     sys.exit("patch_arcana_nov9c: TestScenarios.kt not found in the debug or release source set")
 debug_scenarios.write_text(release_scenarios.read_text())
 print("replaced debug TestScenarios.kt with the release (empty) one")
+
+# ================================================================== tutorial (owner, Nov 10: "update the tutorial to work with
+# the current version as-is"): the practice boards come from ChimeraTutorialBoards (Forge game-state scripts).
+patch("TutorialPracticeScenarios.kt", [
+    ('''    fun build(id: String, library: OfflineCardLibrary): TestScenarioGame = when (id) {''',
+     '''    fun build(id: String, library: OfflineCardLibrary): TestScenarioGame = ChimeraTutorialBoards.build(id, library) ?: when (id) {'''),
+])
+
+# Menu (owner, Nov 10: "Yes, remove them"): Import / Replace deck, Edit imported deck, Add AI opponent, Add token…, Mana
+# pool and Search / browse library leave the game menu (decks are chosen and imported on Home; Forge runs the board).
+_menu = app / "TableMainLayout.kt"
+_lines = _menu.read_text().split("\n")
+for n in (19, 20, 22, 23, 24, 25):
+    hits = [i for i, l in enumerate(_lines) if f'"TableMainLayout.Text.{n}"' in l]
+    if len(hits) != 1 or not _lines[hits[0]].lstrip().startswith("if ("):
+        sys.exit(f"patch_arcana_nov9c: TableMainLayout.kt: menu item Text.{n} not found as expected")
+    _lines[hits[0]] = _lines[hits[0]].replace("if (", "if (false && ", 1)
+_menu.write_text("\n".join(_lines))
+print("patched TableMainLayout.kt (6 menu items removed)")
