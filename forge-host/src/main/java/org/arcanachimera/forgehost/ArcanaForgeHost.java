@@ -921,10 +921,12 @@ public final class ArcanaForgeHost {
                     hurt.merge(m.group(1).trim().replaceAll(" \\(\\d+\\)$", ""), Integer.parseInt(m.group(2)), Integer::sum);
             }
             JSONArray top = new JSONArray();
-            hurt.entrySet().stream().sorted((a, b) -> b.getValue() - a.getValue()).limit(5)
-                    .forEach(en -> top.put(new JSONObject().put("source", en.getKey()).put("damage", en.getValue())));
+            List<Map.Entry<String, Integer>> ranked = new ArrayList<>(hurt.entrySet());
+            ranked.sort((a, b) -> b.getValue() - a.getValue());
+            for (Map.Entry<String, Integer> en : ranked.subList(0, Math.min(5, ranked.size())))
+                top.put(new JSONObject().put("source", en.getKey()).put("damage", en.getValue()));
             out.put("hurtYou", top);
-        } catch (RuntimeException e) { System.err.println("reveal failed: " + describe(e)); }
+        } catch (Exception e) { System.err.println("reveal failed: " + describe(e)); }
         return out;
     }
 
