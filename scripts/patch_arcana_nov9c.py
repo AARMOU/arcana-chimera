@@ -488,3 +488,12 @@ manifest.write_text(m.replace(old, '''    <application
         android:largeHeap="true"
         android:allowBackup="true"'''))
 print("patched AndroidManifest.xml (large heap)")
+
+# The six debug test scenarios ("TESTS (6)" on the home screen) are removed from the dev app (owner, Nov 10 08:51):
+# the debug build uses the release build's empty list, so the button and the "ARCANA QA" title go too.
+debug_scenarios = Path(sys.argv[1]) / "src/debug/java/com/arcanatable/TestScenarios.kt"
+release_scenarios = Path(sys.argv[1]) / "src/release/java/com/arcanatable/TestScenarios.kt"
+if not debug_scenarios.exists() or not release_scenarios.exists():
+    sys.exit("patch_arcana_nov9c: TestScenarios.kt not found in the debug or release source set")
+debug_scenarios.write_text(release_scenarios.read_text())
+print("replaced debug TestScenarios.kt with the release (empty) one")
