@@ -71,7 +71,7 @@ import org.json.JSONObject
  */
 internal object ChimeraSkins {
     val CUSTOM = linkedMapOf("arena" to "Duel Arena", "orbit" to "Orbit", "across" to "Across the Table", "feed" to "Feed",
-        "terminal" to "Terminal", "focus" to "Focus", "storybook" to "Storybook")
+        "terminal" to "Terminal", "focus" to "Focus", "storybook" to "Storybook", "xp" to "XP Desktop")
     private val prefs: SharedPreferences? by lazy {
         runCatching {
             val app = Class.forName("android.app.ActivityThread").getMethod("currentApplication").invoke(null) as Context
@@ -165,6 +165,7 @@ internal fun ChimeraSkinScreen(t: TableController) {
             "feed" -> SkinFeed(ui)
             "terminal" -> SkinTerminal(ui)
             "focus" -> SkinFocus(ui)
+            "xp" -> ChimeraXpDesktop(ui)
             else -> SkinStorybook(ui)
         }
     }

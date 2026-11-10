@@ -667,3 +667,18 @@ patch("TableDialogs.kt", [
     ('''onClick = { if (engineTrialResult?.startsWith("Running") != true) onEngineSelfTest() })''',
      '''onClick = { if (engineTrialResult?.startsWith("Running") != true) onEngineSelfTest?.invoke() })'''),
 ])
+
+# XP Desktop screen layout (owner, Nov 10): listed with the other whole-screen layouts; Arcana's message pop-up is
+# drawn by the layout itself in XP style while it is on.
+patch("StudioPresets.kt", [
+    ('''        StudioPreset("Storybook","Comic panels on paper: inked borders, the opponent's moves as story, bold lettering",CLASSIC_LOOK,"Balanced",
+            emptySet(),"both",null),''',
+     '''        StudioPreset("Storybook","Comic panels on paper: inked borders, the opponent's moves as story, bold lettering",CLASSIC_LOOK,"Balanced",
+            emptySet(),"both",null),
+        StudioPreset("XP Desktop","A retro blue-and-beige desktop: every part of the game in its own window you can move and resize, a taskbar and pop-ups",CLASSIC_LOOK,"Balanced",
+            emptySet(),"both",null),'''),
+])
+patch("TableOverlaysB.kt", [
+    ('''    if (message != null) StudioAlertDialog("Game dialog 6",''',
+     '''    if (message != null && !(ChimeraSkins.id == "xp" && ChimeraSkins.active(this))) StudioAlertDialog("Game dialog 6",'''),
+])
