@@ -25,6 +25,10 @@ python3 scripts/play_release_tools.py prepare \
 AAB="$APP/build/outputs/bundle/release/app-release.aab"
 python3 scripts/play_release_tools.py verify --bundle "$AAB"
 
+# Candidate only: exact modified sources and pinned Forge/Arcana checkouts from
+# this AAB build. Never upload until the GPL audit is completed.
+python3 scripts/gpl_build_pair.py --aab "$AAB" --out "$ROOT/reports/gpl-play-aab"
+
 printf '\nLOCALLY BUILT, NOT RELEASED: %s\n' "$AAB"
 sha256sum "$AAB"
 echo "HOLD: This AAB cannot be distributed until corresponding GPL source, dependency notices, in-app license/source access, and human approval are complete."
