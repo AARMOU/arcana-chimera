@@ -482,7 +482,7 @@ patch("TableOverlays.kt", [
                                 val tracker = androidx.compose.ui.input.pointer.util.VelocityTracker()
                                 val screenHeightPx = with(density) { configuration.screenHeightDp.dp.toPx() }.coerceAtLeast(1f)
                                 val minSwipePx = with(density) { 40.dp.toPx() }
-                                val flingPx = with(density) { 1000.dp.toPx() }
+                                val flingPx = with(density) { 2500.dp.toPx() } // only a deliberate flick closes (owner, Nov 9 22:58)
                                 detectVerticalDragGestures(
                                     onDragStart = { tracker.resetTracking(); dragDistance = 0f; startFraction = if (studioFrame) studioHandFraction else handSheetHeightFraction },
                                     onVerticalDrag = { change, amount ->
@@ -492,10 +492,9 @@ patch("TableOverlays.kt", [
     ("""                                    onDragEnd = {
                                         if (studioFrame) optionPrefs.edit()""",
      """                                    onDragEnd = {
-                                        // Chimera (owner, Nov 9): a quick swipe down closes the drawer from any height, keeping
-                                        // the height it had; dragging past the smallest size closes it too.
-                                        val atMin = (if (studioFrame) studioHandFraction else handSheetHeightFraction) <= 0.385f
-                                        if (dragDistance > minSwipePx && (tracker.calculateVelocity().y > flingPx || atMin)) {
+                                        // Chimera (owner, Nov 9): a quick flick down closes the drawer from any height, keeping
+                                        // the height it had. Otherwise it stays where you let go, even at its smallest (22:58).
+                                        if (dragDistance > minSwipePx && tracker.calculateVelocity().y > flingPx) {
                                             if (studioFrame) studioHandFraction = startFraction else handSheetHeightFraction = startFraction
                                             showHand = false
                                         }
