@@ -566,6 +566,7 @@ public final class ArcanaForgeHost {
         SpellAbility sa = offered.get(key(type, action.optString("cardId", action.optString("sourceId")), action.optString("abilityId")));
         if (sa == null) { reject("You can't do that right now (not enough mana, or it's no longer available)."); scheduleEmit(); return; }
         chosenAbilityId = sa.getId();
+        castingNow = sa;
         Input input = you.getInputQueue().getActualInput(you);
         if (input == null || !input.selectAbility(sa)) { reject("Forge did not accept " + sa); scheduleEmit(); }
     }
@@ -1641,6 +1642,30 @@ public final class ArcanaForgeHost {
         return ask(d, Map.of()).optBoolean("choice");
     }
 
+    /** The spell or ability you last chose to cast or activate (for its X). */
+    private volatile SpellAbility castingNow;
+
+    /**
+     * Owner, Nov 10: "When it asks you to pick for x, I'd like it to limit to how much mana you can produce." For the X of
+     * the spell or ability you're casting, the largest X is what your untapped sources and pool can pay after the rest of
+     * the cost. Other numbers (and X paid some other way than mana) keep Forge's limit.
+     */
+    private int capX(String prompt, int min, int max) {
+        try {
+            SpellAbility sa = castingNow;
+            if (sa == null || prompt == null || sa.getHostCard() == null || !prompt.contains(sa.getHostCard().getName())) return max;
+            if (sa.getPayCosts() == null || sa.getPayCosts().getCostMana() == null) return max;
+            forge.card.mana.ManaCost cost = sa.getPayCosts().getTotalMana();
+            int xs = cost.countX();
+            if (xs <= 0) return max;
+            int available = forge.ai.ComputerUtilMana.getAvailableManaEstimate(sa.getActivatingPlayer() != null ? sa.getActivatingPlayer() : humanController().getPlayer(), true);
+            int cap = Math.max(min, (available - cost.getCMC()) / xs);
+            return Math.min(max, cap);
+        } catch (RuntimeException e) {
+            return max;
+        }
+    }
+
     private int askNumber(String prompt, int min, int max) throws Exception {
         if (min >= max) return min;
         JSONObject d = decisionBase("ChooseNumberDecision", prompt).put("minValue", min).put("maxValue", max);
@@ -1671,7 +1696,7 @@ public final class ArcanaForgeHost {
                 return r.isEmpty() ? null : r.get(0);
             }
             case "chooseEntitiesForEffect": return choose((String) a[0], (Integer) a[2], (Integer) a[3], (List<?>) a[1]);
-            case "getInteger": return askNumber((String) a[0], (Integer) a[1], (Integer) a[2]);
+            case "getInteger": return askNumber((String) a[0], (Integer) a[1], capX((String) a[0], (Integer) a[1], (Integer) a[2]));
             case "showOptionDialog": { // (message, title, icon, options, default) → chosen index (from Goose's PR #19)
                 List<?> opts = a.length > 3 && a[3] instanceof List<?> l ? l : List.of();
                 if (opts.size() < 2) return a.length > 4 ? a[4] : 0;
