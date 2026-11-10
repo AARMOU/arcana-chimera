@@ -396,6 +396,8 @@ internal fun ChimeraXpDesktop(ui: SkinUi) {
     BoxWithConstraints(Modifier.fillMaxSize().background(Color(0xFF3A6EA5))) {
         val wide = maxWidth > maxHeight
         val ratio = maxOf(maxWidth, maxHeight) / minOf(maxWidth, maxHeight)
+        val narrowScreen = maxWidth < 500.dp
+        val wins = windows(g, wide)
         XpWallpaper(wide, ratio)
         Column(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing)) {
             if (wide) AppBar(g, "Arcana Table – Commander (XP Edition)")
@@ -403,7 +405,6 @@ internal fun ChimeraXpDesktop(ui: SkinUi) {
                 val iconsW = if (maxWidth > 600.dp) 80f else 0f
                 val dw = maxWidth.value - iconsW; val dh = maxHeight.value - (if (wide) 50f else 0f)
                 val narrow = maxWidth < 500.dp
-                val wins = windows(g, wide)
                 val defaults = if (wide) landscapeDefaults(g, dw, dh) else portraitDefaults(dw, dh, narrow)
                 val startMin = if (wide) setOf("hand") else if (narrow) setOf("info", "overview", "zones", "hand", "stack") else setOf("hand", "stack")
                 val key = (if (wide) "w" else "p") + "${(dw / 40).toInt()}x${(dh / 40).toInt()}"
@@ -427,7 +428,7 @@ internal fun ChimeraXpDesktop(ui: SkinUi) {
                 // Opponent picker for the landscape opponent battlefield
                 OppPicker.index = oppIndex; OppPicker.set = { oppIndex = it }
             }
-            Taskbar(g, wins, onReset = { XpDesk.reset(if (wide) landscapeDefaults(g, XpDesk.deskW, XpDesk.deskH) else portraitDefaults(XpDesk.deskW, XpDesk.deskH, maxWidth < 500.dp),
+            Taskbar(g, wins, onReset = { XpDesk.reset(if (wide) landscapeDefaults(g, XpDesk.deskW, XpDesk.deskH) else portraitDefaults(XpDesk.deskW, XpDesk.deskH, narrowScreen),
                 if (wide) setOf("hand") else setOf("hand", "stack")) })
         }
     }

@@ -680,5 +680,5 @@ patch("StudioPresets.kt", [
 ])
 patch("TableOverlaysB.kt", [
     ('''    if (message != null) StudioAlertDialog("Game dialog 6",''',
-     '''    if (message != null && !(ChimeraSkins.id == "xp" && ChimeraSkins.active(this))) StudioAlertDialog("Game dialog 6",'''),
+     '''    if (message != null && !(ChimeraSkins.id == "xp" && ChimeraSkins.active(this@TableOverlaysB))) StudioAlertDialog("Game dialog 6",'''),
 ])
