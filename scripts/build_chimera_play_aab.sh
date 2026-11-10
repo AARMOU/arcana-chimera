@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 # Local-only signed Google Play AAB preparation. Never uploads, releases or merges.
-# Set the five CHIMERA_UPLOAD_* / CHIMERA_EXPECTED_* variables in a trusted local
-# signing environment. Never commit or print any credentials or keystore contents.
+# Set the required CHIMERA_UPLOAD_* variables in a trusted local
+# signing environment. The public Play upload SHA-256 is pinned in the
+# preflight script; CHIMERA_EXPECTED_UPLOAD_CERT_SHA256 is an optional check.
+# Never commit or print any credentials or keystore contents.
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
