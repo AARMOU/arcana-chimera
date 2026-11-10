@@ -455,8 +455,8 @@ public final class ArcanaForgeHost {
                 if (kind.equals("InputConfirmMulligan") || kind.equals("InputLondonMulligan")) lastPrompted = null;
                 if (pending != null) emitDecision(); else scheduleSelf();
             }
-            case "arcanaSaveOffline" -> error("Saving a game isn't available in the Forge build yet.");
-            case "requestUndo" -> error("Undo isn't available in the Forge build.");
+            case "arcanaSaveOffline" -> { } // sent when the app goes to the background; Forge games aren't saved yet, so nothing to say
+            case "requestUndo" -> error("Undo isn't available in this version.");
             case "setRespondToOwnStack" -> respondToOwnStack = message.optBoolean("enabled");
             case "setQuietOpponentTurns" -> quietOpponentTurns = message.optBoolean("enabled");
             default -> { }
@@ -568,7 +568,7 @@ public final class ArcanaForgeHost {
         chosenAbilityId = sa.getId();
         castingNow = sa;
         Input input = you.getInputQueue().getActualInput(you);
-        if (input == null || !input.selectAbility(sa)) { reject("Forge did not accept " + sa); scheduleEmit(); }
+        if (input == null || !input.selectAbility(sa)) { reject("That couldn't be done right now: " + sa); scheduleEmit(); }
     }
 
     // ---------------------------------------------------------------- state out to the UI
@@ -1255,7 +1255,36 @@ public final class ArcanaForgeHost {
             return m.group(1) + " must block each combat. Assign it to block.";
         if ((m = java.util.regex.Pattern.compile("^(.+?) must still block (.+?)\\.?$").matcher(t)).find())
             return m.group(1) + " must block " + m.group(2) + ".";
-        return t;
+        return wording(t);
+    }
+
+    /** Owner, Nov 10: Forge's question texts that read oddly, said the way a player would. */
+    static String wording(String t) {
+        java.util.regex.Matcher m;
+        if (t.equals("Cancel Choose?")) return "Stop choosing?";
+        if ((m = java.util.regex.Pattern.compile("^Have (.+?) shuffle\\?$").matcher(t)).find()) return "Should " + m.group(1) + " shuffle their library?";
+        if ((m = java.util.regex.Pattern.compile("^Do you want to put that card to (.+?)\\?$").matcher(t)).find()) return "Put that card into " + m.group(1).toLowerCase() + "?";
+        if (t.equals("Do you want to put the counter?")) return "Put the counter on it?";
+        if ((m = java.util.regex.Pattern.compile("^Put (.+?) to library\\?$").matcher(t)).find()) return "Put " + m.group(1) + " into your library?";
+        if (t.equals("Do you want to dig your library?")) return "Look at the top of your library?";
+        return t.replace("Choose a opponent", "Choose an opponent").replace("[Explore] ", "Explore: ");
+    }
+
+    /**
+     * Two-answer questions whose Forge wording doesn't say what Yes and No do (owner, Nov 10: "Put Swamp on the top of
+     * library or graveyard?" answered Yes/No). Returns {prompt, first answer, second answer}; the first answer is "yes".
+     */
+    static String[] twoWay(String prompt, String yes, String no) {
+        java.util.regex.Matcher m;
+        if ((m = java.util.regex.Pattern.compile("^Put (.+?) on the top of library or graveyard\\?$").matcher(prompt)).find())
+            return new String[]{"Surveil: keep " + m.group(1) + " on top of your library, or put it into your graveyard?", "Keep on top", "Graveyard"};
+        if ((m = java.util.regex.Pattern.compile("^Put (.+?) on the top or bottom of your library\\?$").matcher(prompt)).find())
+            return new String[]{"Scry: keep " + m.group(1) + " on top of your library, or put it on the bottom?", "Keep on top", "Bottom"};
+        if ((m = java.util.regex.Pattern.compile("^Should (.+?) be added to the top or to the bottom of the library\\?$").matcher(prompt)).find())
+            return new String[]{"Put " + m.group(1) + " on top of the library, or on the bottom?", "Top", "Bottom"};
+        if ((m = java.util.regex.Pattern.compile("^(?:\\[Explore\\] |Explore: )Put (.+?) in your graveyard\\?$").matcher(prompt)).find())
+            return new String[]{"Explore: put " + m.group(1) + " into your graveyard, or keep it on top of your library?", "Graveyard", "Keep on top"};
+        return new String[]{prompt, yes, no};
     }
 
     /**
@@ -1638,7 +1667,8 @@ public final class ArcanaForgeHost {
     }
 
     private boolean askYesNo(String prompt, String yes, String no) throws Exception {
-        JSONObject d = decisionBase("YesNoDecision", prompt).put("yesText", yes == null ? "Yes" : yes).put("noText", no == null ? "No" : no);
+        String[] said = twoWay(prompt == null ? "" : prompt, yes == null ? "Yes" : yes, no == null ? "No" : no);
+        JSONObject d = decisionBase("YesNoDecision", said[0]).put("yesText", said[1]).put("noText", said[2]);
         return ask(d, Map.of()).optBoolean("choice");
     }
 
@@ -1829,9 +1859,11 @@ public final class ArcanaForgeHost {
         }
         if (kind.equals("InputConfirm")) {
             String prompt = field(input, "message") instanceof String m ? m : "Confirm";
-            Object opts = field(input, "options");
-            List<?> labels = opts instanceof List<?> l && l.size() > 1 ? l : null;
-            String yes = labels == null ? "Yes" : String.valueOf(labels.get(0)), no = labels == null ? "No" : String.valueOf(labels.get(1));
+            // Forge's own answer names ("Library" / "Graveyard", "Top" / "Bottom"); they were read from a field that
+            // doesn't exist, so every such question showed Yes / No (owner, Nov 10).
+            String yes = field(input, "yesButtonText") instanceof String y && !y.isBlank() ? y : "Yes";
+            String no = field(input, "noButtonText") instanceof String n && !n.isBlank() ? n : "No";
+            String[] said = twoWay(prompt, yes, no); prompt = said[0]; yes = said[1]; no = said[2];
             // CR 903.9a: Forge's prompt is the rule's full text; say it the way a player would (owner, Nov 8)
             java.util.regex.Matcher cz = java.util.regex.Pattern.compile("^(.+?): If a commander is in a graveyard or in exile").matcher(prompt);
             if (cz.find()) { prompt = "Return " + cz.group(1) + " to the command zone?"; yes = "Command zone"; no = "Leave it"; }

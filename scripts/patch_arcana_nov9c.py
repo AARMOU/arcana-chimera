@@ -593,3 +593,10 @@ patch("TableBoardViews.kt", [
      '''                            CardArt(commanderArtOnly(commander.imageUrl) ?: commander.imageUrl.orEmpty(), Modifier.width(34.dp).height(40.dp).clip(RoundedCornerShape(topStart = 9.dp, bottomStart = 9.dp)),
                                 contentScale = ContentScale.Crop, fallbackName = commander.name)'''),
 ])
+
+# "YES · ALWAYS THIS TURN" only for real yes/no questions, not two-way choices like Keep on top / Graveyard (owner, Nov 10).
+_hide_lines("TableOverlays.kt", [('StudioTextButton("TableOverlays.TextButton.14"', 'StudioTextButton("TableOverlays.TextButton.14"')])
+patch("TableOverlays.kt", [
+    ('''if (false) StudioTextButton("TableOverlays.TextButton.14"''',
+     '''if (decision.decisionDisplayText("yesText", "Yes").equals("Yes", ignoreCase = true)) StudioTextButton("TableOverlays.TextButton.14"'''),
+])
