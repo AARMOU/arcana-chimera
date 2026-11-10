@@ -450,12 +450,12 @@ public final class ArcanaForgeHost {
             }
             case "concede" -> you.concede();
             case "coachRequest" -> { // owner, Nov 10: coach mode, "What would the AI do?"
-                Thread t = new Thread(() -> {
+                Thread coachThread = new Thread(() -> {
                     String text;
                     try { text = coach(); } catch (Throwable e) { text = "The coach couldn't think this one through (" + e.getClass().getSimpleName() + ")."; }
                     try { sink.accept(new JSONObject().put("type", "chimeraCoach").put("text", text)); } catch (Exception ignored) { }
                 }, "forge-coach");
-                t.setDaemon(true); t.start();
+                coachThread.setDaemon(true); coachThread.start();
             }
             case "requestResync" -> { // after a reconnect: send the open question or mulligan offer again
                 Input now = you.getInputQueue().getActualInput(you);
