@@ -15,6 +15,15 @@ pass owner review. This draft does not merge Claude B's work or touch Arcana mai
   identity as the **Upload key** fingerprint is therefore **UNCONFIRMED**.
   It must NOT be pinned or accepted as the upload certificate until the owner
   copies SHA-256 specifically from the Play Console **Upload key certificate**.
+- Owner then supplied a **second** SHA-256 after being directed to scroll to the
+  **Upload key certificate** section on Play Console (2026-11-10):
+  `4C:CA:DD:51:2C:EC:DA:DD:A5:41:2C:FB:8B:F3:3F:02:BF:5A:18:34:D4:09:20:98:8C:5F:9D:CC:E9:30:0D:8F`.
+  This is now the **candidate Play upload certificate fingerprint**, pinned in
+  `scripts/play_release_tools.py`. The exact same SHA-256 was documented for
+  the older **B131 preview-signing certificate**, a potentially useful key
+  recovery clue. An equal certificate hash does **not** demonstrate that the
+  private key file is recoverable or that this was copied from the correct
+  Play section; independently verify before any release.
 - Build 138 Play release checklist records the original key. Build 142 donor has
   `targetSdk = 36` and `versionCode = 142`. As of August 31, 2026,
   Google Play requires API 36 for ordinary phone app updates.
@@ -37,9 +46,11 @@ encrypted backup. On a phone, open Play Console → the existing Arcana Table ap
 → **Test and release → App integrity** (the exact menu label can vary) →
 **App signing** → **Upload key certificate**. Copy the **SHA-256 fingerprint**
 of the UPLOAD certificate (not the separate Play app-signing certificate).
-Supply the independently confirmed **Upload key certificate** fingerprint
-as `CHIMERA_EXPECTED_UPLOAD_CERT_SHA256` and compare it to the recovered
-keystore. The local preflight enforces a match; no fingerprint is assumed.
+The reported second Play **Upload key certificate** fingerprint is pinned
+in the local preflight; if supplied, `CHIMERA_EXPECTED_UPLOAD_CERT_SHA256`
+can only confirm that fingerprint, not override it. The recovered keystore
+must independently match the pinned SHA-256, and the fingerprint should be
+reconfirmed from the correct Play Console section before distribution.
 
 The existing original keystore cannot be reconstructed from its alias,
 password text, public certificate, old AAB or Play app-signing certificate.
@@ -58,7 +69,7 @@ history or Git:
 | `CHIMERA_UPLOAD_STORE_PASSWORD` | Keystore password (secret) |
 | `CHIMERA_UPLOAD_KEY_PASSWORD` | Key password (secret) |
 | `CHIMERA_UPLOAD_ALIAS` | Must be `arcana-upload` |
-| `CHIMERA_EXPECTED_UPLOAD_CERT_SHA256` | **Required** SHA-256 from confirmed Play Console **Upload key certificate**, not the Google Play app-signing certificate |
+| `CHIMERA_EXPECTED_UPLOAD_CERT_SHA256` | Optional **cross-check** for the reported Play Console upload fingerprint pinned in the script; cannot override it |
 | `CHIMERA_PLAY_VERSION_CODE` | An unused higher integer (at least 143) |
 | `CHIMERA_PLAY_VERSION_NAME` | Optional, safe display string |
 
