@@ -745,6 +745,15 @@ public final class ArcanaForgeHost {
             if (kind.equals("InputConfirm") && game.getPhaseHandler().getTurn() == 0) { // play or draw: Arcana's offline host doesn't ask; take the play
                 lastPrompted = input; youChosePlay = true; defaultedPrompts.add("play or draw: play"); ok(you); return;
             }
+            // Owner, Nov 9: "Can't it just randomize?" Forge picks the coin-toss winner at random; when that's you, it asked
+            // who should start (desktop wording, and the game stalled after the answer). Now the winner simply goes first.
+            if (kind.equals("InputSelectEntitiesFromList") && game.getPhaseHandler().getTurn() == 0
+                    && field(input, "validChoices") instanceof Iterable<?> choices && allPlayers(choices)) {
+                lastPrompted = input; youChosePlay = true; defaultedPrompts.add("coin toss won: you go first");
+                input.selectPlayer(you.getPlayer(), null);
+                input.selectButtonOK(); // ignored by Forge if picking one already finished it
+                return;
+            }
             if (kind.equals("InputConfirmMulligan") && (autoKeep || autoMulligan)) { // already answered on Arcana's screen
                 lastPrompted = input;
                 boolean keep = autoKeep; autoKeep = false; autoMulligan = false;
@@ -1035,6 +1044,12 @@ public final class ArcanaForgeHost {
     public static volatile java.util.function.BiFunction<String, String, String> pictures;
 
     /** {@code ownerSeat}: whose deck the card is from, for the art chosen in that deck (Change art). */
+    private static boolean allPlayers(Iterable<?> choices) {
+        boolean any = false;
+        for (Object o : choices) { if (!(o instanceof Player)) return false; any = true; }
+        return any;
+    }
+
     /** Forge's rule-keeping objects (commander effect and the like): not cards a player has; emblems are kept. */
     private static boolean internalEffect(Card c) {
         return c.isImmutable() && !c.isEmblem();

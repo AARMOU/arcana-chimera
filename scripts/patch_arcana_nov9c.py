@@ -433,3 +433,9 @@ patch("StudioHandEditor.kt", [
     }
 '''),
 ])
+
+# Players in a choice are not cards: no picture lookup by their name (owner, Nov 9 22:35 log: "You", "AI · Animar").
+patch("ArgentumCardPick.kt", [
+    ('''    val image = imageUrl ?: str("imageUri") ?: artByName(shownName, isToken)''',
+     '''    val image = imageUrl ?: str("imageUri") ?: if (isPlayer) null else artByName(shownName, isToken)'''),
+])
