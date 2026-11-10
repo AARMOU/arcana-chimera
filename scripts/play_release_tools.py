@@ -3,8 +3,9 @@
 
 Nothing uploads, publishes, retrieves secrets, or changes the donor repository.
 The caller supplies the ORIGINAL upload key and Play Console upload-certificate
-SHA-256 supplied from the correct Play Console UPLOAD certificate through
-private build configuration. Never put signing keys or passwords in Git.
+SHA-256 supplied by the owner in response to the Play Console UPLOAD
+certificate instructions, pinned here as public metadata. Never put
+signing keys or passwords in Git.
 """
 import argparse
 import os
@@ -15,6 +16,10 @@ import sys
 
 EXPECTED_PACKAGE = "com.arcanatable"
 EXPECTED_ALIAS = "arcana-upload"
+# Public certificate fingerprint reported for Play Console UPLOAD key on 2026-11-10.
+# Independently compare to the actual keystore before signing; never accept
+# the separate Google Play app-signing certificate as an upload certificate.
+EXPECTED_UPLOAD_CERT_SHA256 = "4CCADD512CECDADDA5412CFB8BF33F02BF5A1834D40920988C5F9DCCE9300D8F"
 GRADLE_MARKER = "// CHIMERA PLAY SIGNED RELEASE OVERLAY"
 MIN_VERSION_CODE = 143  # Build 142 in the pinned donor. Play Console may require higher.
 
@@ -37,7 +42,6 @@ def require_signing_environment():
     required = (
         "CHIMERA_UPLOAD_KEYSTORE", "CHIMERA_UPLOAD_STORE_PASSWORD",
         "CHIMERA_UPLOAD_KEY_PASSWORD", "CHIMERA_UPLOAD_ALIAS",
-        "CHIMERA_EXPECTED_UPLOAD_CERT_SHA256",
     )
     missing = [name for name in required if not os.environ.get(name)]
     if missing:
@@ -47,9 +51,11 @@ def require_signing_environment():
     store = Path(os.environ["CHIMERA_UPLOAD_KEYSTORE"]).expanduser().resolve()
     if not store.is_file() or store.stat().st_size == 0:
         raise ValueError("Original upload keystore file is missing or empty")
-    # Fail closed: owner is still identifying the UPLOAD certificate. Do not
-    # assume the separate Play APP SIGNING fingerprint is interchangeable.
-    return store, fingerprint(os.environ["CHIMERA_EXPECTED_UPLOAD_CERT_SHA256"])
+    # An environment variable may confirm the public pin but cannot replace it.
+    supplied = os.environ.get("CHIMERA_EXPECTED_UPLOAD_CERT_SHA256")
+    if supplied and fingerprint(supplied) != EXPECTED_UPLOAD_CERT_SHA256:
+        raise ValueError("Provided Play UPLOAD fingerprint differs from the confirmed public pin")
+    return store, EXPECTED_UPLOAD_CERT_SHA256
 
 
 def run_checked(command):
