@@ -567,3 +567,21 @@ patch("HomeScreen.kt", [
 patch("TableDialogs.kt", [
     ('''"20 chapters, 160 lessons and a Magic glossary · works offline"''', '''"20 chapters and a Magic glossary · works offline"'''),
 ])
+
+# ================================================================== vibration (owner, Nov 10: "it doesn't seem like anything does")
+patch("TableEffects.kt", [
+    ('''        if (isYou && buzzOnTurn && appInForeground) haptics.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)''',
+     '''        if (isYou) ChimeraHaptics.turnStart() // the phone's vibrator, not the touch haptic the phone can silence'''),
+])
+patch("TableOverlays.kt", [
+    ('''    ChimeraConcedeDialog { recordDiagnostic("Player conceded", DiagnosticCategory.ACTION); if (argentumEnabled) argentumSocket.concede() else concede(localSeat) }''',
+     '''    ChimeraConcedeDialog { recordDiagnostic("Player conceded", DiagnosticCategory.ACTION); if (argentumEnabled) argentumSocket.concede() else concede(localSeat) }
+    ChimeraHapticWatch(argentumPendingDecision?.optString("decisionId")?.ifBlank { null } ?: argentumPendingDecision?.toString()?.take(200),
+        argentumBlockPlan != null, argentumMulliganPrompt, passToMyTurnFrom != null, cardZoom.card != null,
+        argentumSnapshot?.let { it.activePlayer == localSeat } ?: true)'''),
+])
+patch("TableDialogs.kt", [
+    ('''                SettingsToggle("Skip AI actions unless needed", "Offline games: pass over AI spells and abilities unless they affect you. Prompts and blocks still stop the game.", quietOpponentTurns, onQuietOpponentTurns, Modifier)''',
+     '''                SettingsToggle("Skip AI actions unless needed", "Offline games: pass over AI spells and abilities unless they affect you. Prompts and blocks still stop the game.", quietOpponentTurns, onQuietOpponentTurns, Modifier)
+                ChimeraVibrationSetting()'''),
+])

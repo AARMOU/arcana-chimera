@@ -81,7 +81,7 @@ internal object ChimeraPhaseStops {
 internal fun Modifier.chimeraPhaseStop(phase: String): Modifier = composed {
     val haptic = LocalHapticFeedback.current
     pointerInput(phase) {
-        detectTapGestures(onLongPress = { haptic.performHapticFeedback(HapticFeedbackType.LongPress); ChimeraPhaseStops.menuFor = phase })
+        detectTapGestures(onLongPress = { ChimeraHaptics.tick(); ChimeraPhaseStops.menuFor = phase })
     }.drawWithContent {
         drawContent()
         if (ChimeraPhaseStops.has(phase)) drawCircle(androidx.compose.ui.graphics.Color(0xFFE5534B), radius = 3.dp.toPx(),
