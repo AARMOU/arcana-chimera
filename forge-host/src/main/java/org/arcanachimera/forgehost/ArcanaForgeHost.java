@@ -807,7 +807,10 @@ public final class ArcanaForgeHost {
         // Forge shuffles and deals between mulligan prompts (and the AI mulligans too): that's still the mulligan.
         // Arcana shows the opening-hand screen only until the first game state, so send nothing until turn 1
         // (phone, Nov 8 11:31: after "Mulligan" the new hand never appeared).
-        if (inMulligan && game.getPhaseHandler().getTurn() == 0) return;
+        // Phone, Nov 11 (host + friend + 2 AIs): after keeping, nothing asked this person anything again until their
+        // own turn or a spell, because AI turns pass in silence. The host sat on the loading screen through whole AI
+        // turns. Keep looking (cheap: nothing is built) until turn 1 starts, so everyone sees the table from its start.
+        if (inMulligan && game.getPhaseHandler().getTurn() == 0) { scheduleSelf(); return; }
         if (inMulligan) { // Argentum's order: mulliganComplete, then the first game state
             inMulligan = false;
             sink.accept(new JSONObject().put("type", "mulliganComplete").put("finalHandSize", you.getPlayer().getCardsIn(ZoneType.Hand).size()));
