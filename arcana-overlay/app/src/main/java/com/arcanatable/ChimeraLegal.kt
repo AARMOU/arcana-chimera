@@ -27,6 +27,7 @@ internal object ChimeraLegal {
     const val SCOPE = "legal/CHIMERA-LICENSE-SCOPE.md"
     const val SOURCE = "legal/SOURCE-ACCESS.txt"
     const val NOTICES = "legal/GPL-RELEASE-NOTICES.md"
+    const val THIRD_PARTY = "legal/THIRD-PARTY-NOTICES.txt"
 }
 
 internal data class ChimeraSourceRecord(val published: Boolean, val url: String = "",
@@ -44,7 +45,9 @@ internal object ChimeraLegalSource {
         val hash = fields["SOURCE_SHA256"] ?: ""
         val valid = version == installedVersion && installedVersion.isNotBlank() &&
             url.startsWith("https://") && url.none { it.isWhitespace() } &&
-            Regex("^[0-9a-fA-F]{64}$").matches(hash)
+            // The archive's checksum is published beside the archive (the archive records this
+            // app's hash, so the app cannot contain the archive's). When one is given it must be real.
+            (hash.isEmpty() || Regex("^[0-9a-fA-F]{64}$").matches(hash))
         return if (valid) ChimeraSourceRecord(true, url, hash) else ChimeraSourceRecord(false)
     }
 }
@@ -60,6 +63,7 @@ internal fun ChimeraLegalDialog() {
     val gpl = remember(context) { context.legalAsset(ChimeraLegal.GPL) }
     val scope = remember(context) { context.legalAsset(ChimeraLegal.SCOPE) }
     val notices = remember(context) { context.legalAsset(ChimeraLegal.NOTICES) }
+    val thirdParty = remember(context) { context.legalAsset(ChimeraLegal.THIRD_PARTY) }
     val source = remember(context, version) {
         ChimeraLegalSource.parse(context.legalAsset(ChimeraLegal.SOURCE), version)
     }
@@ -72,11 +76,13 @@ internal fun ChimeraLegalDialog() {
             "App version: " + version + "\n\n" +
             "The build is not approved for distribution merely because these notices appear."
         1 -> gpl
-        2 -> scope + "\n\n--- Release-readiness notes ---\n\n" + notices
+        2 -> thirdParty + "\n\n--- Licence scope ---\n\n" + scope +
+            "\n\n--- Release-readiness notes ---\n\n" + notices
         else -> if (source.published)
             "Version-matched corresponding-source location:\n" + source.url +
-            "\n\nSource SHA-256: " + source.sha256 +
-            "\n\nA link alone does not prove that the source is complete; see the distribution review."
+            (if (source.sha256.isEmpty()) "\n\nThe source archive's SHA-256 is published beside it."
+             else "\n\nSource SHA-256: " + source.sha256) +
+            "\n\nThe complete corresponding source for this exact version is offered there under GPLv3."
         else
             "Corresponding source for this exact build is NOT YET PUBLISHED.\n\n" +
             "This build must not be distributed until the version-matched source package, " +

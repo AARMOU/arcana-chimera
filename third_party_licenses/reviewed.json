@@ -1,0 +1,38 @@
+{
+  "schema": "chimera-reviewed-licenses-v1",
+  "reviewed": "2026-11-10",
+  "basis": "Declared licenses read from each artifact's own POM and parent POM chain (Maven Central), embedded LICENSE/NOTICE files, and upstream LICENSE files at the release tags. Engineering review, not legal advice.",
+  "forbidden_jars": [
+    {"match": "^org\\.jupnp", "license": "CDDL-1.0", "why": "CDDL-1.0 cannot be combined with GPLv3 code in one program. Not needed: Chimera never hosts Forge UPnP network games."},
+    {"match": "^jetty-", "license": "Apache-2.0 OR EPL-1.0", "why": "Only needed by jUPnP's HTTP transport; removed with it."},
+    {"match": "^javax\\.servlet-api-", "license": "CDDL-1.0 OR GPL-2.0-only WITH Classpath-exception-2.0", "why": "Only needed by Jetty/jUPnP; removed with them."}
+  ],
+  "jars": [
+    {"match": "^forge-(ai|core|game|gui)-", "name": "Forge", "license": "GPL-3.0-only", "texts": [], "note": "Built from the pinned Card-Forge/forge commit. Full GPLv3 text is packaged separately as legal/Forge-GPL-3.0.txt."},
+    {"match": "^netty-", "name": "Netty 4.1", "license": "Apache-2.0", "texts": ["Apache-2.0.txt"], "note": "NOTICE reproduced below; it lists the third-party code Netty itself embeds."},
+    {"match": "^commons-(lang3|math3|text)-", "name": "Apache Commons", "license": "Apache-2.0", "texts": ["Apache-2.0.txt"]},
+    {"match": "^(guava|failureaccess)-", "name": "Guava", "license": "Apache-2.0", "texts": ["Apache-2.0.txt"]},
+    {"match": "^(error_prone_annotations|j2objc-annotations|jsr305|gson)-", "name": "Google annotations and Gson", "license": "Apache-2.0", "texts": ["Apache-2.0.txt"]},
+    {"match": "^checker-qual-", "name": "Checker Framework qualifiers", "license": "MIT", "texts": ["checker-qual-MIT.txt"]},
+    {"match": "^(tinylog-api|tinylog-impl|slf4j-tinylog)-", "name": "tinylog", "license": "Apache-2.0", "texts": ["Apache-2.0.txt"]},
+    {"match": "^jheaps-", "name": "JHeaps", "license": "Apache-2.0", "texts": ["Apache-2.0.txt"]},
+    {"match": "^lz4-java-", "name": "lz4-java", "license": "Apache-2.0", "texts": ["Apache-2.0.txt"], "note": "Bundles desktop native builds of the LZ4 library (BSD-2-Clause, Yann Collet); they are unused on Android."},
+    {"match": "^apfloat-", "name": "Apfloat", "license": "MIT", "texts": ["apfloat-MIT.txt"]},
+    {"match": "^rssreader-", "name": "RSS Reader", "license": "MIT", "texts": ["rssreader-MIT.txt"]},
+    {"match": "^sentry-", "name": "Sentry Java SDK", "license": "MIT", "texts": ["sentry-MIT.txt"], "note": "Present because Forge links it. Chimera never initialises it, so nothing is reported."},
+    {"match": "^jgrapht-core-", "name": "JGraphT", "license": "LGPL-2.1-or-later OR EPL-2.0", "elected": "LGPL-2.1-or-later", "texts": ["LGPL-2.1.txt"], "note": "Dual licensed; Chimera uses it under the LGPL, which is compatible with GPLv3."},
+    {"match": "^xstream-", "name": "XStream", "license": "BSD-3-Clause", "texts": ["xstream-BSD-3-Clause.txt"]},
+    {"match": "^mxparser-", "name": "MXParser", "license": "Indiana University Extreme! Lab Software License 1.2", "texts": ["mxparser-Indiana-Extreme.txt"], "note": "This product includes software developed by the Indiana University Extreme! Lab (http://www.extreme.indiana.edu/). OPEN ITEM: an Apache-1.1-style licence whose GPL compatibility is disputed; see the audit."},
+    {"match": "^xmlpull-", "name": "XMLPULL API", "license": "Public domain", "texts": ["xmlpull-public-domain.txt"]},
+    {"match": "^argentum-", "name": "Argentum engine (carried over from the Arcana donor)", "license": "MIT", "texts": ["argentum-engine-MIT.txt"]}
+  ],
+  "gradle_groups": [
+    {"prefix": "androidx.", "license": "Apache-2.0"},
+    {"prefix": "org.jetbrains", "license": "Apache-2.0"},
+    {"prefix": "com.squareup.", "license": "Apache-2.0"},
+    {"prefix": "com.google.", "license": "Apache-2.0"},
+    {"prefix": "org.jspecify", "license": "Apache-2.0"},
+    {"prefix": "org.checkerframework", "license": "MIT"},
+    {"prefix": "org.slf4j", "license": "MIT", "texts": ["slf4j-MIT.txt"]}
+  ]
+}

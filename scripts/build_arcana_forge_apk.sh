@@ -38,6 +38,11 @@ rm -f "$LIBS"/slf4j-api-*.jar "$LIBS"/listenablefuture-*.jar   # Arcana already 
 for base in $(ls "$LIBS" | sed -E 's/-[0-9][0-9.]*(-[A-Za-z0-9.]+)?\.jar$//' | sort | uniq -d); do
   ls "$LIBS"/"$base"-[0-9]*.jar | sort -V | head -n -1 | xargs -r rm -f
 done
+# GPL audit (Nov 10): jUPnP is CDDL-1.0, which cannot be combined with GPLv3 Forge in one app. It only serves
+# Forge's own UPnP network hosting, which Chimera never starts; Jetty and the servlet API are only its transport.
+# forge-host/src/stubs supplies the one type Forge's interfaces name. third_party_notices.py refuses these JARs.
+rm -f "$LIBS"/org.jupnp*.jar "$LIBS"/jetty-*.jar "$LIBS"/javax.servlet-api-*.jar
+STUB="$ROOT/forge-host/src/stubs/java/org/jupnp/UpnpServiceConfiguration.java"
 ls -1 "$LIBS"; du -sh "$LIBS"
 
 echo "== Forge data (card scripts as one zip Forge reads directly)"
@@ -55,7 +60,9 @@ APP="$ARCANA/android/app"
 cp "$ROOT/arcana-overlay/app/src/main/java/com/arcanatable/engine/LocalArgentumHost.kt" "$APP/src/main/java/com/arcanatable/engine/LocalArgentumHost.kt"
 mkdir -p "$APP/src/main/java/org/arcanachimera/forgehost" "$APP/libs/forge" "$APP/src/main/assets"
 cp "$ROOT/forge-host/src/main/java/org/arcanachimera/forgehost/ArcanaForgeHost.java" "$APP/src/main/java/org/arcanachimera/forgehost/"
+rm -f "$APP"/libs/forge/*.jar   # a reused staging tree must not keep JARs this build no longer ships
 cp "$LIBS"/*.jar "$APP/libs/forge/"
+mkdir -p "$APP/src/main/java/org/jupnp" && cp "$STUB" "$APP/src/main/java/org/jupnp/"
 cp "$WORK/forge-res.zip" "$APP/src/main/assets/forge-res.zip"
 python3 "$ROOT/scripts/patch_arcana_for_forge.py" "$APP" # owner: no Argentum card check; Forge decides
 echo "== Chimera official WotC Commander decklists (bundled offline; no Arcana writes)"
@@ -70,6 +77,7 @@ echo "== Forge's cards for Arcana's deck import and editor (ForgeCatalogExport)"
 (cd "$FORGE" && mvn -B -q dependency:copy -Dartifact=org.json:json:20240303 -DoutputDirectory="$WORK/jvm")
 mkdir -p "$WORK/jvm/classes"
 javac --release 17 -encoding UTF-8 -nowarn -d "$WORK/jvm/classes" -cp "$LIBS/*:$WORK/jvm/json-20240303.jar" \
+  "$STUB" \
   "$ROOT/forge-host/src/main/java/org/arcanachimera/forgehost/ArcanaForgeHost.java" \
   "$ROOT/forge-host/src/main/java/org/arcanachimera/forgehost/ForgeCatalogExport.java"
 (cd "$FORGE/forge-gui" && java -Xmx3g -Djava.awt.headless=true -cp "$WORK/jvm/classes:$LIBS/*:$WORK/jvm/json-20240303.jar" \
@@ -107,11 +115,7 @@ cp "$ROOT/LICENSE" "$APP/src/main/assets/legal/GPL-3.0.txt"
 cp "$ROOT/LICENSE_SCOPE.md" "$APP/src/main/assets/legal/CHIMERA-LICENSE-SCOPE.md"
 cp "$ROOT/third_party_licenses/Forge-GPL-3.0.txt" "$APP/src/main/assets/legal/Forge-GPL-3.0.txt"
 cp "$ROOT/docs/GPLV3_RELEASE_READINESS.md" "$APP/src/main/assets/legal/GPL-RELEASE-NOTICES.md"
-cat > "$APP/src/main/assets/legal/SOURCE-ACCESS.txt" <<'LEGAL-SOURCE'
-SOURCE_VERSION_NAME=UNPUBLISHED
-SOURCE_URL=UNPUBLISHED
-SOURCE_SHA256=UNPUBLISHED
-LEGAL-SOURCE
+# SOURCE-ACCESS.txt and THIRD-PARTY-NOTICES.txt are written just before the Gradle build, below.
 python3 "$ROOT/scripts/patch_arcana_nov9.py" "$APP" # owner's Nov 9 list: drawer, Commander, presets, fan/catalogue, backgrounds, log detail
 python3 "$ROOT/scripts/patch_arcana_nov9c.py" "$APP" # owner's third Nov 9 list: choices, pictures, combat, mulligan grid, home picture
 python3 "$ROOT/scripts/patch_arcana_tutorial.py" "$APP" # the tutorial's text for Arcana with Forge (owner, Nov 10)
@@ -136,8 +140,15 @@ dependencies { implementation(fileTree(mapOf("dir" to "libs/forge", "include" to
 configurations.all { exclude(group = "com.google.guava", module = "listenablefuture") } // Forge brings full Guava
 GRADLE
 
-echo "== Build"
 echo "sdk.dir=${ANDROID_HOME:-/usr/local/lib/android/sdk}" > "$ARCANA/android/local.properties"
+echo "== Licence notices and source location packaged in the app"
+mkdir -p "$ROOT/reports/license-audit"
+(cd "$ARCANA/android" && ./gradlew --no-daemon --max-workers=2 :app:dependencies --configuration releaseRuntimeClasspath) > "$ROOT/reports/license-audit/runtime.txt"
+python3 "$ROOT/scripts/third_party_notices.py" --jars "$APP/libs/forge" --jars "$APP/libs" \
+  --gradle-report "$ROOT/reports/license-audit/runtime.txt" \
+  --out "$APP/src/main/assets/legal/THIRD-PARTY-NOTICES.txt" --report "$ROOT/reports/license-audit/notices.json"
+python3 "$ROOT/scripts/write_source_access.py" --app "$APP"
+echo "== Build"
 (cd "$ARCANA/android" && ./gradlew --no-daemon --max-workers=2 :custom-cards:exportCards :app:assembleDebug "-Parcana.debugLabel=Arcana Forge B142 Studio")
 APK="$(ls "$APP"/build/outputs/apk/debug/*.apk | head -1)"
 ls -la "$APK"
