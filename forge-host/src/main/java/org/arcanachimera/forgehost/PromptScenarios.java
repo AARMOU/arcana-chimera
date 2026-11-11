@@ -23,6 +23,8 @@ import java.util.concurrent.atomic.AtomicReference;
  *     Also calls the 8- and 9-argument `order` forms directly and checks the returned order and wrapper type.
  *  B. Combat damage: Prized Unicorn (all able creatures must block it) attacks into two Grizzly Bears. The player
  *     puts all 2 damage on the SECOND blocker; the second must die and the first must survive.
+ *  N. Burgeoning (owner, Nov 11): "Use triggered ability?" answered YES · ALWAYS once; the AI's next land must
+ *     trigger it again without asking, and both triggers must put a land from your hand onto the battlefield.
  *  Every scenario fails on a timeout, a "can't show yet" notice, or a missing follow-up state.
  */
 public final class PromptScenarios {
@@ -33,10 +35,10 @@ public final class PromptScenarios {
     public static void main(String[] args) throws Exception {
         forgeDir = args.length > 0 ? args[0] : "../forge-gui/";
         List<String> failures = new ArrayList<>();
-        for (String name : List.of("A-ghalta-order", "B-combat-damage", "C-mulligan", "D-trample-short", "E-stack", "F-mana-convoke", "G-you-lose", "H-end-step", "I-may-pay", "J-ayula-fight-0", "J-ayula-fight-1", "J-ayula-fight-2", "K-commander-dies", "L-illegal-block", "M-forced-block")) {
+        for (String name : List.of("A-ghalta-order", "B-combat-damage", "C-mulligan", "D-trample-short", "E-stack", "F-mana-convoke", "G-you-lose", "H-end-step", "I-may-pay", "J-ayula-fight-0", "J-ayula-fight-1", "J-ayula-fight-2", "K-commander-dies", "L-illegal-block", "M-forced-block", "N-always-yes")) {
             String r;
             try { r = name.startsWith("A") ? ghalta() : name.startsWith("B") ? combatDamage() : name.startsWith("C") ? mulligan() : name.startsWith("D") ? trampleShort() : name.startsWith("E") ? stack() : name.startsWith("F") ? manaAndConvoke() : name.startsWith("G") ? youLose() : name.startsWith("H") ? endStep() : name.startsWith("I") ? mayPay() : name.startsWith("J") ? ayulaFight(name.charAt(name.length() - 1) - '0') : name.startsWith("K") ? commanderDies()
-                    : name.startsWith("L") ? illegalBlock() : forcedBlock(); }
+                    : name.startsWith("L") ? illegalBlock() : name.startsWith("N") ? alwaysYes() : forcedBlock(); }
             catch (Throwable t) { t.printStackTrace(); r = "FAIL: " + t; }
             System.out.println("SCENARIO " + name + " " + r);
             if (!r.startsWith("PASS")) failures.add(name);
@@ -717,6 +719,54 @@ public final class PromptScenarios {
                 if (attacked && state.optString("currentStep").equals("POSTCOMBAT_MAIN")) return "FAIL: no Robot after attacking (discardShown=" + discardOk + ", payAsked=" + payAsked + ") notices " + s.notices;
                 s.send(new JSONObject().put("type", "PassPriority").put("playerId", ArcanaForgeHost.HUMAN_ID));
             }
+        } finally { s.close(); }
+    }
+
+    // ------------------------------------------------------------------ N. "Always yes" for an optional trigger
+
+    private static String alwaysYes() throws Exception {
+        Session s = new Session(String.join("\n",
+                "activeplayer=ai", "activephase=MAIN1",
+                "humanlife=20", "ailife=20", "humanlibrary=" + LIBRARY, "ailibrary=" + LIBRARY,
+                "humanbattlefield=Burgeoning", "humanhand=Forest;Forest;Forest", "aibattlefield=", "aihand=Forest;Forest"), "Burgeoning");
+        try {
+            int asked = 0, aiLands = -1, triggersSeen = 0;
+            boolean offered = false;
+            long deadline = System.currentTimeMillis() + 240_000;
+            while (System.currentTimeMillis() < deadline) {
+                JSONObject m = s.next(90);
+                if (!m.optString("type").equals("stateUpdate")) continue;
+                JSONObject state = m.getJSONObject("state");
+                int now = battlefield(state, ArcanaForgeHost.AI_ID, "Forest").size();
+                if (aiLands >= 0 && now > aiLands) triggersSeen += now - aiLands;
+                aiLands = now;
+                int yours = battlefield(state, ArcanaForgeHost.HUMAN_ID, "Forest").size();
+                if (triggersSeen >= 2 && yours >= 2) {
+                    if (asked != 1) return "FAIL: asked " + asked + " times for " + triggersSeen + " opponent lands (always-yes ignored)";
+                    if (!offered) return "FAIL: the trigger question did not offer ALWAYS";
+                    return "PASS: asked once, answered YES · ALWAYS; the next opponent land triggered without asking; " + yours + " Forests put onto your battlefield";
+                }
+                if (!interactive(m)) continue;
+                JSONObject d = m.optJSONObject("pendingDecision");
+                if (d != null && !s.fresh(d)) continue;
+                if (d != null) {
+                    String type = d.optString("type"), prompt = d.optString("prompt");
+                    if (type.equals("YesNoDecision") && prompt.startsWith("Use triggered ability of Burgeoning")) {
+                        asked++;
+                        offered |= d.optBoolean("alwaysAvailable");
+                        s.answer(d, new JSONObject().put("type", "YesNoResponse").put("choice", true).put("always", true));
+                    } else if (type.equals("SelectCardsDecision") || type.equals("ChooseCardsDecision")) {
+                        JSONArray opts = d.optJSONArray("options");
+                        s.answer(d, new JSONObject().put("type", "CardsSelectedResponse").put("selectedCards",
+                                opts == null || opts.isEmpty() ? new JSONArray() : new JSONArray().put(opts.get(0))));
+                    } else if (type.equals("YesNoDecision")) {
+                        s.answer(d, new JSONObject().put("type", "YesNoResponse").put("choice", false));
+                    } else return "FAIL: unexpected decision " + type + " (" + prompt + ")";
+                    continue;
+                }
+                s.send(new JSONObject().put("type", "PassPriority").put("playerId", ArcanaForgeHost.HUMAN_ID));
+            }
+            return "FAIL: timed out; asked " + asked + ", opponent lands seen " + triggersSeen;
         } finally { s.close(); }
     }
 

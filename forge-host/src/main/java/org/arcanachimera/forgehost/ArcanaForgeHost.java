@@ -1968,7 +1968,23 @@ public final class ArcanaForgeHost {
             java.util.regex.Matcher cz = java.util.regex.Pattern.compile("^(.+?): If a commander is in a graveyard or in exile").matcher(prompt);
             if (cz.find()) { prompt = "Return " + cz.group(1) + " to the command zone?"; yes = "Command zone"; no = "Leave it"; }
             JSONObject d = decisionBase("YesNoDecision", prompt).put("yesText", yes).put("noText", no);
-            openForInput(d, Map.of(), r -> { if (r.optBoolean("choice")) ok(you); else cancel(you); });
+            // "Use triggered ability of Burgeoning?": Forge's own "always yes" for this card's trigger. Arcana's button
+            // only remembered the exact prompt for the current turn, and the prompt names the land that triggered it,
+            // so it never matched again (owner, Nov 11: Burgeoning asked on every opponent's land, on several cards).
+            String always = field(input, "sa") instanceof forge.game.spellability.WrappedAbility w && w.getTrigger() != null
+                    ? w.yieldKey() : null;
+            if (always != null) {
+                d.put("alwaysAvailable", true);
+                Card host = ((forge.game.spellability.WrappedAbility) field(input, "sa")).getHostCard();
+                if (host != null) d.getJSONObject("context").put("sourceId", cardId(host)).put("sourceName", host.getName());
+            }
+            openForInput(d, Map.of(), r -> {
+                if (always != null && r.optBoolean("choice") && r.optBoolean("always")) {
+                    // Forge answers this one too when it is the trigger on top of the stack; only click if it didn't.
+                    you.setTriggerDecision(always, forge.player.AutoYieldStore.TriggerDecision.ACCEPT, false);
+                    if (you.getInputQueue().getActualInput(you) == input) ok(you);
+                } else if (r.optBoolean("choice")) ok(you); else cancel(you);
+            });
             return true;
         }
         return false;

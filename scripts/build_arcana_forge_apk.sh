@@ -129,6 +129,7 @@ python3 "$ROOT/scripts/patch_arcana_tutorial.py" "$APP" # the tutorial's text fo
 python3 "$ROOT/scripts/patch_arcana_wording.py" "$APP" # owner, Nov 9: no "Argentum" on screen (fails the build if any is left)
 python3 "$ROOT/scripts/patch_chimera_host_survival.py" "$APP" # host lock + directed relay recovery; Worker deploy separate
 python3 "$ROOT/scripts/patch_chimera_restart_host.py" "$APP" # Host Lobby ends a frozen game's open session (owner, Nov 11)
+python3 "$ROOT/scripts/patch_chimera_always_yes.py" "$APP" # ALWAYS on trigger questions = Forge's always-accept (owner, Nov 11)
 python3 "$ROOT/scripts/patch_chimera_legal_navigation.py" "$APP" # notices and source in Options; no intrusive menu shortcuts
 python3 "$ROOT/scripts/patch_engine_running_default.py" "$APP" # engine processing banner OFF unless owner opts in
 # Foreground service: keeps the Forge game alive while the player is in another app.
