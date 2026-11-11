@@ -120,6 +120,7 @@ python3 "$ROOT/scripts/patch_arcana_nov9.py" "$APP" # owner's Nov 9 list: drawer
 python3 "$ROOT/scripts/patch_arcana_nov9c.py" "$APP" # owner's third Nov 9 list: choices, pictures, combat, mulligan grid, home picture
 python3 "$ROOT/scripts/patch_arcana_tutorial.py" "$APP" # the tutorial's text for Arcana with Forge (owner, Nov 10)
 python3 "$ROOT/scripts/patch_arcana_wording.py" "$APP" # owner, Nov 9: no "Argentum" on screen (fails the build if any is left)
+python3 "$ROOT/scripts/patch_chimera_legal_navigation.py" "$APP" # owner: GPL/source only in Options > Help
 # Foreground service: keeps the Forge game alive while the player is in another app.
 python3 - "$APP/src/main/AndroidManifest.xml" <<'PY'
 import sys; p = sys.argv[1]; s = open(p).read()
