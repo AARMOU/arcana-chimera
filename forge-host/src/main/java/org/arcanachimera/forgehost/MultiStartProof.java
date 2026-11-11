@@ -16,8 +16,10 @@ import org.json.JSONObject;
  * guest, that the first table state they get is from turn 1: they see the game from its start instead of waiting
  * (on the loading screen) until a person happens to be asked something, which on AI turns can be minutes later.
  *
- * Decks: 99 Forest + Ghalta, so AI turns are silent (nothing to cast) and the result doesn't depend on AI speed.
- * Several games, so the coin toss gives AI seats the first turn in some of them. Guest in seat 1 or seat 3.
+ * Decks: 99 Forest + Ghalta, so AI turns are silent (nothing to cast). Headless AI turns take milliseconds, a phone's
+ * take seconds: the host's phase-stop lookup (asked on Forge's game thread at each step) waits 400 ms, so AI turns
+ * last about as long as on a phone without asking anyone anything. A person must get their first table state within
+ * 1.5 s of turn 1 starting, whoever's turn it is. Guest in seat 1 or seat 3; the coin toss varies who starts.
  */
 public final class MultiStartProof {
     private static final String COMMANDER = "Ghalta, Primal Hunger";
@@ -43,6 +45,7 @@ public final class MultiStartProof {
     private static final class View {
         final String id;
         volatile int firstStateTurn = -1;
+        volatile long firstStateAt;
         volatile String firstStateActive = "";
         volatile boolean kept;
         volatile String error = "";
@@ -72,11 +75,17 @@ public final class MultiStartProof {
                 JSONObject st = m.optJSONObject("state");
                 if (st != null) {
                     v.firstStateActive = st.optString("activePlayerId");
+                    v.firstStateAt = System.currentTimeMillis();
                     v.firstStateTurn = st.optInt("turnNumber", -1);
                 }
             }
         };
 
+        java.util.function.Supplier<java.util.Set<String>> stopsBefore = ArcanaForgeHost.phaseStops;
+        ArcanaForgeHost.phaseStops = () -> { // phone-speed AI turns, no prompts (see class comment)
+            try { Thread.sleep(400); } catch (InterruptedException e) { Thread.currentThread().interrupt(); }
+            return java.util.Set.of();
+        };
         ArcanaForgeHost host = new ArcanaForgeHost(person.apply(hostView));
         hostRef[0] = host;
         host.aiStrength = ArcanaForgeHost.AiStrength.OFF;
@@ -86,18 +95,21 @@ public final class MultiStartProof {
         try {
             long deadline = System.currentTimeMillis() + 180_000;
             int gameTurn = 0;
+            long turnOneAt = 0;
             String starter = "";
             while (System.currentTimeMillis() < deadline) {
-                Thread.sleep(200);
+                Thread.sleep(20);
                 forge.game.Game game = host.gameForTest();
                 if (game != null) {
                     int t = game.getPhaseHandler().getTurn();
-                    if (t >= 1 && starter.isEmpty() && game.getPhaseHandler().getPlayerTurn() != null)
+                    if (t >= 1 && turnOneAt == 0) turnOneAt = System.currentTimeMillis();
+                    if (t == 1 && starter.isEmpty() && game.getPhaseHandler().getPlayerTurn() != null)
                         starter = game.getPhaseHandler().getPlayerTurn().getName();
                     gameTurn = Math.max(gameTurn, t);
                 }
                 if (hostView.firstStateTurn >= 0 && guestView.firstStateTurn >= 0) break;
                 if (gameTurn >= 6) break; // well past both people's first turn
+                if (turnOneAt > 0 && System.currentTimeMillis() - turnOneAt > 60_000) break;
             }
             String who = "first turn: " + (starter.isEmpty() ? "?" : starter) + "; game reached turn " + gameTurn;
             for (View v : List.of(hostView, guestView)) {
@@ -105,14 +117,17 @@ public final class MultiStartProof {
                 if (!v.kept) return "FAIL " + v.id + " was never offered an opening hand (" + who + ")";
                 if (v.firstStateTurn < 0)
                     return "FAIL " + v.id + " kept but never got a table state; stuck on the opening-hand/loading screen (" + who + ")";
-                if (v.firstStateTurn > 1) // turn 0 is an opening-hand question (Leylines); still the start
-                    return "FAIL " + v.id + " first saw the table on turn " + v.firstStateTurn
-                            + " (active " + v.firstStateActive + "): stuck on the loading screen through earlier turns (" + who + ")";
+                long lag = v.firstStateAt - turnOneAt;
+                if (lag > 1500)
+                    return "FAIL " + v.id + " got its first table state " + lag + " ms after turn 1 began (on turn "
+                            + v.firstStateTurn + ", active " + v.firstStateActive + "): on the loading screen meanwhile (" + who + ")";
             }
-            return "ok, both saw turn 1 (" + who + ")";
+            return "ok, host " + (hostView.firstStateAt - turnOneAt) + " ms, guest " + (guestView.firstStateAt - turnOneAt)
+                    + " ms after turn 1 began (" + who + ")";
         } finally {
             people.shutdownNow();
             host.shutdown();
+            ArcanaForgeHost.phaseStops = stopsBefore;
         }
     }
 }
