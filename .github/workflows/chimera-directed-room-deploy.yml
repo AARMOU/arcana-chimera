@@ -2,6 +2,7 @@ name: Deploy Chimera directed-room recovery (manual owner approval)
 on:
   # One-shot production deployment on the explicitly owner-authorized merge commit.
   # The job independently checks the exact commit title and repo before deploying.
+  # Owner's deploy instruction reconfirmed on November 11; no other Workers are targeted.
   push:
     branches: [main]
     paths:
