@@ -51,7 +51,7 @@ class HostSurvivalTests(unittest.TestCase):
             (src / filename).write_text("\n".join(a for key, a in all_anchors if key == role))
         (src / "ChimeraRoomHostGuardService.kt").write_text("package com.arcanatable")
         manifest = app / "src/main/AndroidManifest.xml"
-        manifest.parent.mkdir(parents=True)
+        manifest.parent.mkdir(parents=True, exist_ok=True)
         manifest.write_text('<manifest><application></application></manifest>')
         android.patch_app(app)
         self.assertIn("ChimeraRoomHostGuardService", manifest.read_text())
