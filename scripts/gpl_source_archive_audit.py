@@ -74,7 +74,7 @@ def audit_pair(binary, archive, manifest):
             raise ValueError("Required source/build inputs missing: " +
                              ", ".join(sorted(REQUIRED - seen)))
         evidence = tar.extractfile("BUILD-PROVENANCE.json")
-        if evidence is None or evidence.size > 256 * 1024:
+        if evidence is None or tar.getmember("BUILD-PROVENANCE.json").size > 256 * 1024:
             raise ValueError("Build provenance missing or too large")
         embedded = json.load(evidence)
     for field in ("commits", "file_counts", kind + "_sha256"):
