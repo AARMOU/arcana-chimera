@@ -26,9 +26,19 @@ jobs:
         run: yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" 'platforms;android-36' 'build-tools;36.0.0' > /dev/null
       - name: Build Arcana with Forge inside
         run: bash scripts/build_arcana_forge_apk.sh
-      - uses: actions/upload-artifact@v4
-        with:
-          name: arcana-forge-debug-apk
-          path: ${{ env.APK }}
-          retention-days: 1
-          if-no-files-found: error
+      - name: Offline source-packaging unit tests
+        run: python3 -m unittest discover -s tests -p 'test_gpl_build_pair.py' -v
+      - name: Pair exact patched source with APK (local evidence only)
+        run: python3 scripts/gpl_build_pair.py --apk "$APK"
+      - name: Enforce release hold
+        run: |
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          m = json.loads(Path("reports/gpl-release/pair-manifest.json").read_text())
+          assert not m["distribution_approved"]
+          assert m["apk_sha256"] and m["source_sha256"]
+          print("GPL source candidate prepared; PUBLIC APK UPLOAD BLOCKED pending audit.")
+          PY
+      # Deliberately no upload-artifact. PR builds are not legal releases.
+      # Claude B's original draft branch and its workflow are unchanged.
