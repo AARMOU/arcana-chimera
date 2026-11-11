@@ -370,6 +370,7 @@ internal fun TableController.ChimeraFeatureLayer() {
     if (ChimeraFeatures.revealOpen) RevealWindow()
     if (ChimeraFeatures.statsOpen) DeckStatsWindow()
     if (ChimeraFeatures.historyOpen) HistoryWindow()
+    if (ChimeraLegal.open) ChimeraLegalDialog()
 }
 
 @Composable
@@ -660,13 +661,17 @@ internal fun ChimeraFeatureSettingsRows() {
     SettingsToggle("Coach", "Adds COACH: Forge's AI says what it would do from your seat right now.", ChimeraFeatureSettings.coach, { ChimeraFeatureSettings.changeCoach(it) })
     SettingsToggle("Show their decks after a game", "The game-over window shows the cards that hurt you most and each AI's whole deck.", ChimeraFeatureSettings.reveal, { ChimeraFeatureSettings.changeReveal(it) })
     SettingsToggle("Table shortcuts", "BOARD and COACH buttons at the left edge of the table. Both are also in ⋮ › Game tools.", ChimeraFeatureSettings.shortcuts, { ChimeraFeatureSettings.changeShortcuts(it) })
+    Text("Licenses & source code", color = SoftWhite, fontSize = 13.sp,
+        modifier = Modifier.fillMaxWidth().clickable { ChimeraLegal.open = true }
+            .padding(vertical = 12.dp).testTag("chimera-license-settings"))
 }
 
 /** Home: Deck stats and History, under the deck card. */
 @Composable
 internal fun ChimeraHomeButtons(enabled: Boolean) {
     Row(Modifier.fillMaxWidth().padding(start = 10.dp, end = 10.dp, bottom = 10.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-        listOf("DECK STATS" to { ChimeraFeatures.statsOpen = true }, "HISTORY" to { ChimeraFeatures.historyOpen = true }).forEach { (label, open) ->
+        listOf("DECK STATS" to { ChimeraFeatures.statsOpen = true }, "HISTORY" to { ChimeraFeatures.historyOpen = true },
+            "LICENSES" to { ChimeraLegal.open = true }).forEach { (label, open) ->
             Text(label, color = if (enabled) SoftWhite else Muted, fontSize = 13.sp, fontWeight = FontWeight.Bold,
                 textAlign = androidx.compose.ui.text.style.TextAlign.Center,
                 modifier = Modifier.weight(1f).clip(RoundedCornerShape(24.dp)).border(1.dp, PanelLight, RoundedCornerShape(24.dp))
