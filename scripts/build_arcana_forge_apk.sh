@@ -5,6 +5,8 @@ set -euo pipefail
 ARCANA_SHA="${ARCANA_SHA:-a5c428ad3da42b7325adf6630238ec992fee3113}"
 FORGE_SHA="${FORGE_SHA:-7c34365c749ca46ab71336c5f267340d6088e600}"
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+# Verify host-survival patch invariants before downloading and compiling Forge.
+python3 -m unittest discover -s "$ROOT/tests" -p "test_chimera_host_survival.py" -v
 # The approved animations are identical-sized transparent GIF canvases. Fail
 # before a costly Forge compile when either is absent or unexpectedly altered.
 for gif in gooseclippy_idle.gif gooseclippy_react.gif; do
@@ -95,7 +97,7 @@ cp "$ROOT/arcana-overlay/app/src/main/java/com/arcanatable/engine/ChimeraLoading
 cp "$ROOT/arcana-overlay/app/src/main/java/com/arcanatable/ChimeraArt.kt" "$APP/src/main/java/com/arcanatable/"
 cp "$ROOT/arcana-overlay/app/src/main/java/com/arcanatable/ChimeraHandFit.kt" "$APP/src/main/java/com/arcanatable/"
 cp "$ROOT/arcana-overlay/app/src/main/java/com/arcanatable/ChimeraDrawer.kt" "$APP/src/main/java/com/arcanatable/"
-for f in ChimeraView ChimeraHand ChimeraHandCards ChimeraBackdrops ChimeraPresets ChimeraPlay ChimeraStudio ChimeraSkins ChimeraChoice ChimeraTerminal ChimeraTutorialBoards ChimeraHaptics ChimeraFeatures ChimeraXp ChimeraLegal GooseClippyLines GooseClippyFeature; do
+for f in ChimeraView ChimeraHand ChimeraHandCards ChimeraBackdrops ChimeraPresets ChimeraPlay ChimeraStudio ChimeraSkins ChimeraChoice ChimeraTerminal ChimeraTutorialBoards ChimeraHaptics ChimeraFeatures ChimeraXp ChimeraLegal GooseClippyLines GooseClippyFeature ChimeraRoomHostGuardService; do
   cp "$ROOT/arcana-overlay/app/src/main/java/com/arcanatable/$f.kt" "$APP/src/main/java/com/arcanatable/"
 done
 mkdir -p "$APP/src/main/assets/chimera_xp" && cp "$ROOT"/arcana-overlay/app/src/main/assets/chimera_xp/*.jpg "$APP/src/main/assets/chimera_xp/" # XP Desktop wallpapers
@@ -120,6 +122,7 @@ python3 "$ROOT/scripts/patch_arcana_nov9.py" "$APP" # owner's Nov 9 list: drawer
 python3 "$ROOT/scripts/patch_arcana_nov9c.py" "$APP" # owner's third Nov 9 list: choices, pictures, combat, mulligan grid, home picture
 python3 "$ROOT/scripts/patch_arcana_tutorial.py" "$APP" # the tutorial's text for Arcana with Forge (owner, Nov 10)
 python3 "$ROOT/scripts/patch_arcana_wording.py" "$APP" # owner, Nov 9: no "Argentum" on screen (fails the build if any is left)
+python3 "$ROOT/scripts/patch_chimera_host_survival.py" "$APP" # host lock + directed relay recovery; Worker deploy separate
 # Foreground service: keeps the Forge game alive while the player is in another app.
 python3 - "$APP/src/main/AndroidManifest.xml" <<'PY'
 import sys; p = sys.argv[1]; s = open(p).read()
