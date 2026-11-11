@@ -1,0 +1,75 @@
+name: OWNER APPROVED - deploy Chimera room lock recovery
+on:
+  push:
+    branches:
+      - gluece/room-worker-deploy-20261111
+    paths:
+      - ".github/workflows/chimera-owner-approved-room-deploy.yml"
+permissions:
+  contents: read
+concurrency:
+  group: arcana-chimera-existing-room-worker-production
+  cancel-in-progress: false
+jobs:
+  verify-then-deploy:
+    if: github.repository == 'AARMOU/arcana-chimera' && github.event.head_commit.message == 'OWNER APPROVED: DEPLOY CHIMERA ROOM LOCK RECOVERY 2026-11-11'
+    runs-on: ubuntu-24.04
+    environment: production
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Require configured Cloudflare deployment credentials; never print them
+        env:
+          TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          ACCOUNT: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          test -n "$TOKEN" || { echo "::error::Chimera repository missing CLOUDFLARE_API_TOKEN. No deployment attempted."; exit 1; }
+          test -n "$ACCOUNT" || { echo "::error::Chimera repository missing CLOUDFLARE_ACCOUNT_ID. No deployment attempted."; exit 1; }
+      - name: Fetch pinned Arcana room Worker into temporary tree; never push to Arcana
+        run: |
+          set -euo pipefail
+          git clone --quiet --filter=blob:none --no-checkout https://github.com/AARMOU/arcana_table.git third_party/arcana
+          git -C third_party/arcana checkout --quiet --detach a5c428ad3da42b7325adf6630238ec992fee3113
+      - name: Apply pinned security-conscious directed-room patch
+        run: python3 scripts/patch_directed_room_resumption.py third_party/arcana/android/cloud-room/src/index.ts
+      - name: Typecheck and build only the Worker
+        working-directory: third_party/arcana/android/cloud-room
+        run: |
+          npm ci --no-audit --no-fund
+          npm run typecheck
+      - name: Full local WebSocket privacy and screen-lock recovery regression
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd third_party/arcana/android/cloud-room
+          npx wrangler dev --local --port 8787 > "$RUNNER_TEMP/worker-test.log" 2>&1 &
+          PID=$!
+          trap 'kill "$PID" 2>/dev/null || true' EXIT
+          healthy=0
+          for attempt in $(seq 1 50); do
+            if curl --silent --fail http://127.0.0.1:8787/health > /dev/null; then healthy=1; break; fi
+            sleep 1
+          done
+          if [ "$healthy" -ne 1 ]; then tail -100 "$RUNNER_TEMP/worker-test.log"; exit 1; fi
+          node scripts/verify-directed-relay.mjs
+          node "$GITHUB_WORKSPACE/tests/verify-directed-room-all-offline.mjs"
+      - name: Update existing arcana-table-rooms Worker ONLY
+        working-directory: third_party/arcana/android/cloud-room
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          set -euo pipefail
+          grep -Fxq 'name = "arcana-table-rooms"' wrangler.toml
+          grep -Fxq 'new_sqlite_classes = ["GameRoom"]' wrangler.toml
+          npx wrangler deploy --dry-run
+          npx wrangler deploy
+          echo "Existing Arcana room Worker updated; run live 2-device host lock recovery acceptance."
