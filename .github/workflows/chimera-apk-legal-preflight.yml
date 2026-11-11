@@ -1,0 +1,26 @@
+name: Chimera packaged legal assets — offline tests only
+on:
+  pull_request:
+    paths:
+      - "scripts/verify_apk_legal_assets.py"
+      - "tests/test_verify_apk_legal_assets.py"
+      - ".github/workflows/chimera-apk-legal-preflight.yml"
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  legal-preflight-unit-tests:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Offline legal-asset guard tests, no Forge or Gradle
+        run: |
+          python3 -m py_compile scripts/verify_apk_legal_assets.py
+          python3 -m unittest discover -s tests -p "test_verify_apk_legal_assets.py" -v
+          echo "RELEASE HOLD: Tests do not certify licenses or authorize binary distribution"
