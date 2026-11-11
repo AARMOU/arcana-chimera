@@ -1,0 +1,27 @@
+name: Chimera POM license evidence offline tests
+on:
+  pull_request:
+    paths:
+      - 'scripts/pom_license_evidence.py'
+      - 'tests/test_pom_license_evidence.py'
+      - 'docs/POM_LICENSE_EVIDENCE.md'
+      - '.github/workflows/chimera-pom-license-evidence.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  pom-license-metadata:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Synthetic offline POM review tests (no artifacts, keys or releases)
+        run: |
+          python3 -m py_compile scripts/pom_license_evidence.py
+          python3 -m unittest discover -s tests -p 'test_pom_license_evidence.py' -v
+          echo "HOLD: Metadata collection is not GPL clearance"
