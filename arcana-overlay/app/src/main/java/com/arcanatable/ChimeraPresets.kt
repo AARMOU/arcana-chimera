@@ -174,7 +174,7 @@ internal object ChimeraPresets {
     data class Before(val hand: StudioLayout?, val opacity: Float, val skin: String = ChimeraSkins.id, val font: String = ChimeraSkins.classicFontName)
 
     private val skin = mapOf("Duel Arena" to "arena", "Orbit" to "orbit", "Across the Table" to "across", "Feed" to "feed",
-        "Terminal" to "terminal", "Focus" to "focus", "Storybook" to "storybook")
+        "Terminal" to "terminal", "Focus" to "focus", "Storybook" to "storybook", "XP Desktop" to "xp")
     private val font = mapOf("Glass Cockpit" to "condensed", "Command Center" to "mono", "Grimoire" to "serif", "Arcade Cabinet" to "mono",
         "War Table" to "condensed", "Duelist's Gauntlet" to "condensed", "Zen Garden" to "serif")
     private val opacity = mapOf("Glass Cockpit" to 0.8f, "Zen Garden" to 0.9f) // was 0.25: the board showed through the drawer too much (owner, Nov 9)

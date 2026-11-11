@@ -196,3 +196,25 @@ internal object ChimeraPlayState {
     /** Studio's "Start practice game": reopen Studio once the game is up and the opening hand is kept. */
     var studioAfterPractice by mutableStateOf(false)
 }
+
+/**
+ * The enlarged card (owner, Nov 10: "show the counters in the enlarged view"): its counters, its power and toughness
+ * now (counters and effects included) and any damage marked on it, under the picture.
+ */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+internal fun ChimeraZoomCounters(card: GameCard, width: androidx.compose.ui.unit.Dp) {
+    if (card.isFaceDown) return
+    val counters = card.counters.filterValues { it > 0 }
+    if (counters.isEmpty() && card.damage <= 0) return
+    FlowRow(Modifier.width(width), horizontalArrangement = Arrangement.spacedBy(6.dp, Alignment.CenterHorizontally),
+        verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        counters.forEach { (kind, n) -> ZoomChip(if (n == 1) kind else "$kind ×$n", CounterGold, Ink) }
+        if (card.power != null && card.toughness != null && counters.isNotEmpty()) ZoomChip("Now ${card.power}/${card.toughness}", PanelLight, SoftWhite)
+        if (card.damage > 0) ZoomChip("${card.damage} damage", Color(0xFF8E2F2A), Color.White)
+    }
+}
+
+@Composable
+private fun ZoomChip(text: String, fill: Color, ink: Color) = Text(text, color = ink, fontSize = 14.sp, fontWeight = FontWeight.Black,
+    modifier = Modifier.clip(RoundedCornerShape(12.dp)).background(fill).padding(horizontal = 12.dp, vertical = 6.dp))

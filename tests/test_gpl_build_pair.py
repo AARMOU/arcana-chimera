@@ -86,23 +86,36 @@ class GPLPairTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "nonempty APK"):
             self.pair(apk=self.apk.parent / "missing.apk")
 
-    def test_only_explicit_public_pem_is_included(self):
-        chimera = self.repos["chimera"]
-        public = chimera / "scripts/delivery/frankenarcana-public.pem"
-        public.parent.mkdir(parents=True)
-        public.write_text("-----BEGIN PUBLIC KEY-----\\nTEST\\n-----END PUBLIC KEY-----\\n")
-        git(chimera, "add", ".")
-        git(chimera, "commit", "-qm", "track-public-key")
+    def test_byte_for_byte_reviewed_public_key_is_included(self):
+        relative = gpl.REVIEWED_PUBLIC_PEM
+        source = module_path.parents[1] / relative
+        public_key = self.repos["chimera"] / relative
+        public_key.parent.mkdir(parents=True)
+        public_key.write_bytes(source.read_bytes())
+        git(self.repos["chimera"], "add", relative)
         manifest = self.pair()
         with tarfile.open(self.out / manifest["source_name"]) as bundle:
-            self.assertIsNotNone(bundle.getmember(
-                "sources/chimera/scripts/delivery/frankenarcana-public.pem"))
-        secret = chimera / "scripts/delivery/private.pem"
-        secret.write_text("-----BEGIN PRIVATE KEY-----\\nFIXTURE\\n")
-        git(chimera, "add", ".")
-        git(chimera, "commit", "-qm", "track-dangerous-file")
+            self.assertEqual(bundle.extractfile(
+                "sources/chimera/" + relative).read(), source.read_bytes())
+
+    def test_changed_reviewed_pem_is_rejected(self):
+        relative = gpl.REVIEWED_PUBLIC_PEM
+        candidate = self.repos["chimera"] / relative
+        candidate.parent.mkdir(parents=True)
+        candidate.write_text("-----BEGIN PRIVATE KEY-----\nAAAA\n-----END PRIVATE KEY-----\n")
+        git(self.repos["chimera"], "add", relative)
         with self.assertRaisesRegex(RuntimeError, "Potential credential"):
             self.pair()
+        self.assertFalse((self.out / "chimera-source-CANDIDATE.tar.gz").exists())
+
+    def test_other_pem_rejected_even_if_public(self):
+        relative = "android/app/src/main/assets/other-public.pem"
+        candidate = self.repos["arcana"] / relative
+        candidate.parent.mkdir(parents=True)
+        candidate.write_bytes((module_path.parents[1] / gpl.REVIEWED_PUBLIC_PEM).read_bytes())
+        with self.assertRaisesRegex(RuntimeError, "Potential credential"):
+            self.pair()
+        self.assertFalse((self.out / "chimera-source-CANDIDATE.tar.gz").exists())
 
     def test_secrets_block_without_leaving_archive(self):
         p = self.repos["arcana"] / "android/app/src/main/assets/credentials.json"

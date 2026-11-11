@@ -103,6 +103,18 @@ class PlayReleaseToolsTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "already added"):
                 prepare_gradle(gradle, 144, "0.35.0-chimera-144")
 
+    def test_ci_unsigned_bundle_uses_play_package_without_signing_key(self):
+        with tempfile.TemporaryDirectory() as temp:
+            gradle = Path(temp) / "build.gradle.kts"
+            gradle.write_text(DONOR)
+            prepare_gradle(gradle, 999999, "ci-unsigned-999999", unsigned_ci=True)
+            contents = gradle.read_text()
+            self.assertIn('applicationId = "com.arcanatable"', contents)
+            self.assertIn("versionCode = 999999", contents)
+            self.assertIn('buildConfigField("boolean", "STUDIO_ENABLED", "true")', contents)
+            self.assertNotIn('create("chimeraPlay")', contents)
+            self.assertNotIn("CHIMERA_UPLOAD_STORE_PASSWORD", contents)
+
     def test_prevents_outdated_target(self):
         with tempfile.TemporaryDirectory() as temp:
             gradle = Path(temp) / "build.gradle.kts"

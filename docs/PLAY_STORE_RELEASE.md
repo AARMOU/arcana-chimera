@@ -34,15 +34,19 @@ pass owner review. This draft does not merge Claude B's work or touch Arcana mai
 
 ## Status of the signing key
 
-**Original keystore NOT LOCATED.** Prior private release records demonstrate
-that a key with alias `arcana-upload` was used; that record is not the key file.
-A separate Library document records credentials for a **NEW** candidate upload
-key with alias `arcanatable-upload`; do not substitute that key unless the
-Google Play Console accepted a new upload certificate. No password, keystore,
-base64 key or credentials belong in this repository, PR, logs, or chat.
+**Original upload keystore RECOVERED from private backup (Nov 10).**
+The owner found `arcana-upload.jks`, its matching public certificate and its
+credentials in a private archive. Local validation matched the recorded Play
+UPLOAD certificate SHA-256 beginning `4C:CA:DD:51`. No signed Play AAB has
+been built yet; reconfirm the exact Upload certificate in Play Console and
+the keystore certificate again at final signing.
 
-Recover the *original* keystore from its trusted prior signing machine or
-encrypted backup. On a phone, open Play Console → the existing Arcana Table app
+Never commit or upload the key, its password, the backup ZIP or credentials
+to public GitHub, CI, the source archive or chat. Use an isolated trusted
+signing environment. The separate `arcanatable-upload` newer keystore
+has a different certificate; **do not reset** the Play upload key.
+
+On a phone, open Play Console → the existing Arcana Table app
 → **Test and release → App integrity** (the exact menu label can vary) →
 **App signing** → **Upload key certificate**. Copy the **SHA-256 fingerprint**
 of the UPLOAD certificate (not the separate Play app-signing certificate).
@@ -87,7 +91,15 @@ The source repo's debug build package remains distinct. Nothing is uploaded,
 released or committed. The original secret file is read from the local path;
 the build never copies the keystore into the repository.
 
-After the signed AAB is checked, the script also stages a **local AAB-matched\nsource candidate** under ignored `reports/gpl-play-aab/`, with checksums.\nThis is NOT a completed or audited GPL source distribution. No file uploads.\n\nThe prepare script also refuses to run if the donor's target SDK is below 36,
+After the signed AAB is checked, the script also stages a **local AAB-matched
+source candidate** under ignored `reports/gpl-play-aab/`, with checksums.
+This is NOT a completed or audited GPL source distribution. No file uploads.
+
+CI also compiles an **unsigned** bundle with the same Play package, API 36,
+version and Studio settings, never supplying a signing key or uploading files.
+This is a compile smoke test, not a signed or Play-approved release.
+
+The prepare script also refuses to run if the donor's target SDK is below 36,
 the app-id override is not recognized, or the Play version code is below 143.
 Use `bundletool dump manifest` on the final AAB to separately confirm
 `package=com.arcanatable`, the exact versionCode, and target SDK; verify
@@ -97,7 +109,8 @@ the Play Console accepts that code and certificate.
 
 The #21 and #22 GPL drafts contain the verbatim Forge GPLv3 license and a
 same-job *APK* source-archive candidate. These are foundations **only**.
-The Play build now stages an AAB-specific same-job source **candidate** as well.\nNeither candidate establishes that a signed Play AAB is GPL compliant. No APK or AAB should reach third parties until all of these pass:
+The Play build now stages an AAB-specific same-job source **candidate** as well.
+Neither candidate establishes that a signed Play AAB is GPL compliant. No APK or AAB should reach third parties until all of these pass:
 
 1. Inventory all included Forge, Arcana, Chimera and other dependencies
    (including transitive Gradle/Maven libraries) and audit their license
@@ -105,7 +118,8 @@ The Play build now stages an AAB-specific same-job source **candidate** as well.
 2. Create Complete Corresponding Source for the **exact AAB** with the
    generated/modified donor Android project, exact Forge/Arcana revisions,
    resources and controls/scripts needed to rebuild. Review and test a
-   clean rebuild from that archive. The AAB-specific source candidate\n   manifest is **not** a compliance certificate.
+   clean rebuild from that archive. The AAB-specific source candidate
+   manifest is **not** a compliance certificate.
 3. Make GPLv3 and other required notices visible in-app, with a link or
    instructions to obtain the source for the installed version.
 4. Preserve a durable, accessible, version-specific source archive and

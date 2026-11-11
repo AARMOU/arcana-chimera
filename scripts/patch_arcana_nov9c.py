@@ -488,3 +488,212 @@ manifest.write_text(m.replace(old, '''    <application
         android:largeHeap="true"
         android:allowBackup="true"'''))
 print("patched AndroidManifest.xml (large heap)")
+
+# The six debug test scenarios ("TESTS (6)" on the home screen) are removed from the dev app (owner, Nov 10 08:51):
+# the debug build uses the release build's empty list, so the button and the "ARCANA QA" title go too.
+debug_scenarios = Path(sys.argv[1]) / "src/debug/java/com/arcanatable/TestScenarios.kt"
+release_scenarios = Path(sys.argv[1]) / "src/release/java/com/arcanatable/TestScenarios.kt"
+if not debug_scenarios.exists() or not release_scenarios.exists():
+    sys.exit("patch_arcana_nov9c: TestScenarios.kt not found in the debug or release source set")
+debug_scenarios.write_text(release_scenarios.read_text())
+print("replaced debug TestScenarios.kt with the release (empty) one")
+
+# ================================================================== tutorial (owner, Nov 10: "update the tutorial to work with
+# the current version as-is"): the practice boards come from ChimeraTutorialBoards (Forge game-state scripts).
+patch("TutorialPracticeScenarios.kt", [
+    ('''    fun build(id: String, library: OfflineCardLibrary): TestScenarioGame = when (id) {''',
+     '''    fun build(id: String, library: OfflineCardLibrary): TestScenarioGame = ChimeraTutorialBoards.build(id, library) ?: when (id) {'''),
+])
+
+# Menu (owner, Nov 10: "Yes, remove them"): Import / Replace deck, Edit imported deck, Add AI opponent, Add token…, Mana
+# pool and Search / browse library leave the game menu (decks are chosen and imported on Home; Forge runs the board).
+_menu = app / "TableMainLayout.kt"
+_lines = _menu.read_text().split("\n")
+for n in (19, 20, 22, 23, 24, 25):
+    hits = [i for i, l in enumerate(_lines) if f'"TableMainLayout.Text.{n}"' in l]
+    if len(hits) != 1 or not _lines[hits[0]].lstrip().startswith("if ("):
+        sys.exit(f"patch_arcana_nov9c: TableMainLayout.kt: menu item Text.{n} not found as expected")
+    _lines[hits[0]] = _lines[hits[0]].replace("if (", "if (false && ", 1)
+_menu.write_text("\n".join(_lines))
+print("patched TableMainLayout.kt (6 menu items removed)")
+
+# ================================================================== menus and options audit (owner, Nov 10 09:05: "Remove and merge")
+def _hide_lines(rel, markers):
+    """Puts `if (false)` in front of the composable on the one line holding each marker (Kotlin: `if (a) if (false) X(...)`)."""
+    path = app / rel
+    lines = path.read_text().split("\n")
+    for marker, call in markers:
+        hits = [i for i, l in enumerate(lines) if marker in l]
+        if len(hits) != 1 or call not in lines[hits[0]]:
+            sys.exit(f"patch_arcana_nov9c: {rel}: {marker!r} not found once with {call!r}")
+        lines[hits[0]] = lines[hits[0]].replace(call, "if (false) " + call, 1)
+    path.write_text("\n".join(lines))
+    print(f"patched {rel} ({len(markers)} items hidden)")
+
+# Game menu: Learn & tutorials and What's new (tutorials stay in Settings, reachable from Home too), Save full offline
+# game (Forge games can't be saved yet), and the two greyed-out items that never worked (Start Forge game, Online room).
+_hide_lines("TableMainLayout.kt", [
+    ('"TableMainLayout.Text.11"', "StudioDropdownMenuItem("),
+    ('"TableMainLayout.Text.14"', "StudioDropdownMenuItem("),
+    ('"TableMainLayout.Text.32"', "StudioDropdownMenuItem("),
+    ('"TableMainLayout.Text.34"', "StudioDropdownMenuItem("),
+    ('"TableMainLayout.Text.35"', "StudioDropdownMenuItem("),
+])
+# The turn label's session/turn timer menu and its hold-to-hide: whether the turn time shows is a Studio piece ("timer").
+patch("TableMainLayout.kt", [
+    ('''enabled = !onlineMode || localSeat == 0, onClick = { run { timerMenuOpen = true } }, onLongClick = { turnTimerVisible = !turnTimerVisible }''',
+     '''enabled = false, onClick = { }, onLongClick = { }'''),
+])
+# Settings: card size, the Arcana Studio button (Studio is on Home and in the menu), Show turn timer (a Studio piece),
+# What's new (Arcana's own release notes), and the engine self-test (a check with Arcana's old Portal set).
+_hide_lines("TableDialogs.kt", [
+    ('StudioText("TableDialogs.Text.124"', 'StudioText("TableDialogs.Text.124"'),
+    ('SettingsToggle("Show turn timer"', 'SettingsToggle("Show turn timer"'),
+    ('LinkRow("What\'s new"', 'LinkRow("What\'s new"'),
+])
+patch("TableDialogs.kt", [
+    ('''                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    listOf(0.82f to "SMALL", 1f to "STANDARD", 1.18f to "LARGE").forEach { (scale, label) ->''',
+     '''                if (false) Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    listOf(0.82f to "SMALL", 1f to "STANDARD", 1.18f to "LARGE").forEach { (scale, label) ->'''),
+    ('''                if (onOpenStudio != null) {''', '''                if (false && onOpenStudio != null) {'''),
+    ('''                } else StudioTextButton("TableDialogs.TextButton.27"''', '''                } else if (false) StudioTextButton("TableDialogs.TextButton.27"'''),
+    ('''                if (onEngineSelfTest != null) LinkRow(''', '''                if (false && onEngineSelfTest != null) LinkRow('''),
+])
+# Home: the saved offline game card (Forge games can't be saved yet; "the game may still be running" stays).
+patch("HomeScreen.kt", [
+    ('''            if (offlineResumeAvailable && !argentumActive) Column(''', '''            if (false && offlineResumeAvailable && !argentumActive) Column('''),
+])
+patch("TableDialogs.kt", [
+    ('''"20 chapters, 160 lessons and a Magic glossary · works offline"''', '''"20 chapters and a Magic glossary · works offline"'''),
+])
+
+# ================================================================== vibration (owner, Nov 10: "it doesn't seem like anything does")
+patch("TableEffects.kt", [
+    ('''        if (isYou && buzzOnTurn && appInForeground) haptics.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)''',
+     '''        if (isYou) ChimeraHaptics.turnStart() // the phone's vibrator, not the touch haptic the phone can silence'''),
+])
+patch("TableOverlays.kt", [
+    ('''    ChimeraConcedeDialog { recordDiagnostic("Player conceded", DiagnosticCategory.ACTION); if (argentumEnabled) argentumSocket.concede() else concede(localSeat) }''',
+     '''    ChimeraConcedeDialog { recordDiagnostic("Player conceded", DiagnosticCategory.ACTION); if (argentumEnabled) argentumSocket.concede() else concede(localSeat) }
+    ChimeraHapticWatch(argentumPendingDecision?.optString("decisionId")?.ifBlank { null } ?: argentumPendingDecision?.toString()?.take(200),
+        argentumBlockPlan != null, argentumMulliganPrompt, passToMyTurnFrom != null, cardZoom.card != null,
+        argentumSnapshot?.let { it.activePlayer == localSeat } ?: true)'''),
+])
+patch("TableDialogs.kt", [
+    ('''                SettingsToggle("Skip AI actions unless needed", "Offline games: pass over AI spells and abilities unless they affect you. Prompts and blocks still stop the game.", quietOpponentTurns, onQuietOpponentTurns, Modifier)''',
+     '''                SettingsToggle("Skip AI actions unless needed", "Offline games: pass over AI spells and abilities unless they affect you. Prompts and blocks still stop the game.", quietOpponentTurns, onQuietOpponentTurns, Modifier)
+                ChimeraVibrationSetting()'''),
+])
+
+# The commander chip in the zone strip (owner, Nov 10: "covered by its power/toughness"): the picture alone, without the
+# battlefield badges (power/toughness, NEW) that covered it at this size.
+patch("TableBoardViews.kt", [
+    ('''                            CardFace(commander, Modifier.width(29.dp), onClick = { if (castable) onCastCommander() else onPublicPreview(commander) }, onLongClick = { onPublicPreview(commander) }, showCounters = false)''',
+     '''                            CardArt(commanderArtOnly(commander.imageUrl) ?: commander.imageUrl.orEmpty(), Modifier.width(34.dp).height(40.dp).clip(RoundedCornerShape(topStart = 9.dp, bottomStart = 9.dp)),
+                                contentScale = ContentScale.Crop, fallbackName = commander.name)'''),
+])
+
+# "YES · ALWAYS THIS TURN" only for real yes/no questions, not two-way choices like Keep on top / Graveyard (owner, Nov 10).
+_hide_lines("TableOverlays.kt", [('StudioTextButton("TableOverlays.TextButton.14"', 'StudioTextButton("TableOverlays.TextButton.14"')])
+patch("TableOverlays.kt", [
+    ('''if (false) StudioTextButton("TableOverlays.TextButton.14"''',
+     '''if (decision.decisionDisplayText("yesText", "Yes").equals("Yes", ignoreCase = true)) StudioTextButton("TableOverlays.TextButton.14"'''),
+])
+
+# Combat cards centred in their tiles (owner, Nov 10): the pile keeps 10dp on the right for the cards stacked behind;
+# a single card now sits in the middle of that space.
+patch("CombatStackBoard.kt", [
+    ('''        Box(Modifier.offset(y = if (chosen > 0) 6.dp else 10.dp).width(cardWidth).clip(shape)''',
+     '''        Box(Modifier.offset(x = if (count > 1) 0.dp else 5.dp, y = if (chosen > 0) 6.dp else 10.dp).width(cardWidth).clip(shape)'''),
+])
+
+# The enlarged card shows its counters (owner, Nov 10).
+patch("CardZoom.kt", [
+    ('''                if (!card.imageUrl.isNullOrBlank() && card.type.endsWith("ability", ignoreCase = true)) card.oracleText?.let { what ->''',
+     '''                ChimeraZoomCounters(card, width)
+                if (!card.imageUrl.isNullOrBlank() && card.type.endsWith("ability", ignoreCase = true)) card.oracleText?.let { what ->'''),
+])
+
+# ---- Owner, Nov 10, chosen features (ChimeraFeatures.kt): coach, combat preview extras, board summary, opponents'
+# decks after a game, deck stats and goldfishing, game history and replays.
+patch("TableArgentum.kt", [
+    ('''        "mulliganComplete" -> { argentumMulliganPrompt = false;''',
+     '''        "chimeraCoach" -> ChimeraCoach.answer = incoming.optString("text").ifBlank { "The coach had nothing to say." }
+        "mulliganComplete" -> { argentumMulliganPrompt = false;'''),
+    ('''            argentumMatchUnfinished = incoming.optBoolean("matchUnfinished")
+            setArgentumGameActive(false)''',
+     '''            argentumMatchUnfinished = incoming.optBoolean("matchUnfinished")
+            ChimeraReveal.data = incoming.optJSONObject("chimeraReveal")
+            setArgentumGameActive(false)'''),
+])
+patch("TableOverlays.kt", [
+    ('''    ChimeraConcedeDialog { recordDiagnostic("Player conceded", DiagnosticCategory.ACTION);''',
+     '''    ChimeraFeatureLayer()
+    ChimeraConcedeDialog { recordDiagnostic("Player conceded", DiagnosticCategory.ACTION);'''),
+    ('''"Turn ${argentumSnapshot?.turnNumber ?: turnNumber} · ${formatClock(elapsedGameSeconds)}", color = Muted, fontSize = 12.sp, modifier = Modifier.padding(top = 6.dp))''',
+     '''"Turn ${argentumSnapshot?.turnNumber ?: turnNumber} · ${formatClock(elapsedGameSeconds)}", color = Muted, fontSize = 12.sp, modifier = Modifier.padding(top = 6.dp))
+                    ChimeraGameOverExtras()'''),
+])
+patch("TableMainLayout.kt", [
+    ('''                                StudioDropdownMenuItem("TableMainLayout.DropdownMenuItem.24",''',
+     '''                                if (argentumEnabled && gameInProgress) DropdownMenuItem(text = { Text("Board summary") }, onClick = { topMenuExpanded = false; topMenuSection = null; ChimeraFeatures.boardOpen = true })
+                                if (argentumEnabled && gameInProgress && ChimeraFeatureSettings.coach) DropdownMenuItem(text = { Text("Coach: what would the AI do?") }, onClick = { topMenuExpanded = false; topMenuSection = null; ChimeraCoach.ask(this@TableMainLayout) })
+                                DropdownMenuItem(text = { Text("Game history") }, onClick = { topMenuExpanded = false; topMenuSection = null; ChimeraFeatures.historyOpen = true })
+                                StudioDropdownMenuItem("TableMainLayout.DropdownMenuItem.24",'''),
+])
+patch("HomeScreen.kt", [
+    ('''                            ) { StudioText("HomeScreen.Text.15", "Home and setup", false, "Import new", color = SoftWhite, fontWeight = FontWeight.Bold) }
+                        }''',
+     '''                            ) { StudioText("HomeScreen.Text.15", "Home and setup", false, "Import new", color = SoftWhite, fontWeight = FontWeight.Bold) }
+                        }
+                        ChimeraHomeButtons(enabled = true)'''),
+])
+patch("TableDialogs.kt", [
+    ('''                ChimeraVibrationSetting()''',
+     '''                ChimeraVibrationSetting()
+                ChimeraFeatureSettingsRows()'''),
+])
+patch("CombatStackBoard.kt", [
+    ('''            if (missing.isNotEmpty()) StudioText("CombatStackBoard.Text.31", "Combat and targets", true, "Must attack: ${missing.joinToString { piece(it).name }}", color = CounterGold, fontSize = 11.sp)''',
+     '''            if (missing.isNotEmpty()) StudioText("CombatStackBoard.Text.31", "Combat and targets", true, "Must attack: ${missing.joinToString { piece(it).name }}", color = CounterGold, fontSize = 11.sp)
+            ChimeraCombatExtras(selection.entries.mapNotNull { (attacker, target) -> piece(attacker).card?.let { c -> c to (riskFor(c, listOf(target))?.warn == true) } })'''),
+])
+
+# The hidden Settings buttons above lost Kotlin's null smart cast ("if (false && x != null)"): call them null-safely.
+patch("TableDialogs.kt", [
+    ('''TextButton(onClick = onOpenStudio, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).clip(RoundedCornerShape(8.dp)).background(PanelLight).tutorialTarget("setting-adjust-ui")''',
+     '''TextButton(onClick = { onOpenStudio?.invoke() }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).clip(RoundedCornerShape(8.dp)).background(PanelLight).tutorialTarget("setting-adjust-ui")'''),
+    ('''onClick = { if (engineTrialResult?.startsWith("Running") != true) onEngineSelfTest() })''',
+     '''onClick = { if (engineTrialResult?.startsWith("Running") != true) onEngineSelfTest?.invoke() })'''),
+])
+
+# XP Desktop screen layout (owner, Nov 10): listed with the other whole-screen layouts; Arcana's message pop-up is
+# drawn by the layout itself in XP style while it is on.
+patch("StudioPresets.kt", [
+    ('''        StudioPreset("Storybook","Comic panels on paper: inked borders, the opponent's moves as story, bold lettering",CLASSIC_LOOK,"Balanced",
+            emptySet(),"both",null),''',
+     '''        StudioPreset("Storybook","Comic panels on paper: inked borders, the opponent's moves as story, bold lettering",CLASSIC_LOOK,"Balanced",
+            emptySet(),"both",null),
+        StudioPreset("XP Desktop","A retro blue-and-beige desktop: every part of the game in its own window you can move and resize, a taskbar and pop-ups",CLASSIC_LOOK,"Balanced",
+            emptySet(),"both",null),'''),
+])
+patch("TableOverlaysB.kt", [
+    ('''    if (message != null) StudioAlertDialog("Game dialog 6",''',
+     '''    if (message != null && !(ChimeraSkins.id == "xp" && ChimeraSkins.active(this@TableOverlaysB))) StudioAlertDialog("Game dialog 6",'''),
+])
+
+# "Use 5" / "Use all" (owner, Nov 10 15:31): Forge confirms a self-sacrifice cost ("Sacrifice Treasure Token?") on every
+# activation, and the loop used to stop at the first question. Answer yes for the card being used, then continue.
+patch("TableEffects.kt", [
+    ('''        if (argentumPendingDecision != null && argentumPendingDecision?.optString("type") != "PlayCardDecision") { argentumStackUse = null; return@LaunchedEffect }''',
+     '''        argentumPendingDecision?.takeIf { it.optString("type") == "YesNoDecision" }?.optString("prompt")?.trim()?.let { prompt ->
+            val what = prompt.removePrefix("Sacrifice ").removeSuffix("?").trim()
+            if (prompt.startsWith("Sacrifice ") && (what == use.sourceName || what.removeSuffix(" Token") == use.sourceName.removeSuffix(" Token"))) {
+                delay(100)
+                submitArgentumDecision(JSONObject().put("type", "YesNoResponse").put("choice", true))
+                return@LaunchedEffect
+            }
+        }
+        if (argentumPendingDecision != null && argentumPendingDecision?.optString("type") != "PlayCardDecision") { argentumStackUse = null; return@LaunchedEffect }'''),
+])

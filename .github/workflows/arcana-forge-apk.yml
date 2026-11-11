@@ -40,5 +40,11 @@ jobs:
           assert m["apk_sha256"] and m["source_sha256"]
           print("GPL source candidate prepared; PUBLIC APK UPLOAD BLOCKED pending audit.")
           PY
+      - name: Unsigned Play-identity AAB compile smoke (no key or upload)
+        run: |
+          python3 scripts/play_release_tools.py prepare-unsigned --gradle third_party/arcana/android/app/build.gradle.kts --version-code 999999 --version-name ci-unsigned-999999
+          (cd third_party/arcana/android && ./gradlew --no-daemon --max-workers=2 :app:bundleRelease)
+          test -s third_party/arcana/android/app/build/outputs/bundle/release/app-release.aab
+          echo "Unsigned Play-identity AAB compiled; no signing, distribution or release authorized."
       # Deliberately no upload-artifact. PR builds are not legal releases.
       # Claude B's original draft branch and its workflow are unchanged.

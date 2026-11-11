@@ -84,7 +84,7 @@ def validate_version(version_code):
     return version_code
 
 
-def prepare_gradle(gradle_file, version_code, version_name):
+def prepare_gradle(gradle_file, version_code, version_name, unsigned_ci=False):
     validate_version(version_code)
     if not re.fullmatch(r"[a-zA-Z0-9._+-]{1,80}", version_name):
         raise ValueError("Unsafe versionName")
@@ -95,10 +95,25 @@ def prepare_gradle(gradle_file, version_code, version_name):
         raise ValueError("This is not the expected Chimera-staged donor Gradle project")
     if "targetSdk = 36" not in content:
         raise ValueError("Play requires targetSdk 36 or higher as of August 2026; audit donor configuration")
+    signing = """
+    signingConfigs {
+        create("chimeraPlay") {
+            storeFile = file(System.getenv("CHIMERA_UPLOAD_KEYSTORE") ?: error("Upload keystore missing"))
+            storePassword = System.getenv("CHIMERA_UPLOAD_STORE_PASSWORD") ?: error("Store password missing")
+            keyAlias = System.getenv("CHIMERA_UPLOAD_ALIAS") ?: error("Upload key alias missing")
+            keyPassword = System.getenv("CHIMERA_UPLOAD_KEY_PASSWORD") ?: error("Key password missing")
+        }
+    }
+    buildTypes {
+        getByName("release") {
+            signingConfig = signingConfigs.getByName("chimeraPlay")
+        }
+    }
+""" if not unsigned_ci else ""
     overlay = f"""
 {GRADLE_MARKER}
-// This affects release bundles only; normal debug builds remain the separate Chimera package.
-// Required secrets are read at Gradle runtime, never copied into source or Gradle arguments.
+// Same Play identity and Studio flags in signed local and unsigned CI builds;
+// unsigned CI skips signing config entirely.
 android {{
     defaultConfig {{
         applicationId = "{EXPECTED_PACKAGE}"
@@ -107,20 +122,7 @@ android {{
         manifestPlaceholders["appLabel"] = "Arcana Table"
         buildConfigField("boolean", "STUDIO_ENABLED", "true")
     }}
-    signingConfigs {{
-        create("chimeraPlay") {{
-            storeFile = file(System.getenv("CHIMERA_UPLOAD_KEYSTORE") ?: error("Upload keystore missing"))
-            storePassword = System.getenv("CHIMERA_UPLOAD_STORE_PASSWORD") ?: error("Store password missing")
-            keyAlias = System.getenv("CHIMERA_UPLOAD_ALIAS") ?: error("Upload key alias missing")
-            keyPassword = System.getenv("CHIMERA_UPLOAD_KEY_PASSWORD") ?: error("Key password missing")
-        }}
-    }}
-    buildTypes {{
-        getByName("release") {{
-            signingConfig = signingConfigs.getByName("chimeraPlay")
-        }}
-    }}
-}}
+{signing}}}
 """
     gradle_file.write_text(content + overlay, encoding="utf-8")
 
@@ -140,13 +142,24 @@ def verify_bundle(bundle, expected):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("action", choices=("preflight", "prepare", "verify"))
+    parser.add_argument("action", choices=("preflight", "prepare", "prepare-unsigned", "verify"))
     parser.add_argument("--gradle", type=Path)
     parser.add_argument("--bundle", type=Path)
     parser.add_argument("--version-code", type=int)
     parser.add_argument("--version-name")
     args = parser.parse_args()
     try:
+        if args.action == "prepare-unsigned":
+            if not args.gradle or args.version_code is None or not args.version_name:
+                raise ValueError("prepare-unsigned needs --gradle, --version-code, --version-name")
+            if any(os.environ.get(name) for name in (
+                "CHIMERA_UPLOAD_KEYSTORE", "CHIMERA_UPLOAD_STORE_PASSWORD",
+                "CHIMERA_UPLOAD_KEY_PASSWORD",
+            )):
+                raise ValueError("Unsigned CI preparation refuses signing credentials")
+            prepare_gradle(args.gradle, args.version_code, args.version_name, unsigned_ci=True)
+            print("PASS: unsigned CI overlay prepared; no key, signature, upload or release")
+            return 0
         store, expected = require_signing_environment()
         check_keystore(store, expected)
         if args.action == "prepare":
