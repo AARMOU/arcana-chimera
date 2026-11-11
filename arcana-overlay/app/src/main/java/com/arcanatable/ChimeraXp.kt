@@ -553,6 +553,7 @@ private fun Taskbar(g: SkinGame, wins: List<XpWinInfo>, onReset: () -> Unit) {
                     onClick = { setGooseEnabled(!gooseEnabled); startOpen = false })
                 listOf("Reset layout" to onReset, "Board summary" to { ChimeraFeatures.boardOpen = true },
                     "Game history" to { ChimeraFeatures.historyOpen = true }, "Game log" to { g.log() }, "Options" to { g.t.optionsOpen = true },
+                    "Licenses & source" to { ChimeraLegal.open = true },
                     "Classic screen" to { ChimeraSkins.set("") }, "Concede" to { ChimeraConcede.asking = true }, "Leave game…" to { g.t.argentumLeaveConfirm = true })
                     .forEach { (label, act) -> DropdownMenuItem(text = { Text(label, fontFamily = Xp.font) }, onClick = { startOpen = false; act() }) }
             }

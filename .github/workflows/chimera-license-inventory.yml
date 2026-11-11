@@ -1,0 +1,24 @@
+name: Chimera license evidence offline tests
+on:
+  pull_request:
+    paths:
+      - 'scripts/license_inventory.py'
+      - 'tests/test_license_inventory.py'
+      - 'docs/DEPENDENCY_LICENSE_AUDIT.md'
+      - '.github/workflows/chimera-license-inventory.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  evidence-tests:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python3 -m unittest discover -s tests -p 'test_license_inventory.py' -v
+      - run: echo 'License review HOLD. No secrets, artifacts, uploads, or release.'
