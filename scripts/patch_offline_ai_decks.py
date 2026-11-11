@@ -30,22 +30,22 @@ def patch(app):
             id.startsWith("precon:") -> preconDecks.firstOrNull { it.id == id.removePrefix("precon:") }?.let { it.decklist to it.commander }
             id.startsWith("saved:") -> savedDecks.firstOrNull { it.name == id.removePrefix("saved:") }?.let { it.text to it.commander }
             else -> null
-        } ?: error("AI \${seat + 1}: selected deck no longer exists.")
+        } ?: error("AI ${seat + 1}: selected deck no longer exists.")
         val parsed = parseDeckListDetailed(pair.first)
-        if (parsed.gameBlockers.isNotEmpty()) error("AI \${seat + 1}: \${parsed.gameBlockers.joinToString(" ")}")
+        if (parsed.gameBlockers.isNotEmpty()) error("AI ${seat + 1}: ${parsed.gameBlockers.joinToString(" ")}")
         val commander = pair.second?.takeIf(String::isNotBlank)
             ?: parsed.playableEntries.firstOrNull { it.commander }?.name
-            ?: error("AI \${seat + 1}: commander missing.")
+            ?: error("AI ${seat + 1}: commander missing.")
         val cards = parsed.playableEntries.flatMap { entry -> List(entry.count) { entry.name } }.toMutableList()
         val commanderIndex = cards.indexOfFirst { it.equals(commander, true) }
         if (commanderIndex >= 0) cards.removeAt(commanderIndex)
-        if (cards.size != 99) error("AI \${seat + 1}: expected 99 main-deck cards; found \${cards.size}.")
-        return com.arcanatable.engine.LocalSeat("AI \${seat + 1}", cards.toList(), commander)
+        if (cards.size != 99) error("AI ${seat + 1}: expected 99 main-deck cards; found ${cards.size}.")
+        return com.arcanatable.engine.LocalSeat("AI ${seat + 1}", cards.toList(), commander)
     }''')
     swap(overlay,
         '                aiDecks = premadeDecks.map { DeckChoice(it.id, it.name, it.commander, builtIn = true) },',
-        '''                aiDecks = preconDecks.map { DeckChoice("precon:\${it.id}", it.name, it.commander, builtIn = true) } +
-                    savedDecks.map { DeckChoice("saved:\${it.name}", it.name, it.commander, builtIn = false) },''')
+        '''                aiDecks = preconDecks.map { DeckChoice("precon:${it.id}", it.name, it.commander, builtIn = true) } +
+                    savedDecks.map { DeckChoice("saved:${it.name}", it.name, it.commander, builtIn = false) },''')
     swap(overlay,
         '                onAiDeck = { offlineAiDeckId = it; TutorialActions.tap("setup-ai-deck") },',
         '''                onAiDeck = { setChimeraAiDeck(0, it); TutorialActions.tap("setup-ai-deck") },
@@ -65,7 +65,7 @@ def patch(app):
         raise RuntimeError("PlaySheet source drift")
     replacement = '''                for (aiSeat in 0 until aiCount.coerceIn(1, 3)) {
                     val selected = aiDeckSelections.getOrNull(aiSeat)
-                    StudioText("HomeScreen.Text.27", "Home and setup", true, "AI \${aiSeat + 1} DECK",
+                    StudioText("HomeScreen.Text.27", "Home and setup", true, "AI ${aiSeat + 1} DECK",
                         color = Muted, fontSize = 12.sp, fontWeight = FontWeight.Bold,
                         letterSpacing = 1.4.sp, modifier = Modifier.tutorialTarget("setup-ai-deck"))
                     val choices = if (showAllDecks) aiDecks else aiDecks.filter { !it.builtIn || it.id == selected }.take(12)
