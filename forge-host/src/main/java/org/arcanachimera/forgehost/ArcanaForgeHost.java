@@ -1971,11 +1971,11 @@ public final class ArcanaForgeHost {
             // "Use triggered ability of Burgeoning?": Forge's own "always yes" for this card's trigger. Arcana's button
             // only remembered the exact prompt for the current turn, and the prompt names the land that triggered it,
             // so it never matched again (owner, Nov 11: Burgeoning asked on every opponent's land, on several cards).
-            String always = field(input, "sa") instanceof forge.game.spellability.WrappedAbility w && w.getTrigger() != null
+            String always = field(input, "sa") instanceof forge.game.trigger.WrappedAbility w && w.getTrigger() != null
                     ? w.yieldKey() : null;
             if (always != null) {
                 d.put("alwaysAvailable", true);
-                Card host = ((forge.game.spellability.WrappedAbility) field(input, "sa")).getHostCard();
+                Card host = ((forge.game.trigger.WrappedAbility) field(input, "sa")).getHostCard();
                 if (host != null) d.getJSONObject("context").put("sourceId", cardId(host)).put("sourceName", host.getName());
             }
             openForInput(d, Map.of(), r -> {
