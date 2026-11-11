@@ -87,7 +87,7 @@ cp "$ROOT/arcana-overlay/app/src/main/java/com/arcanatable/engine/ChimeraLoading
 cp "$ROOT/arcana-overlay/app/src/main/java/com/arcanatable/ChimeraArt.kt" "$APP/src/main/java/com/arcanatable/"
 cp "$ROOT/arcana-overlay/app/src/main/java/com/arcanatable/ChimeraHandFit.kt" "$APP/src/main/java/com/arcanatable/"
 cp "$ROOT/arcana-overlay/app/src/main/java/com/arcanatable/ChimeraDrawer.kt" "$APP/src/main/java/com/arcanatable/"
-for f in ChimeraView ChimeraHand ChimeraHandCards ChimeraBackdrops ChimeraPresets ChimeraPlay ChimeraStudio ChimeraSkins ChimeraChoice ChimeraTerminal ChimeraTutorialBoards ChimeraHaptics ChimeraFeatures ChimeraXp GooseClippyLines GooseClippyFeature; do
+for f in ChimeraView ChimeraHand ChimeraHandCards ChimeraBackdrops ChimeraPresets ChimeraPlay ChimeraStudio ChimeraSkins ChimeraChoice ChimeraTerminal ChimeraTutorialBoards ChimeraHaptics ChimeraFeatures ChimeraXp ChimeraLegal GooseClippyLines GooseClippyFeature; do
   cp "$ROOT/arcana-overlay/app/src/main/java/com/arcanatable/$f.kt" "$APP/src/main/java/com/arcanatable/"
 done
 mkdir -p "$APP/src/main/assets/chimera_xp" && cp "$ROOT"/arcana-overlay/app/src/main/assets/chimera_xp/*.jpg "$APP/src/main/assets/chimera_xp/" # XP Desktop wallpapers
@@ -95,9 +95,23 @@ mkdir -p "$APP/src/main/assets/chimera_xp" && cp "$ROOT"/arcana-overlay/app/src/
 # temporary donor. No files are written to the actual Arcana Git repository.
 mkdir -p "$APP/src/test/java/com/arcanatable"
 cp "$ROOT"/arcana-overlay/app/src/test/java/com/arcanatable/GooseClippy*Test.kt "$APP/src/test/java/com/arcanatable/"
+cp "$ROOT"/arcana-overlay/app/src/test/java/com/arcanatable/ChimeraLegal*Test.kt "$APP/src/test/java/com/arcanatable/"
 for gif in gooseclippy_idle.gif gooseclippy_react.gif; do
   cp "$ROOT/arcana-overlay/app/src/main/assets/$gif" "$APP/src/main/assets/"
 done
+# Every Chimera skin, including debug builds, includes the actual GPLv3 text.
+# Source-access metadata remains explicitly UNPUBLISHED until an audited
+# version-matched archive has been hosted and release checks are approved.
+mkdir -p "$APP/src/main/assets/legal"
+cp "$ROOT/LICENSE" "$APP/src/main/assets/legal/GPL-3.0.txt"
+cp "$ROOT/LICENSE_SCOPE.md" "$APP/src/main/assets/legal/CHIMERA-LICENSE-SCOPE.md"
+cp "$ROOT/third_party_licenses/Forge-GPL-3.0.txt" "$APP/src/main/assets/legal/Forge-GPL-3.0.txt"
+cp "$ROOT/docs/GPLV3_RELEASE_READINESS.md" "$APP/src/main/assets/legal/GPL-RELEASE-NOTICES.md"
+cat > "$APP/src/main/assets/legal/SOURCE-ACCESS.txt" <<'LEGAL-SOURCE'
+SOURCE_VERSION_NAME=UNPUBLISHED
+SOURCE_URL=UNPUBLISHED
+SOURCE_SHA256=UNPUBLISHED
+LEGAL-SOURCE
 python3 "$ROOT/scripts/patch_arcana_nov9.py" "$APP" # owner's Nov 9 list: drawer, Commander, presets, fan/catalogue, backgrounds, log detail
 python3 "$ROOT/scripts/patch_arcana_nov9c.py" "$APP" # owner's third Nov 9 list: choices, pictures, combat, mulligan grid, home picture
 python3 "$ROOT/scripts/patch_arcana_tutorial.py" "$APP" # the tutorial's text for Arcana with Forge (owner, Nov 10)

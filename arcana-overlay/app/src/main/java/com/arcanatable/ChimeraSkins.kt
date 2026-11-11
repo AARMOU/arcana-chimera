@@ -234,6 +234,7 @@ private fun SkinMenu(g: SkinGame, look: SkinLook, label: String = "⋮") {
             DropdownMenuItem(text = { Text("Board summary") }, onClick = { open = false; ChimeraFeatures.boardOpen = true })
             if (ChimeraFeatureSettings.coach) DropdownMenuItem(text = { Text("Coach: what would the AI do?") }, onClick = { open = false; ChimeraCoach.ask(g.t) })
             DropdownMenuItem(text = { Text("Game history") }, onClick = { open = false; ChimeraFeatures.historyOpen = true })
+            DropdownMenuItem(text = { Text("Licenses & source") }, onClick = { open = false; ChimeraLegal.open = true })
             DropdownMenuItem(text = { Text(if (g.autoPassing) "Stop auto-pass" else "Pass to my turn") }, onClick = { open = false; g.holdPass() })
             DropdownMenuItem(text = { Text("Classic screen") }, onClick = { open = false; ChimeraSkins.set("") })
             DropdownMenuItem(text = { Text("Options") }, onClick = { open = false; g.t.optionsOpen = true })
