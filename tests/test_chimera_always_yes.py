@@ -25,7 +25,7 @@ class AlwaysYesTests(unittest.TestCase):
         self.assertIn('.put("always", true)', out)
         self.assertIn('decision.optBoolean("alwaysAvailable")', out)
         self.assertIn("ALWAYS THIS TURN", out)  # other yes/no questions unchanged
-        self.assertNotIn("Argentum", out.split('"ALWAYS THIS GAME"')[0].split("recordDiagnostic(")[1])
+        self.assertIn('"Always yes for this card\'s trigger: ', out)  # on-screen/diagnostic wording has no "Argentum"
         with self.assertRaises(RuntimeError):
             always.patch(self.app)
 
