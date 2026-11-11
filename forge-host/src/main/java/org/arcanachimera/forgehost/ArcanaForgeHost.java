@@ -99,6 +99,8 @@ public final class ArcanaForgeHost {
     private volatile boolean gameOverSent;
     private volatile Input lastAutoPaid;
     private volatile Input lastPrompted;
+    /** This person's "always yes" optional triggers (Forge's yieldKey: card and trigger), for this game. */
+    private final java.util.Set<String> alwaysAccept = java.util.concurrent.ConcurrentHashMap.newKeySet();
     private volatile int mulligans = -1;
     private volatile boolean inMulligan;
     private volatile int chosenAbilityId = -1;
@@ -760,6 +762,11 @@ public final class ArcanaForgeHost {
         }
         if (input != null && input != lastPrompted) {
             String kind = inputClassName(input);
+            // YES · ALWAYS THIS GAME for this card's optional trigger (owner, Nov 11: Burgeoning): answer without asking.
+            if (kind.equals("InputConfirm") && field(input, "sa") instanceof forge.game.trigger.WrappedAbility w
+                    && w.getTrigger() != null && alwaysAccept.contains(w.yieldKey())) {
+                lastPrompted = input; ok(you); return;
+            }
             if (kind.equals("InputConfirm") && game.getPhaseHandler().getTurn() == 0) { // play or draw: Arcana's offline host doesn't ask; take the play
                 lastPrompted = input; youChosePlay = true; defaultedPrompts.add("play or draw: play"); ok(you); return;
             }
@@ -1979,11 +1986,10 @@ public final class ArcanaForgeHost {
                 if (host != null) d.getJSONObject("context").put("sourceId", cardId(host)).put("sourceName", host.getName());
             }
             openForInput(d, Map.of(), r -> {
-                if (always != null && r.optBoolean("choice") && r.optBoolean("always")) {
-                    // Forge answers this one too when it is the trigger on top of the stack; only click if it didn't.
-                    you.setTriggerDecision(always, forge.player.AutoYieldStore.TriggerDecision.ACCEPT, false);
-                    if (you.getInputQueue().getActualInput(you) == input) ok(you);
-                } else if (r.optBoolean("choice")) ok(you); else cancel(you);
+                // Remembered here, not in Forge's yield store: that store keys by its tier settings (and can persist
+                // across games), so a plain "accept" there was never read back (scenario N, Nov 11).
+                if (always != null && r.optBoolean("choice") && r.optBoolean("always")) alwaysAccept.add(always);
+                if (r.optBoolean("choice")) ok(you); else cancel(you);
             });
             return true;
         }
