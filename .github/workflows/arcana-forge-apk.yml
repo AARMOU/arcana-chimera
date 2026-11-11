@@ -98,5 +98,30 @@ jobs:
           (cd third_party/arcana/android && ./gradlew --no-daemon --max-workers=2 :app:bundleRelease)
           test -s third_party/arcana/android/app/build/outputs/bundle/release/app-release.aab
           echo "Unsigned Play-identity AAB compiled; no signing, distribution or release authorized."
-      # Deliberately no upload-artifact. PR builds are not legal releases.
+      - name: Offline metadata-only audit export tests
+        run: python3 -m unittest discover -s tests -p 'test_export_gpl_audit_evidence.py' -v
+      - name: Collect actual Maven/Gradle license declarations (review only)
+        run: |
+          python3 scripts/pom_license_evidence.py \
+            --inventory reports/license-audit/evidence.json \
+            --maven-cache "$HOME/.m2/repository" \
+            --gradle-cache "$HOME/.gradle/caches/modules-2/files-2.1" \
+            --forge-source third_party/forge \
+            --out reports/license-audit/pom-declarations.json
+      - name: Export verified non-binary GPL audit evidence
+        run: |
+          python3 scripts/export_gpl_audit_evidence.py \
+            --pair reports/gpl-release/pair-manifest.json \
+            --integrity reports/gpl-release/integrity.json \
+            --inventory reports/license-audit/evidence.json \
+            --pom reports/license-audit/pom-declarations.json \
+            --out reports/public-audit/audit-evidence.json
+      - name: Upload audit metadata ONLY — no APK, AAB or source
+        uses: actions/upload-artifact@v4
+        with:
+          name: chimera-gpl-audit-evidence-NO-APK
+          path: reports/public-audit/audit-evidence.json
+          if-no-files-found: error
+          retention-days: 7
+      # Deliberately NO binary/source upload; this artifact is audit metadata only.
       # Claude B's original draft branch and its workflow are unchanged.
