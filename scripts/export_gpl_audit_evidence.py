@@ -8,7 +8,7 @@ from pathlib import Path
 import re
 
 HEX = re.compile(r"^[0-9a-f]{64}$")
-JAR = re.compile(r"^[A-Za-z0-9_.+~-]{1,180}\\.jar$")
+JAR = re.compile(r"^[A-Za-z0-9_.+~-]{1,180}\.jar$")
 
 def read_json(path):
     if path.is_symlink() or not path.is_file() or path.stat().st_size > 16 * 1024 * 1024:
@@ -108,7 +108,7 @@ def main():
     args = p.parse_args()
     report = export(args.pair, args.integrity, args.inventory, args.pom)
     args.out.parent.mkdir(parents=True, exist_ok=True)
-    args.out.write_text(json.dumps(report, sort_keys=True, indent=2) + "\\n", encoding="utf-8")
+    args.out.write_text(json.dumps(report, sort_keys=True, indent=2) + "\n", encoding="utf-8")
     print("AUDIT-ONLY report assembled; no APK/AAB/source/secret data included. RELEASE HOLD remains.")
 
 if __name__ == "__main__":
