@@ -22,6 +22,10 @@ SKIP_DIRS = {".git", ".gradle", "node_modules", "__pycache__", "build", "target"
 SECRET_NAMES = {"local.properties", "google-services.json", "secrets.properties",
                 ".env", ".env.local", "credentials.json", "id_rsa"}
 SECRET_SUFFIXES = {".pem", ".key", ".p12", ".pfx", ".keystore", ".jks", ".apk", ".aab"}
+# Reviewed, tracked *public* delivery key. This Git blob is explicitly approved;
+# any replacement, including a purported public PEM, requires human review.
+REVIEWED_PUBLIC_PEM = "scripts/delivery/frankenarcana-public.pem"
+REVIEWED_PUBLIC_PEM_GIT_BLOB_SHA1 = "0bf2f4f29ccf10b48e4b7d1f99d4df08e902bf79"
 MAX_BYTES = 8 * 1024**3
 
 
@@ -45,6 +49,24 @@ def sha256(path):
     return h.hexdigest()
 
 
+def is_reviewed_public_pem(repo_name, rel, full):
+    """Permit only the byte-for-byte reviewed public key, never arbitrary PEMs.
+
+    Compare a fixed Git blob ID for the known public key; the narrow exception
+    fails closed if its content or path changes.
+    """
+    if repo_name != "chimera" or rel != REVIEWED_PUBLIC_PEM:
+        return False
+    if not full.is_file() or full.stat().st_size > 4096:
+        return False
+    data = full.read_bytes()
+    if not (data.startswith(b"-----BEGIN PUBLIC KEY-----\n") and
+            data.rstrip().endswith(b"-----END PUBLIC KEY-----")):
+        return False
+    git_blob = b"blob " + str(len(data)).encode("ascii") + b"\0" + data
+    return hashlib.sha1(git_blob).hexdigest() == REVIEWED_PUBLIC_PEM_GIT_BLOB_SHA1
+
+
 def files(repo, name):
     tracked = {os.fsdecode(x) for x in git(repo, "ls-files", "-z", "--cached").split(b"\0") if x}
     candidates = set(tracked)
@@ -63,11 +85,14 @@ def files(repo, name):
             raise RuntimeError("Unsafe source path: " + rel)
         if any(part in SKIP_DIRS for part in path.parts):
             continue
-        if path.name.lower() in SECRET_NAMES or path.suffix.lower() in SECRET_SUFFIXES:
-            raise RuntimeError("Potential credential/release binary in source: " + rel)
         full = repo / rel
         if full.is_symlink():
             raise RuntimeError("Symlink needs human audit: " + rel)
+        if path.name.lower() in SECRET_NAMES or (
+            path.suffix.lower() in SECRET_SUFFIXES and
+            not is_reviewed_public_pem(name, rel, full)
+        ):
+            raise RuntimeError("Potential credential/release binary in source: " + rel)
         if full.is_file():
             yield rel, full, (rel not in tracked)
 
