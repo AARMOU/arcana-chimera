@@ -48,6 +48,7 @@ python3 "$ROOT/scripts/build_wotc_commander_precons.py" --out "$APP/src/main/ass
 cp "$ROOT/arcana-overlay/app/src/main/java/com/arcanatable/ChimeraPrecons.kt" "$APP/src/main/java/com/arcanatable/"
 cp "$ROOT/arcana-overlay/app/src/main/java/com/arcanatable/ChimeraPreconTree.kt" "$APP/src/main/java/com/arcanatable/"
 python3 "$ROOT/scripts/patch_commander_precons.py" "$APP"
+python3 "$ROOT/scripts/patch_ai_deck_selector.py" "$APP" # Chimera #39: saved/imported and WotC precons for AI lobby seats
 echo "== Card pictures for Forge's cards (Scryfall bulk data; skipped without network)"
 python3 "$ROOT/scripts/scryfall_images.py" "$WORK/scryfall-images.tsv" || : > "$WORK/scryfall-images.tsv"
 echo "== Forge's cards for Arcana's deck import and editor (ForgeCatalogExport)"
