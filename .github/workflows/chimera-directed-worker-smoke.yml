@@ -1,0 +1,53 @@
+name: Chimera directed-room recovery — local Worker smoke (no deploy)
+on:
+  pull_request:
+    paths:
+      - "scripts/patch_directed_room_resumption.py"
+      - "tests/verify-directed-room-all-offline.mjs"
+      - ".github/workflows/chimera-directed-worker-smoke.yml"
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  directed-room-proof:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Fetch exact pinned room service source (no Arcana writes)
+        run: |
+          set -euo pipefail
+          git clone --quiet --filter=blob:none --no-checkout https://github.com/AARMOU/arcana_table.git third_party/arcana
+          git -C third_party/arcana checkout --quiet --detach a5c428ad3da42b7325adf6630238ec992fee3113
+      - name: Stage directed-room recovery only
+        run: python3 scripts/patch_directed_room_resumption.py third_party/arcana/android/cloud-room/src/index.ts
+      - name: Typecheck Worker (no deploy)
+        working-directory: third_party/arcana/android/cloud-room
+        run: |
+          npm ci --no-audit --no-fund
+          npm run typecheck
+      - name: Test secure host recovery with real local WebSockets
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd third_party/arcana/android/cloud-room
+          npx wrangler dev --local --port 8787 > "$RUNNER_TEMP/worker-test.log" 2>&1 &
+          PID=$!
+          trap 'kill "$PID" 2>/dev/null || true' EXIT
+          healthy=0
+          for attempt in $(seq 1 50); do
+            if curl --silent --fail http://127.0.0.1:8787/health > /dev/null; then healthy=1; break; fi
+            sleep 1
+          done
+          if [ "$healthy" -ne 1 ]; then tail -100 "$RUNNER_TEMP/worker-test.log"; exit 1; fi
+          node scripts/verify-directed-relay.mjs
+          node "$GITHUB_WORKSPACE/tests/verify-directed-room-all-offline.mjs"
+          echo "Worker recovery locally tested; NO Cloudflare deployment executed"
