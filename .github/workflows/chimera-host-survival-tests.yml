@@ -1,0 +1,27 @@
+name: Chimera fold-lock hosting checks (no Forge compile)
+on:
+  pull_request:
+    paths:
+      - "scripts/patch_chimera_host_survival.py"
+      - "scripts/patch_directed_room_resumption.py"
+      - "tests/test_chimera_host_survival.py"
+      - ".github/workflows/chimera-host-survival-tests.yml"
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  host-survival-patch-check:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Test fail-closed host patchers without rebuilding Forge
+        run: |
+          python3 -m py_compile scripts/patch_chimera_host_survival.py scripts/patch_directed_room_resumption.py
+          python3 -m unittest discover -s tests -p "test_chimera_host_survival.py" -v
+          echo "No APK distribution, Worker deploy or release was authorized."
