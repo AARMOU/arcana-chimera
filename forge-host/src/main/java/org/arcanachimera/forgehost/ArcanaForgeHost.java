@@ -593,9 +593,13 @@ public final class ArcanaForgeHost {
         for (ArcanaForgeHost v : views) v.scheduleSelf();
     }
 
-    private void scheduleSelf() {
+    private void scheduleSelf() { scheduleIn(waitingOnPlayer() ? 40 : 300); }
+
+    /** Opening hands: look again in 300 ms until turn 1 starts (nothing else wakes a person who has kept, see emit). */
+    private void recheckMulligan() { scheduleIn(300); }
+
+    private void scheduleIn(long delay) {
         if (left) return;
-        long delay = waitingOnPlayer() ? 40 : 300;
         long due = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(delay);
         while (true) {
             long current = emitDueAt.get();
@@ -781,12 +785,14 @@ public final class ArcanaForgeHost {
                 lastPrompted = input; mulligans = mulligans < 0 ? 0 : mulligans; inMulligan = true;
                 sink.accept(handMessage("mulliganDecision", you.getPlayer()).put("mulliganCount", mulligans)
                         .put("cardsToPutOnBottom", 0).put("isOnThePlay", youChosePlay));
+                recheckMulligan(); // the last person to keep is followed only by AI turns, which wake no one
                 return;
             }
             if (kind.equals("InputLondonMulligan")) { // the new hand first, as Arcana expects; bottom cards after "keep"
                 lastPrompted = input; inMulligan = true; tuckOffered = true; tuckCount = intField(input, "toReturn");
                 sink.accept(handMessage("mulliganDecision", you.getPlayer()).put("mulliganCount", Math.max(mulligans, 1))
                         .put("cardsToPutOnBottom", tuckCount).put("isOnThePlay", youChosePlay));
+                recheckMulligan();
                 return;
             }
         }
@@ -810,7 +816,7 @@ public final class ArcanaForgeHost {
         // Phone, Nov 11 (host + friend + 2 AIs): after keeping, nothing asked this person anything again until their
         // own turn or a spell, because AI turns pass in silence. The host sat on the loading screen through whole AI
         // turns. Keep looking (cheap: nothing is built) until turn 1 starts, so everyone sees the table from its start.
-        if (inMulligan && game.getPhaseHandler().getTurn() == 0) { scheduleSelf(); return; }
+        if (inMulligan && game.getPhaseHandler().getTurn() == 0) { recheckMulligan(); return; }
         if (inMulligan) { // Argentum's order: mulliganComplete, then the first game state
             inMulligan = false;
             sink.accept(new JSONObject().put("type", "mulliganComplete").put("finalHandSize", you.getPlayer().getCardsIn(ZoneType.Hand).size()));
