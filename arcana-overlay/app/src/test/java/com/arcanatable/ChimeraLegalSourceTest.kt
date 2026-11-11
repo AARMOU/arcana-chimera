@@ -25,4 +25,12 @@ class ChimeraLegalSourceTest {
         assertEquals(sha, result.sha256)
         assertFalse(ChimeraLegalSource.parse(text.replace(sha, "bad"), "v144").published)
     }
+
+    @Test fun versionMatchedHttpsLocationWithoutDigestIsPublished() {
+        val text = "SOURCE_VERSION_NAME=v144\nSOURCE_URL=https://example.org/releases/v144\n"
+        val result = ChimeraLegalSource.parse(text, "v144")
+        assertTrue(result.published)
+        assertEquals("", result.sha256)
+        assertFalse(ChimeraLegalSource.parse(text, "v145").published)
+    }
 }

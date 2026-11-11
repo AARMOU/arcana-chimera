@@ -59,7 +59,8 @@ def check_apk(path: Path) -> dict:
             published = (version not in ("", "UNPUBLISHED")
                          and url.startswith("https://")
                          and not any(c.isspace() for c in url)
-                         and HEX_SHA.fullmatch(digest) is not None)
+                         # Optional: the archive's checksum is published beside the archive.
+                         and (digest == "" or HEX_SHA.fullmatch(digest) is not None))
             source_details = ("METADATA_PRESENT_REQUIRES_EXTERNAL_VERIFICATION"
                               if published else "UNPUBLISHED_OR_MALFORMED")
         notices_ok = False

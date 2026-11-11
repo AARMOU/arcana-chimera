@@ -4,6 +4,10 @@ on:
     paths:
       - "scripts/verify_apk_legal_assets.py"
       - "tests/test_verify_apk_legal_assets.py"
+      - "tests/test_third_party_notices.py"
+      - "scripts/third_party_notices.py"
+      - "scripts/write_source_access.py"
+      - "third_party_licenses/**"
       - ".github/workflows/chimera-apk-legal-preflight.yml"
   workflow_dispatch:
 permissions:
@@ -23,4 +27,5 @@ jobs:
         run: |
           python3 -m py_compile scripts/verify_apk_legal_assets.py
           python3 -m unittest discover -s tests -p "test_verify_apk_legal_assets.py" -v
+          python3 -m unittest discover -s tests -p "test_third_party_notices.py" -v
           echo "RELEASE HOLD: Tests do not certify licenses or authorize binary distribution"

@@ -4,6 +4,22 @@
 The release must contain GPL-compliant corresponding source and notices, and must
 pass owner review. This draft does not merge Claude B's work or touch Arcana main.
 
+## Shortest path to a signed AAB (added Nov 10)
+
+No local Forge build is needed. CI builds the bundle; only signing happens on the owner's PC.
+
+1. GitHub → Actions → **Arcana + Forge APK build** → Run workflow on the release branch, with
+   `play_version_code` set to an unused code above every Play track.
+2. Download the artifact `chimera-play-aab-UNSIGNED-with-source` into an empty folder.
+3. In a private shell set the four `CHIMERA_UPLOAD_*` variables below, then run
+   `bash scripts/sign_play_aab.sh <that folder>`. It checks the downloads against
+   `SHA256SUMS`, checks the keystore against the pinned Play upload certificate, signs, and
+   verifies the result. It uploads nothing.
+4. Publish `chimera-source-CANDIDATE.tar.gz` and `SHA256SUMS` at the release tag printed in
+   `RELEASE-IDENTITY.txt`, then upload the signed AAB to a Play testing track.
+
+Licence findings and remaining owner decisions: `docs/GPL_LICENSE_AUDIT_20261110.md`.
+
 ## Identity and Android policy
 
 - Existing Play listing: application ID `com.arcanatable`, NOT

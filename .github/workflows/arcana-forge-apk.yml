@@ -1,14 +1,31 @@
 name: Arcana + Forge APK build
 # Owner (Nov 7, 2026): runs on Claude B's draft-PR pushes, free standard runner.
-# Owner (Nov 7, 2026, "Don't worry about encryption"): the debug APK is uploaded as a 1-day artifact for the owner's phone.
-# Chimera is public, so the artifact is visible to signed-in GitHub users until it expires.
+# Owner (Nov 7, 2026, "Don't worry about encryption"): the debug APK is uploaded as a short-lived artifact for the owner's phone.
+# Chimera is public, so the artifact is visible to signed-in GitHub users until it expires. Since Nov 10 the exact
+# source archive, pair manifest and licence notices are uploaded in the same artifact, so the APK is never offered
+# without its GPLv3 corresponding source (docs/GPL_LICENSE_AUDIT_20261110.md).
+# One build per branch: a newer push cancels the older run instead of compiling Forge several times.
+concurrency:
+  group: arcana-forge-apk-${{ github.ref }}
+  cancel-in-progress: true
 on:
   workflow_dispatch:
+    inputs:
+      play_version_code:
+        description: 'Also keep an UNSIGNED Play AAB with this versionCode (above every Play track; blank = compile check only)'
+        default: ''
+      play_version_name:
+        description: 'versionName for that AAB (blank = 0.35.0-chimera-<code>)'
+        default: ''
   pull_request:
     paths:
       - 'forge-host/src/main/java/org/arcanachimera/forgehost/ArcanaForgeHost.java'
       - 'arcana-overlay/**'
       - 'scripts/build_arcana_forge_apk.sh'
+      - 'scripts/third_party_notices.py'
+      - 'scripts/write_source_access.py'
+      - 'third_party_licenses/**'
+      - 'forge-host/src/stubs/**'
       - '.github/workflows/arcana-forge-apk.yml'
 permissions:
   contents: read
@@ -47,8 +64,7 @@ jobs:
           PY
       - name: Collect real Android/Forge runtime dependency evidence (release HOLD)
         run: |
-          mkdir -p reports/license-audit
-          (cd third_party/arcana/android && ./gradlew --no-daemon --max-workers=2 :app:dependencies --configuration releaseRuntimeClasspath) > reports/license-audit/runtime.txt
+          test -s reports/license-audit/runtime.txt   # written by the build script before compiling
           python3 scripts/license_inventory.py \
             --forge-libs third_party/forge-libs \
             --app-libs third_party/arcana/android/app/libs/forge \
@@ -90,14 +106,71 @@ jobs:
           m = json.loads(Path("reports/gpl-release/pair-manifest.json").read_text())
           assert not m["distribution_approved"]
           assert m["apk_sha256"] and m["source_sha256"]
-          print("GPL source candidate prepared; PUBLIC APK UPLOAD BLOCKED pending audit.")
+          print("APK and its exact source archive are paired; owner approval is still needed for any release.")
           PY
-      - name: Unsigned Play-identity AAB compile smoke (no key or upload)
+      - name: Check the licence files inside the real APK
         run: |
-          python3 scripts/play_release_tools.py prepare-unsigned --gradle third_party/arcana/android/app/build.gradle.kts --version-code 999999 --version-name ci-unsigned-999999
+          python3 scripts/verify_apk_legal_assets.py --apk "$APK" --out reports/gpl-release/apk-legal-assets.json
+          cp third_party/arcana/android/app/src/main/assets/legal/THIRD-PARTY-NOTICES.txt reports/gpl-release/
+          cp reports/license-audit/notices.json reports/gpl-release/third-party-notices-report.json
+          cp "$APK" reports/gpl-release/
+          (cd reports/gpl-release && sha256sum *.apk chimera-source-CANDIDATE.tar.gz > SHA256SUMS && cat SHA256SUMS)
+      - name: Keep the test APK together with its exact source
+        uses: actions/upload-artifact@v4
+        with:
+          name: chimera-test-apk-with-source
+          path: |
+            reports/gpl-release/*.apk
+            reports/gpl-release/chimera-source-CANDIDATE.tar.gz
+            reports/gpl-release/pair-manifest.json
+            reports/gpl-release/integrity.json
+            reports/gpl-release/apk-legal-assets.json
+            reports/gpl-release/THIRD-PARTY-NOTICES.txt
+            reports/gpl-release/third-party-notices-report.json
+            reports/gpl-release/SHA256SUMS
+          if-no-files-found: error
+          retention-days: 3
+          compression-level: 0
+      - name: Unsigned Play-identity AAB (no key; kept only when a versionCode was given)
+        env:
+          PLAY_CODE: ${{ inputs.play_version_code }}
+          PLAY_NAME: ${{ inputs.play_version_name }}
+        run: |
+          CODE="${PLAY_CODE:-}"; KEEP=1
+          if [ -z "$CODE" ]; then CODE=999999; KEEP=0; fi
+          case "$CODE" in *[!0-9]*) echo "versionCode must be a number"; exit 1;; esac
+          NAME="${PLAY_NAME:-}"; [ -n "$NAME" ] || NAME="0.35.0-chimera-$CODE"
+          [ "$KEEP" = 1 ] || NAME="ci-unsigned-999999"
+          APP=third_party/arcana/android/app
+          python3 scripts/play_release_tools.py prepare-unsigned --gradle "$APP/build.gradle.kts" --version-code "$CODE" --version-name "$NAME"
+          # The app must name the source for ITS version: a kept AAB points at the release tag its source will be attached to.
+          if [ "$KEEP" = 1 ]; then export CHIMERA_SOURCE_URL="https://github.com/$GITHUB_REPOSITORY/releases/tag/chimera-$NAME"; fi
+          python3 scripts/write_source_access.py --app "$APP"
           (cd third_party/arcana/android && ./gradlew --no-daemon --max-workers=2 :app:bundleRelease)
-          test -s third_party/arcana/android/app/build/outputs/bundle/release/app-release.aab
-          echo "Unsigned Play-identity AAB compiled; no signing, distribution or release authorized."
+          AAB="$APP/build/outputs/bundle/release/app-release.aab"
+          test -s "$AAB"
+          echo "KEEP_AAB=$KEEP" >> "$GITHUB_ENV"
+          if [ "$KEEP" = 1 ]; then
+            OUT=reports/gpl-play-aab; mkdir -p "$OUT"
+            cp "$AAB" "$OUT/arcana-table-$NAME-UNSIGNED.aab"
+            python3 scripts/gpl_build_pair.py --aab "$OUT/arcana-table-$NAME-UNSIGNED.aab" --out "$OUT"
+            python3 scripts/gpl_source_archive_audit.py --binary "$OUT/arcana-table-$NAME-UNSIGNED.aab" \
+              --source "$OUT/chimera-source-CANDIDATE.tar.gz" --manifest "$OUT/pair-manifest.json" --out "$OUT/integrity.json"
+            printf 'package=com.arcanatable\nversionCode=%s\nversionName=%s\nsource_url=%s\n' "$CODE" "$NAME" "$CHIMERA_SOURCE_URL" > "$OUT/RELEASE-IDENTITY.txt"
+            (cd "$OUT" && sha256sum *.aab chimera-source-CANDIDATE.tar.gz > SHA256SUMS && cat SHA256SUMS RELEASE-IDENTITY.txt)
+            echo "UNSIGNED Play AAB kept with its source. Sign it locally with scripts/sign_play_aab.sh; nothing is uploaded to Play."
+          else
+            echo "Unsigned Play-identity AAB compiled as a check only; not kept."
+          fi
+      - name: Keep the unsigned Play AAB together with its exact source
+        if: env.KEEP_AAB == '1'
+        uses: actions/upload-artifact@v4
+        with:
+          name: chimera-play-aab-UNSIGNED-with-source
+          path: reports/gpl-play-aab/
+          if-no-files-found: error
+          retention-days: 7
+          compression-level: 0
       - name: Offline metadata-only audit export tests
         run: python3 -m unittest discover -s tests -p 'test_export_gpl_audit_evidence.py' -v
       - name: Collect actual Maven/Gradle license declarations (review only)
@@ -116,12 +189,12 @@ jobs:
             --inventory reports/license-audit/evidence.json \
             --pom reports/license-audit/pom-declarations.json \
             --out reports/public-audit/audit-evidence.json
-      - name: Upload audit metadata ONLY — no APK, AAB or source
+      - name: Upload audit metadata
         uses: actions/upload-artifact@v4
         with:
           name: chimera-gpl-audit-evidence-NO-APK
           path: reports/public-audit/audit-evidence.json
           if-no-files-found: error
           retention-days: 7
-      # Deliberately NO binary/source upload; this artifact is audit metadata only.
+      # Binaries are uploaded only by the two "Keep ..." steps above, always with their source.
       # Claude B's original draft branch and its workflow are unchanged.
