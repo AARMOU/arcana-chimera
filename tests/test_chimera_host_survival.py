@@ -56,6 +56,7 @@ class HostSurvivalTests(unittest.TestCase):
         android.patch_app(app)
         self.assertIn("ChimeraRoomHostGuardService", manifest.read_text())
         self.assertIn("45L * 60_000L", (src / "ArgentumCloudMulti.kt").read_text())
+        self.assertIn("rejoinRejections < MAX_REJOIN_REJECTIONS", (src / "ArgentumCloudMulti.kt").read_text())
         self.assertIn("ChimeraRoomHostGuardService.start(context)", (src / "TableWifi.kt").read_text())
         with self.assertRaises(RuntimeError):
             android.patch_app(app)
@@ -77,6 +78,8 @@ class HostSurvivalTests(unittest.TestCase):
         self.assertIn("DIRECTED_ROOM_RECOVERY_MS", src)
         self.assertIn("offlineDeadline", src)
         self.assertIn("successor", src)
+        self.assertIn("Seat resumed on a newer connection.", src)
+        self.assertNotIn("previous.online ||", src)
         self.assertIn("!this.room.relayMode && this.room.state.gameStarted", src)
         with self.assertRaises(ValueError):
             worker.patch_worker(path)

@@ -62,6 +62,7 @@ jobs:
           if [ "$healthy" -ne 1 ]; then tail -100 "$RUNNER_TEMP/worker-test.log"; exit 1; fi
           node scripts/verify-directed-relay.mjs
           node "$GITHUB_WORKSPACE/tests/verify-directed-room-all-offline.mjs"
+          node "$GITHUB_WORKSPACE/tests/verify-directed-room-live-takeover.mjs"
       - name: Deploy only existing arcana-table-rooms Worker
         working-directory: third_party/arcana/android/cloud-room
         env:

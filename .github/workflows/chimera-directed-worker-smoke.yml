@@ -4,6 +4,7 @@ on:
     paths:
       - "scripts/patch_directed_room_resumption.py"
       - "tests/verify-directed-room-all-offline.mjs"
+      - "tests/verify-directed-room-live-takeover.mjs"
       - ".github/workflows/chimera-directed-worker-smoke.yml"
   workflow_dispatch:
 permissions:
@@ -50,4 +51,5 @@ jobs:
           if [ "$healthy" -ne 1 ]; then tail -100 "$RUNNER_TEMP/worker-test.log"; exit 1; fi
           node scripts/verify-directed-relay.mjs
           node "$GITHUB_WORKSPACE/tests/verify-directed-room-all-offline.mjs"
+          node "$GITHUB_WORKSPACE/tests/verify-directed-room-live-takeover.mjs"
           echo "Worker recovery locally tested; NO Cloudflare deployment executed"
