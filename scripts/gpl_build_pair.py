@@ -97,7 +97,11 @@ def files(repo, name):
             yield rel, full, (rel not in tracked)
 
 
-def make_pair(*, apk, chimera, arcana, forge, out, expected_arcana, expected_forge):
+def make_pair(*, apk, chimera, arcana, forge, out, expected_arcana, expected_forge, artifact_type="apk"):
+    if artifact_type not in ("apk", "aab"):
+        raise RuntimeError("Unsupported binary format")
+    if apk.suffix.lower() != "." + artifact_type:
+        raise RuntimeError("Binary extension does not match requested artifact type")
     if not apk.is_file() or not apk.stat().st_size:
         raise RuntimeError("Completed nonempty APK is required")
     if not (chimera / "third_party_licenses/Forge-GPL-3.0.txt").is_file():
@@ -139,7 +143,7 @@ def make_pair(*, apk, chimera, arcana, forge, out, expected_arcana, expected_for
                 added[name] = extra
             embedded = {
                 "schema": "chimera-gpl-build-pair-v1",
-                "apk_sha256": apk_hash,
+                ("apk_sha256" if artifact_type == "apk" else "aab_sha256"): apk_hash,
                 "commits": commits,
                 "file_counts": counts,
                 "untracked_android_inputs": added["arcana"],
@@ -153,7 +157,7 @@ def make_pair(*, apk, chimera, arcana, forge, out, expected_arcana, expected_for
             dst.addfile(item, io.BytesIO(content))
         result = {
             **embedded,
-            "apk_name": apk.name,
+            ("apk_name" if artifact_type == "apk" else "aab_name"): apk.name,
             "source_name": archive.name,
             "source_sha256": sha256(archive),
             "source_size": archive.stat().st_size,
@@ -177,7 +181,9 @@ def make_pair(*, apk, chimera, arcana, forge, out, expected_arcana, expected_for
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("--apk", type=Path, required=True)
+    binary = ap.add_mutually_exclusive_group(required=True)
+    binary.add_argument("--apk", type=Path)
+    binary.add_argument("--aab", type=Path)
     ap.add_argument("--chimera", type=Path, default=ROOT)
     ap.add_argument("--arcana", type=Path, default=ROOT / "third_party/arcana")
     ap.add_argument("--forge", type=Path, default=ROOT / "third_party/forge")
@@ -186,13 +192,14 @@ def main():
     ap.add_argument("--expected-forge", default=os.getenv("FORGE_SHA", FORGE_PIN))
     a = ap.parse_args()
     try:
-        m = make_pair(apk=a.apk, chimera=a.chimera, arcana=a.arcana, forge=a.forge,
-                      out=a.out, expected_arcana=a.expected_arcana, expected_forge=a.expected_forge)
+        m = make_pair(apk=(a.apk or a.aab), chimera=a.chimera, arcana=a.arcana, forge=a.forge,
+                      out=a.out, expected_arcana=a.expected_arcana, expected_forge=a.expected_forge,
+                      artifact_type=("aab" if a.aab else "apk"))
     except (OSError, RuntimeError) as exc:
         ap.exit(2, "BLOCKED: " + str(exc) + "\n")
-    print("APK SHA-256:", m["apk_sha256"])
+    print("Binary SHA-256:", m["aab_sha256"] if a.aab else m["apk_sha256"])
     print("Source candidate SHA-256:", m["source_sha256"])
-    print("Distribution: BLOCKED. No APK uploaded.")
+    print("Distribution: BLOCKED. No APK/AAB uploaded.")
     return 0
 
 

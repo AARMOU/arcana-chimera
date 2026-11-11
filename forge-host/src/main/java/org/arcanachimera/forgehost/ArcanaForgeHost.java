@@ -449,14 +449,22 @@ public final class ArcanaForgeHost {
                 bottom(you, message.optJSONArray("cardIds"));
             }
             case "concede" -> you.concede();
+            case "coachRequest" -> { // owner, Nov 10: coach mode, "What would the AI do?"
+                Thread coachThread = new Thread(() -> {
+                    String text;
+                    try { text = coach(); } catch (Throwable e) { text = "The coach couldn't think this one through (" + e.getClass().getSimpleName() + ")."; }
+                    try { sink.accept(new JSONObject().put("type", "chimeraCoach").put("text", text)); } catch (Exception ignored) { }
+                }, "forge-coach");
+                coachThread.setDaemon(true); coachThread.start();
+            }
             case "requestResync" -> { // after a reconnect: send the open question or mulligan offer again
                 Input now = you.getInputQueue().getActualInput(you);
                 String kind = inputClassName(now);
                 if (kind.equals("InputConfirmMulligan") || kind.equals("InputLondonMulligan")) lastPrompted = null;
                 if (pending != null) emitDecision(); else scheduleSelf();
             }
-            case "arcanaSaveOffline" -> error("Saving a game isn't available in the Forge build yet.");
-            case "requestUndo" -> error("Undo isn't available in the Forge build.");
+            case "arcanaSaveOffline" -> { } // sent when the app goes to the background; Forge games aren't saved yet, so nothing to say
+            case "requestUndo" -> error("Undo isn't available in this version.");
             case "setRespondToOwnStack" -> respondToOwnStack = message.optBoolean("enabled");
             case "setQuietOpponentTurns" -> quietOpponentTurns = message.optBoolean("enabled");
             default -> { }
@@ -556,6 +564,8 @@ public final class ArcanaForgeHost {
             Input now = you.getInputQueue().getActualInput(you);
             String kind = inputClassName(now);
             if (pending != null || !(now instanceof InputPassPriority || kind.equals("InputAttack") || kind.equals("InputBlock"))) {
+                // Owner list, Nov 10: Pass while a question is open brings the question back instead of a refusal.
+                if (pending != null) { emitDecision(); return; }
                 reject("Forge isn't offering a pass right now; answer the open question first.");
                 scheduleEmit();
                 return;
@@ -566,8 +576,9 @@ public final class ArcanaForgeHost {
         SpellAbility sa = offered.get(key(type, action.optString("cardId", action.optString("sourceId")), action.optString("abilityId")));
         if (sa == null) { reject("You can't do that right now (not enough mana, or it's no longer available)."); scheduleEmit(); return; }
         chosenAbilityId = sa.getId();
+        castingNow = sa;
         Input input = you.getInputQueue().getActualInput(you);
-        if (input == null || !input.selectAbility(sa)) { reject("Forge did not accept " + sa); scheduleEmit(); }
+        if (input == null || !input.selectAbility(sa)) { reject("That couldn't be done right now: " + sa); scheduleEmit(); }
     }
 
     // ---------------------------------------------------------------- state out to the UI
@@ -660,7 +671,7 @@ public final class ArcanaForgeHost {
         if (game.getStack().isEmpty()) return false;
         forge.game.spellability.SpellAbilityStackInstance top = game.getStack().peek();
         if (top == null) return false;
-        if (top.getActivatingPlayer() == me) return !respondToOwnStack;
+        if (top.getActivatingPlayer() == me) return !(respondToOwnStack || practiceBoard); // lessons show your spell on the stack
         if (!quietOpponentTurns || game.getPhaseHandler().getPlayerTurn() == me) return false;
         forge.game.spellability.TargetChoices tc = top.getTargetChoices();
         if (tc != null) {
@@ -723,7 +734,7 @@ public final class ArcanaForgeHost {
                 } catch (AskedWhilePricing asked) { payable = true; } // Forge will ask while paying
                 finally { PRICING.set(false); }
                 if (!asksWhilePricing(paidFor) && !payable) {
-                    error("You can't pay " + cost + " for " + source + " right now, so it was skipped.");
+                    note("You can't pay " + cost + " for " + source + " right now, so it was skipped."); // a note, not an error (owner list, Nov 10)
                     cancel(you);
                     return;
                 }
@@ -757,6 +768,9 @@ public final class ArcanaForgeHost {
                 input.selectButtonOK(); // ignored by Forge if picking one already finished it
                 return;
             }
+            if (kind.equals("InputConfirmMulligan") && practiceBoard) { // a tutorial lesson's board: its hand is the lesson's
+                lastPrompted = input; defaultedPrompts.add("practice board: kept"); ok(you); return;
+            }
             if (kind.equals("InputConfirmMulligan") && (autoKeep || autoMulligan)) { // already answered on Arcana's screen
                 lastPrompted = input;
                 boolean keep = autoKeep; autoKeep = false; autoMulligan = false;
@@ -785,7 +799,8 @@ public final class ArcanaForgeHost {
                     .put("legalActions", new JSONArray()).put("pendingDecision", JSONObject.NULL).put("stateVersion", ++version)
                     .put("interactive", false).put("interactionEpoch", "forge-" + version).put("priorityMode", "auto"), "top"));
             sink.accept(new JSONObject().put("type", "gameOver").put("winnerId", winnerId(game))
-                    .put("reason", you.getPlayer().hasLost() && !game.isGameOver() ? "ELIMINATED" : "GAME_OVER"));
+                    .put("reason", you.getPlayer().hasLost() && !game.isGameOver() ? "ELIMINATED" : "GAME_OVER")
+                    .put("chimeraReveal", reveal(game, you.getPlayer())));
             return;
         }
         if (gameOverSent) return;
@@ -836,7 +851,9 @@ public final class ArcanaForgeHost {
                         if (type.equals("ActivateAbility")) a.put("sourceId", cardId).put("abilityId", abilityId); else a.put("cardId", cardId);
                         boolean affordable = sa.isLandAbility() || sa.isManaAbility() || affordable(sa, me);
                         if (affordable) offered.put(key(type, cardId, abilityId), sa);
-                        JSONObject offer = action(type, sa.isManaAbility() ? "Tap for mana: " + sa : sa.toString(), a).put("isAffordable", affordable);
+                        // Owner, Nov 10: "it only says 'play land'": name the land (Forge's own text for it is "Play land").
+                        String label = sa.isManaAbility() ? "Tap for mana: " + sa : sa.isLandAbility() ? "Play " + c.getName() : sa.toString();
+                        JSONObject offer = action(type, label, a).put("isAffordable", affordable);
                         if (sa.isManaAbility()) offer.put("isManaAbility", true);
                         legal.put(offer);
                     }
@@ -876,6 +893,86 @@ public final class ArcanaForgeHost {
         return fill(new JSONObject().put("type", "stateUpdate").put("state", state(game, you.getPlayer()))
                 .put("legalActions", new JSONArray()).put("pendingDecision", JSONObject.NULL).put("stateVersion", ++version)
                 .put("interactive", false).put("interactionEpoch", "forge-" + version).put("priorityMode", "auto"), "top");
+    }
+
+    /**
+     * After a game (owner, Nov 10): each AI's deck, and the cards that dealt you the most damage (from Forge's log).
+     */
+    private JSONObject reveal(Game game, Player me) {
+        JSONObject out = new JSONObject();
+        try {
+            JSONArray decks = new JSONArray();
+            for (Player p : game.getRegisteredPlayers()) {
+                if (p == me || !p.isAI() || p.getRegisteredPlayer() == null) continue;
+                forge.deck.Deck d = p.getRegisteredPlayer().getDeck();
+                JSONArray cards = new JSONArray();
+                for (Map.Entry<forge.item.PaperCard, Integer> e : d.getMain()) cards.put(new JSONObject().put("name", e.getKey().getName()).put("count", e.getValue()));
+                String commander = d.getCommanders().isEmpty() ? null : d.getCommanders().get(0).getName();
+                decks.put(new JSONObject().put("player", p.getName()).put("commander", commander == null ? JSONObject.NULL : commander)
+                        .put("lost", p.hasLost()).put("cards", cards));
+            }
+            out.put("decks", decks);
+            Map<String, Integer> hurt = new LinkedHashMap<>();
+            java.util.regex.Pattern dmg = java.util.regex.Pattern.compile("^(?:Damage: )?(.+?) deals (\\d+) (?:combat |non-combat |noncombat )?damage to (.+?)\\.?$");
+            for (forge.game.GameLogEntry e : game.getGameLog().getAllEntries()) {
+                if (e.type() != forge.game.GameLogEntryType.DAMAGE) continue;
+                java.util.regex.Matcher m = dmg.matcher(e.message().trim());
+                if (m.find() && m.group(3).trim().startsWith(me.getName()))
+                    hurt.merge(m.group(1).trim().replaceAll(" \\(\\d+\\)$", ""), Integer.parseInt(m.group(2)), Integer::sum);
+            }
+            JSONArray top = new JSONArray();
+            List<Map.Entry<String, Integer>> ranked = new ArrayList<>(hurt.entrySet());
+            ranked.sort((a, b) -> b.getValue() - a.getValue());
+            for (Map.Entry<String, Integer> en : ranked.subList(0, Math.min(5, ranked.size())))
+                top.put(new JSONObject().put("source", en.getKey()).put("damage", en.getValue()));
+            out.put("hurtYou", top);
+        } catch (Exception e) { System.err.println("reveal failed: " + describe(e)); }
+        return out;
+    }
+
+    /**
+     * Coach mode (owner, Nov 10): Forge's AI looks at a copy of the game from your seat and says what it would do now.
+     * The real game is never touched; the copy is thrown away.
+     */
+    private String coach() {
+        Game game = match == null ? null : match.getGame();
+        PlayerControllerHuman you = humanController();
+        if (game == null || you == null) return "The coach needs a game in progress.";
+        Player me = you.getPlayer();
+        if (game.getPhaseHandler().getPriorityPlayer() != me) return "Ask again when it's your move: the coach suggests plays when you have priority.";
+        forge.ai.simulation.GameCopier copier = new forge.ai.simulation.GameCopier(game);
+        Game copy = copier.makeCopy();
+        Player cme = copy.getPlayer(me.getId());
+        if (cme == null || !(cme.getController() instanceof forge.ai.PlayerControllerAi ai)) return "The coach couldn't take your seat in its copy of the game.";
+        List<String> lines = new ArrayList<>();
+        List<SpellAbility> plays = ai.getAi().chooseSpellAbilityToPlay();
+        if (plays != null) for (SpellAbility sa : plays) {
+            if (sa == null) continue;
+            String what = sa.isLandAbility() ? "Play " + sa.getHostCard().getName()
+                    : sa.isSpell() ? "Cast " + sa.getHostCard().getName()
+                    : "Use " + sa.getHostCard().getName() + ": " + sa.getDescription();
+            List<String> targets = new ArrayList<>();
+            for (SpellAbility part = sa; part != null; part = part.getSubAbility())
+                if (part.getTargets() != null) for (Object t : part.getTargets()) targets.add(t instanceof Card c ? c.getName() : t instanceof Player p ? (p == cme ? "you" : p.getName()) : String.valueOf(t));
+            lines.add(what + (targets.isEmpty() ? "" : " → " + String.join(", ", targets)));
+        }
+        boolean myTurn = copy.getPhaseHandler().isPlayerTurn(cme);
+        forge.game.phase.PhaseType ph = copy.getPhaseHandler().getPhase();
+        if (lines.isEmpty() && myTurn && ph != null && ph.isBefore(forge.game.phase.PhaseType.COMBAT_DECLARE_ATTACKERS)) {
+            try {
+                forge.game.combat.Combat combat = new forge.game.combat.Combat(cme);
+                new forge.ai.AiAttackController(cme).declareAttackers(combat);
+                Map<String, List<String>> byDefender = new LinkedHashMap<>();
+                for (Card a : combat.getAttackers()) {
+                    Object d = combat.getDefenderByAttacker(a);
+                    String name = d instanceof Player p ? p.getName() : d instanceof Card c ? c.getName() : "?";
+                    byDefender.computeIfAbsent(name, k -> new ArrayList<>()).add(a.getName());
+                }
+                byDefender.forEach((d, as) -> lines.add("Attack " + d + " with " + String.join(", ", as)));
+            } catch (RuntimeException ignored) { }
+        }
+        if (lines.isEmpty()) return "Pass: the AI wouldn't do anything right now.";
+        return String.join("\n", lines);
     }
 
     private Object winnerId(Game game) {
@@ -1249,7 +1346,36 @@ public final class ArcanaForgeHost {
             return m.group(1) + " must block each combat. Assign it to block.";
         if ((m = java.util.regex.Pattern.compile("^(.+?) must still block (.+?)\\.?$").matcher(t)).find())
             return m.group(1) + " must block " + m.group(2) + ".";
-        return t;
+        return wording(t);
+    }
+
+    /** Owner, Nov 10: Forge's question texts that read oddly, said the way a player would. */
+    static String wording(String t) {
+        java.util.regex.Matcher m;
+        if (t.equals("Cancel Choose?")) return "Stop choosing?";
+        if ((m = java.util.regex.Pattern.compile("^Have (.+?) shuffle\\?$").matcher(t)).find()) return "Should " + m.group(1) + " shuffle their library?";
+        if ((m = java.util.regex.Pattern.compile("^Do you want to put that card to (.+?)\\?$").matcher(t)).find()) return "Put that card into " + m.group(1).toLowerCase() + "?";
+        if (t.equals("Do you want to put the counter?")) return "Put the counter on it?";
+        if ((m = java.util.regex.Pattern.compile("^Put (.+?) to library\\?$").matcher(t)).find()) return "Put " + m.group(1) + " into your library?";
+        if (t.equals("Do you want to dig your library?")) return "Look at the top of your library?";
+        return t.replace("Choose a opponent", "Choose an opponent").replace("[Explore] ", "Explore: ");
+    }
+
+    /**
+     * Two-answer questions whose Forge wording doesn't say what Yes and No do (owner, Nov 10: "Put Swamp on the top of
+     * library or graveyard?" answered Yes/No). Returns {prompt, first answer, second answer}; the first answer is "yes".
+     */
+    static String[] twoWay(String prompt, String yes, String no) {
+        java.util.regex.Matcher m;
+        if ((m = java.util.regex.Pattern.compile("^Put (.+?) on the top of library or graveyard\\?$").matcher(prompt)).find())
+            return new String[]{"Surveil: keep " + m.group(1) + " on top of your library, or put it into your graveyard?", "Keep on top", "Graveyard"};
+        if ((m = java.util.regex.Pattern.compile("^Put (.+?) on the top or bottom of your library\\?$").matcher(prompt)).find())
+            return new String[]{"Scry: keep " + m.group(1) + " on top of your library, or put it on the bottom?", "Keep on top", "Bottom"};
+        if ((m = java.util.regex.Pattern.compile("^Should (.+?) be added to the top or to the bottom of the library\\?$").matcher(prompt)).find())
+            return new String[]{"Put " + m.group(1) + " on top of the library, or on the bottom?", "Top", "Bottom"};
+        if ((m = java.util.regex.Pattern.compile("^(?:\\[Explore\\] |Explore: )Put (.+?) in your graveyard\\?$").matcher(prompt)).find())
+            return new String[]{"Explore: put " + m.group(1) + " into your graveyard, or keep it on top of your library?", "Graveyard", "Keep on top"};
+        return new String[]{prompt, yes, no};
     }
 
     /**
@@ -1602,6 +1728,13 @@ public final class ArcanaForgeHost {
      */
     public void setStartBoardForTest(String script) { startBoardForTest = script; }
 
+    /**
+     * Arcana's tutorial lessons (owner, Nov 10: "update the tutorial to work with the current version"): the lesson's
+     * board, applied the same way, and the opening hand is kept for you (the board already chose your hand).
+     */
+    public void setPracticeBoard(String script) { startBoardForTest = script; practiceBoard = script != null; }
+    private volatile boolean practiceBoard;
+
     private void applyStartBoard(HostedMatch m) {
         String script = startBoardForTest;
         if (script == null) return;
@@ -1625,8 +1758,60 @@ public final class ArcanaForgeHost {
     }
 
     private boolean askYesNo(String prompt, String yes, String no) throws Exception {
-        JSONObject d = decisionBase("YesNoDecision", prompt).put("yesText", yes == null ? "Yes" : yes).put("noText", no == null ? "No" : no);
+        String[] said = twoWay(prompt == null ? "" : prompt, yes == null ? "Yes" : yes, no == null ? "No" : no);
+        JSONObject d = decisionBase("YesNoDecision", said[0]).put("yesText", said[1]).put("noText", said[2]);
         return ask(d, Map.of()).optBoolean("choice");
+    }
+
+    /** The spell or ability you last chose to cast or activate (for its X). */
+    private volatile SpellAbility castingNow;
+
+    /**
+     * Owner, Nov 10: "When it asks you to pick for x, I'd like it to limit to how much mana you can produce." For the X of
+     * the spell or ability you're casting, the largest X is what your untapped sources and pool can pay after the rest of
+     * the cost. Other numbers (and X paid some other way than mana) keep Forge's limit.
+     */
+    private int capX(String prompt, int min, int max) {
+        try {
+            SpellAbility sa = castingNow;
+            if (sa == null || prompt == null || sa.getHostCard() == null || !prompt.contains(sa.getHostCard().getName())) return max;
+            if (sa.getPayCosts() == null || sa.getPayCosts().getCostMana() == null) return max;
+            forge.card.mana.ManaCost cost = sa.getPayCosts().getTotalMana();
+            int xs = cost.countX();
+            if (xs <= 0) return max;
+            Player p = sa.getActivatingPlayer() != null ? sa.getActivatingPlayer() : humanController().getPlayer();
+            // Owner, Nov 10: "Can it be configured for all available mana sources?" Forge's own payment check decides each
+            // X (every source it can use: lands, rocks, creatures, Treasures and other sacrifice-for-mana, the pool, cost
+            // reductions, commander tax); the largest payable X is found by halving the range.
+            int estimate = forge.ai.ComputerUtilMana.getAvailableManaEstimate(p, true);
+            int hi = Math.min(max, Math.max(min, (estimate + 20) / xs)), lo = min;
+            Integer before = sa.getXManaCostPaid();
+            try {
+                if (!payableWithX(sa, p, lo)) lo = min; // even the smallest X: leave it to Forge
+                else while (lo < hi) { int mid = (lo + hi + 1) / 2; if (payableWithX(sa, p, mid)) lo = mid; else hi = mid - 1; }
+            } finally { sa.setXManaCostPaid(before); }
+            // Paid without mana, which Forge's check doesn't count: each untapped creature (convoke) or artifact
+            // (improvise) pays one, and delve exiles graveyard cards for generic mana.
+            Card host = sa.getHostCard();
+            int extra = 0;
+            boolean convoke = host.hasKeyword(forge.game.keyword.Keyword.CONVOKE), improvise = host.hasKeyword(forge.game.keyword.Keyword.IMPROVISE);
+            for (Card c : p.getCardsIn(ZoneType.Battlefield)) {
+                if (c.isTapped()) continue;
+                if ((convoke && c.isCreature()) || (improvise && c.isArtifact() && !c.isCreature())) extra++;
+            }
+            if (host.hasKeyword(forge.game.keyword.Keyword.DELVE)) extra += p.getCardsIn(ZoneType.Graveyard).size();
+            return Math.min(max, Math.max(min, lo + extra / xs));
+        } catch (RuntimeException e) {
+            return max;
+        }
+    }
+
+    private boolean payableWithX(SpellAbility sa, Player p, int x) {
+        sa.setXManaCostPaid(x);
+        PRICING.set(true);
+        try { return forge.ai.ComputerUtilMana.canPayManaCost(sa, p, 0, false); }
+        catch (AskedWhilePricing asked) { return true; } // Forge would ask while paying: let it
+        finally { PRICING.set(false); }
     }
 
     private int askNumber(String prompt, int min, int max) throws Exception {
@@ -1659,7 +1844,7 @@ public final class ArcanaForgeHost {
                 return r.isEmpty() ? null : r.get(0);
             }
             case "chooseEntitiesForEffect": return choose((String) a[0], (Integer) a[2], (Integer) a[3], (List<?>) a[1]);
-            case "getInteger": return askNumber((String) a[0], (Integer) a[1], (Integer) a[2]);
+            case "getInteger": return askNumber((String) a[0], (Integer) a[1], capX((String) a[0], (Integer) a[1], (Integer) a[2]));
             case "showOptionDialog": { // (message, title, icon, options, default) → chosen index (from Goose's PR #19)
                 List<?> opts = a.length > 3 && a[3] instanceof List<?> l ? l : List.of();
                 if (opts.size() < 2) return a.length > 4 ? a[4] : 0;
@@ -1765,9 +1950,11 @@ public final class ArcanaForgeHost {
         }
         if (kind.equals("InputConfirm")) {
             String prompt = field(input, "message") instanceof String m ? m : "Confirm";
-            Object opts = field(input, "options");
-            List<?> labels = opts instanceof List<?> l && l.size() > 1 ? l : null;
-            String yes = labels == null ? "Yes" : String.valueOf(labels.get(0)), no = labels == null ? "No" : String.valueOf(labels.get(1));
+            // Forge's own answer names ("Library" / "Graveyard", "Top" / "Bottom"); they were read from a field that
+            // doesn't exist, so every such question showed Yes / No (owner, Nov 10).
+            String yes = field(input, "yesButtonText") instanceof String y && !y.isBlank() ? y : "Yes";
+            String no = field(input, "noButtonText") instanceof String n && !n.isBlank() ? n : "No";
+            String[] said = twoWay(prompt, yes, no); prompt = said[0]; yes = said[1]; no = said[2];
             // CR 903.9a: Forge's prompt is the rule's full text; say it the way a player would (owner, Nov 8)
             java.util.regex.Matcher cz = java.util.regex.Pattern.compile("^(.+?): If a commander is in a graveyard or in exile").matcher(prompt);
             if (cz.find()) { prompt = "Return " + cz.group(1) + " to the command zone?"; yes = "Command zone"; no = "Leave it"; }

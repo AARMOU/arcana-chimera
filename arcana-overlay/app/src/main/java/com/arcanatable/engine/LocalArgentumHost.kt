@@ -61,6 +61,9 @@ class LocalArgentumHost(
         ChimeraLoading.hosting = true
         ArcanaForgeHost.progress = java.util.function.BiConsumer { f, what -> ChimeraLoading.report(f, what) }
         ArcanaForgeHost.pictures = java.util.function.BiFunction { name, seat -> ChimeraPictures.picture(name, seat) }
+        // Tutorial lessons (owner, Nov 10): the lesson's board, as a Forge game-state script (ChimeraTutorialBoards).
+        resumeCheckpoint?.let { runCatching { org.json.JSONObject(it).optString("forgeBoard") }.getOrNull() }
+            ?.takeIf { it.isNotBlank() }?.let { forge.setPracticeBoard(it) }
         forge.prepare(seats) { forgeAssetsDir() } // unpacked on Forge's start thread, not the UI thread
         ForgeGameService.start(app())
     }

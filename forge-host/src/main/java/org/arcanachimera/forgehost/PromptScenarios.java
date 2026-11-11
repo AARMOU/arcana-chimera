@@ -310,15 +310,18 @@ public final class PromptScenarios {
             if (s.fresh(d) && d.optString("type").equals("ChooseOptionDecision") && d.optString("prompt").equals("Pick one")) {
                 int before = s.notices.size();
                 s.send(new JSONObject().put("type", "PassPriority").put("playerId", ArcanaForgeHost.HUMAN_ID));
-                s.pushBack = s.next(10); // the refusal, then the question again
-                if (s.notices.size() == before || !s.notices.get(s.notices.size() - 1).contains("isn't offering a pass")) return "a stray pass during a question wasn't refused";
+                // Owner list, Nov 10: Pass brings the open question back (no refusal), and can't answer it.
+                JSONObject again = s.next(10);
+                JSONObject ad = again.optJSONObject("pendingDecision");
+                if (s.notices.size() != before) return "a stray pass during a question was refused instead of bringing it back";
+                if (ad == null || !ad.optString("id").equals(d.optString("id"))) return "a stray pass during a question didn't bring the question back";
                 s.answer(d, new JSONObject().put("type", "OptionChosenResponse").put("optionIndex", 2));
                 break;
             }
         }
         dialog.join(30_000);
         if (!Integer.valueOf(2).equals(chosen.get())) return "option dialog returned " + chosen.get() + " (expected 2)";
-        out.append(", option dialog ok, stray pass refused");
+        out.append(", option dialog ok, stray pass reopens the question");
         return out.toString();
     }
 

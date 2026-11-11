@@ -71,7 +71,7 @@ import org.json.JSONObject
  */
 internal object ChimeraSkins {
     val CUSTOM = linkedMapOf("arena" to "Duel Arena", "orbit" to "Orbit", "across" to "Across the Table", "feed" to "Feed",
-        "terminal" to "Terminal", "focus" to "Focus", "storybook" to "Storybook")
+        "terminal" to "Terminal", "focus" to "Focus", "storybook" to "Storybook", "xp" to "XP Desktop")
     private val prefs: SharedPreferences? by lazy {
         runCatching {
             val app = Class.forName("android.app.ActivityThread").getMethod("currentApplication").invoke(null) as Context
@@ -165,6 +165,7 @@ internal fun ChimeraSkinScreen(t: TableController) {
             "feed" -> SkinFeed(ui)
             "terminal" -> SkinTerminal(ui)
             "focus" -> SkinFocus(ui)
+            "xp" -> ChimeraXpDesktop(ui)
             else -> SkinStorybook(ui)
         }
     }
@@ -230,6 +231,9 @@ private fun SkinMenu(g: SkinGame, look: SkinLook, label: String = "⋮") {
         DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
             DropdownMenuItem(text = { Text("Stack · ${g.stackCount}") }, onClick = { open = false; g.stack() })
             DropdownMenuItem(text = { Text("Game log") }, onClick = { open = false; g.log() })
+            DropdownMenuItem(text = { Text("Board summary") }, onClick = { open = false; ChimeraFeatures.boardOpen = true })
+            if (ChimeraFeatureSettings.coach) DropdownMenuItem(text = { Text("Coach: what would the AI do?") }, onClick = { open = false; ChimeraCoach.ask(g.t) })
+            DropdownMenuItem(text = { Text("Game history") }, onClick = { open = false; ChimeraFeatures.historyOpen = true })
             DropdownMenuItem(text = { Text(if (g.autoPassing) "Stop auto-pass" else "Pass to my turn") }, onClick = { open = false; g.holdPass() })
             DropdownMenuItem(text = { Text("Classic screen") }, onClick = { open = false; ChimeraSkins.set("") })
             DropdownMenuItem(text = { Text("Options") }, onClick = { open = false; g.t.optionsOpen = true })

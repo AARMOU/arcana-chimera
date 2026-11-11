@@ -5,6 +5,22 @@ set -euo pipefail
 ARCANA_SHA="${ARCANA_SHA:-a5c428ad3da42b7325adf6630238ec992fee3113}"
 FORGE_SHA="${FORGE_SHA:-7c34365c749ca46ab71336c5f267340d6088e600}"
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+# The approved animations are identical-sized transparent GIF canvases. Fail
+# before a costly Forge compile when either is absent or unexpectedly altered.
+for gif in gooseclippy_idle.gif gooseclippy_react.gif; do
+  [ -s "$ROOT/arcana-overlay/app/src/main/assets/$gif" ] || {
+    echo "ERROR: Missing approved GooseClippy asset $gif"
+    exit 1
+  }
+done
+(cd "$ROOT/arcana-overlay/app/src/main/assets" &&
+ printf '%s  %s\n' \
+  '16dde375e89d564b90b160cb460ee42b69dfd2763caaff6d91ce0e3ca8979e92' 'gooseclippy_idle.gif' \
+  '295cb5ad25e3656f9a7d22beb44b9e54633cd26dc61c709cd11a350ea6c11f3b' 'gooseclippy_react.gif' |
+ sha256sum --check --status) || {
+    echo "ERROR: GooseClippy animation mismatch. Require corrected, size-matched 240x360 GIFs."
+    exit 1
+ }
 WORK="$ROOT/third_party"; mkdir -p "$WORK"
 ARCANA="$WORK/arcana"; FORGE="$WORK/forge"
 [ -d "$ARCANA/.git" ] || git clone --quiet --filter=blob:none --no-checkout https://github.com/AARMOU/arcana_table.git "$ARCANA"
@@ -71,11 +87,20 @@ cp "$ROOT/arcana-overlay/app/src/main/java/com/arcanatable/engine/ChimeraLoading
 cp "$ROOT/arcana-overlay/app/src/main/java/com/arcanatable/ChimeraArt.kt" "$APP/src/main/java/com/arcanatable/"
 cp "$ROOT/arcana-overlay/app/src/main/java/com/arcanatable/ChimeraHandFit.kt" "$APP/src/main/java/com/arcanatable/"
 cp "$ROOT/arcana-overlay/app/src/main/java/com/arcanatable/ChimeraDrawer.kt" "$APP/src/main/java/com/arcanatable/"
-for f in ChimeraView ChimeraHand ChimeraHandCards ChimeraBackdrops ChimeraPresets ChimeraPlay ChimeraStudio ChimeraSkins ChimeraChoice ChimeraTerminal; do
+for f in ChimeraView ChimeraHand ChimeraHandCards ChimeraBackdrops ChimeraPresets ChimeraPlay ChimeraStudio ChimeraSkins ChimeraChoice ChimeraTerminal ChimeraTutorialBoards ChimeraHaptics ChimeraFeatures ChimeraXp GooseClippyLines GooseClippyFeature; do
   cp "$ROOT/arcana-overlay/app/src/main/java/com/arcanatable/$f.kt" "$APP/src/main/java/com/arcanatable/"
+done
+mkdir -p "$APP/src/main/assets/chimera_xp" && cp "$ROOT"/arcana-overlay/app/src/main/assets/chimera_xp/*.jpg "$APP/src/main/assets/chimera_xp/" # XP Desktop wallpapers
+# Copy independent assistant code, tests and both approved animations into the
+# temporary donor. No files are written to the actual Arcana Git repository.
+mkdir -p "$APP/src/test/java/com/arcanatable"
+cp "$ROOT"/arcana-overlay/app/src/test/java/com/arcanatable/GooseClippy*Test.kt "$APP/src/test/java/com/arcanatable/"
+for gif in gooseclippy_idle.gif gooseclippy_react.gif; do
+  cp "$ROOT/arcana-overlay/app/src/main/assets/$gif" "$APP/src/main/assets/"
 done
 python3 "$ROOT/scripts/patch_arcana_nov9.py" "$APP" # owner's Nov 9 list: drawer, Commander, presets, fan/catalogue, backgrounds, log detail
 python3 "$ROOT/scripts/patch_arcana_nov9c.py" "$APP" # owner's third Nov 9 list: choices, pictures, combat, mulligan grid, home picture
+python3 "$ROOT/scripts/patch_arcana_tutorial.py" "$APP" # the tutorial's text for Arcana with Forge (owner, Nov 10)
 python3 "$ROOT/scripts/patch_arcana_wording.py" "$APP" # owner, Nov 9: no "Argentum" on screen (fails the build if any is left)
 # Foreground service: keeps the Forge game alive while the player is in another app.
 python3 - "$APP/src/main/AndroidManifest.xml" <<'PY'

@@ -47,7 +47,8 @@ class GPLPairTests(unittest.TestCase):
         f = self.repos["forge"]
         return gpl.make_pair(apk=kwargs.get("apk", self.apk), out=self.out,
                              expected_arcana=kwargs.get("expected_arcana", git(a, "rev-parse", "HEAD")),
-                             expected_forge=git(f, "rev-parse", "HEAD"), **self.repos)
+                             expected_forge=git(f, "rev-parse", "HEAD"),
+                             artifact_type=kwargs.get("artifact_type", "apk"), **self.repos)
 
     def test_modified_and_generated_android_source_is_included(self):
         arcana = self.repos["arcana"]
@@ -64,6 +65,26 @@ class GPLPairTests(unittest.TestCase):
             ).read(), b"class Overlay")
             internal = json.load(bundle.extractfile("BUILD-PROVENANCE.json"))
             self.assertEqual(internal["apk_sha256"], manifest["apk_sha256"])
+
+    def test_aab_paired_with_correct_artifact_hash(self):
+        aab = self.apk.with_suffix(".aab")
+        aab.write_bytes(b"synthetic, not a signed AAB")
+        manifest = self.pair(apk=aab, artifact_type="aab")
+        self.assertIn("aab_sha256", manifest)
+        self.assertEqual(manifest["aab_name"], aab.name)
+        self.assertNotIn("apk_sha256", manifest)
+        self.assertFalse(manifest["distribution_approved"])
+        with tarfile.open(self.out / manifest["source_name"]) as bundle:
+            internal = json.load(bundle.extractfile("BUILD-PROVENANCE.json"))
+            self.assertEqual(internal["aab_sha256"], manifest["aab_sha256"])
+
+    def test_wrong_revision_blocks(self):
+        with self.assertRaisesRegex(RuntimeError, "revision mismatch"):
+            self.pair(expected_arcana="0000000000")
+
+    def test_missing_apk_blocks(self):
+        with self.assertRaisesRegex(RuntimeError, "nonempty APK"):
+            self.pair(apk=self.apk.parent / "missing.apk")
 
     def test_byte_for_byte_reviewed_public_key_is_included(self):
         relative = gpl.REVIEWED_PUBLIC_PEM
@@ -95,14 +116,6 @@ class GPLPairTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "Potential credential"):
             self.pair()
         self.assertFalse((self.out / "chimera-source-CANDIDATE.tar.gz").exists())
-
-    def test_wrong_revision_blocks(self):
-        with self.assertRaisesRegex(RuntimeError, "revision mismatch"):
-            self.pair(expected_arcana="0000000000")
-
-    def test_missing_apk_blocks(self):
-        with self.assertRaisesRegex(RuntimeError, "nonempty APK"):
-            self.pair(apk=self.apk.parent / "missing.apk")
 
     def test_secrets_block_without_leaving_archive(self):
         p = self.repos["arcana"] / "android/app/src/main/assets/credentials.json"

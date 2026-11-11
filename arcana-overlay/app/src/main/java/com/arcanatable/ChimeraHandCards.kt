@@ -108,10 +108,24 @@ private fun ChimeraCatalogueHand(cards: List<GameCard>, playable: Set<Int>, sele
         val centre = (maxWidth - cardW) / 2
         Column(Modifier.fillMaxSize()) {
             Box(Modifier.fillMaxWidth().height(cardH).clipToBounds().pointerInput(n, stepPx) {
+                // Owner, Nov 10: scroll smoothly, then settle on a card gently. A flick carries on with its own speed
+                // (gliding past several cards) and eases onto the nearest card instead of snapping to the next one.
+                val tracker = androidx.compose.ui.input.pointer.util.VelocityTracker()
                 detectHorizontalDragGestures(
-                    onDragEnd = { scope.launch { pos.animateTo(pos.value.roundToInt().coerceIn(0, n - 1).toFloat(), spring(stiffness = 300f)) } },
-                    onDragCancel = { scope.launch { pos.animateTo(pos.value.roundToInt().coerceIn(0, n - 1).toFloat()) } },
-                    onHorizontalDrag = { change, dx -> change.consume(); scope.launch { pos.snapTo((pos.value - dx / stepPx).coerceIn(0f, n - 1f)) } })
+                    onDragStart = { tracker.resetTracking() },
+                    onDragEnd = {
+                        val cardsPerSecond = -tracker.calculateVelocity().x / stepPx
+                        val glide = (pos.value + cardsPerSecond * 0.3f).coerceIn(0f, n - 1f) // where the momentum would carry it
+                        scope.launch {
+                            pos.animateTo(glide.roundToInt().coerceIn(0, n - 1).toFloat(),
+                                spring(dampingRatio = 0.9f, stiffness = 90f), initialVelocity = cardsPerSecond)
+                        }
+                    },
+                    onDragCancel = { scope.launch { pos.animateTo(pos.value.roundToInt().coerceIn(0, n - 1).toFloat(), spring(dampingRatio = 0.9f, stiffness = 90f)) } },
+                    onHorizontalDrag = { change, dx ->
+                        change.consume(); tracker.addPosition(change.uptimeMillis, change.position)
+                        scope.launch { pos.snapTo((pos.value - dx / stepPx).coerceIn(0f, n - 1f)) }
+                    })
             }) {
                 cards.withIndex().sortedByDescending { abs(it.index - pos.value) }.forEach { (i, card) ->
                     val d = i - pos.value

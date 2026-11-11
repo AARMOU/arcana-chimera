@@ -83,7 +83,7 @@ public final class ProtocolGuard {
 
     /** The host's refusals of a player's answer or action (not informational messages from Forge). */
     private static boolean refusal(String text) {
-        return text.contains("Try again") || text.startsWith("You can't do that") || text.startsWith("Forge did not accept")
+        return text.contains("Try again") || text.startsWith("You can't do that") || text.startsWith("Forge did not accept") || text.startsWith("That couldn't be done right now")
                 || text.startsWith("That question was already answered");
     }
 
