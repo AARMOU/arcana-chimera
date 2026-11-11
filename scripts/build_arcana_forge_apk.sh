@@ -69,6 +69,7 @@ cp "$LIBS"/*.jar "$APP/libs/forge/"
 mkdir -p "$APP/src/main/java/org/jupnp" && cp "$STUB" "$APP/src/main/java/org/jupnp/"
 cp "$WORK/forge-res.zip" "$APP/src/main/assets/forge-res.zip"
 python3 "$ROOT/scripts/patch_arcana_for_forge.py" "$APP" # owner: no Argentum card check; Forge decides
+python3 "$ROOT/scripts/patch_commander_art_editor.py" "$APP" # Chimera: commander art picker and persistent previews
 echo "== Chimera official WotC Commander decklists (bundled offline; no Arcana writes)"
 mkdir -p "$APP/src/main/assets/precons"
 python3 "$ROOT/scripts/build_wotc_commander_precons.py" --out "$APP/src/main/assets/precons/wotc-commander-precons.json"
