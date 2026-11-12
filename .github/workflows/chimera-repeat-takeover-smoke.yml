@@ -1,0 +1,51 @@
+name: Chimera repeat-takeover regression (local-only, no deploy)
+on:
+  pull_request:
+    paths:
+      - "tests/verify-directed-room-repeat-takeover.mjs"
+      - ".github/workflows/chimera-repeat-takeover-smoke.yml"
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  repeat-takeover:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Fetch pinned relay donor (read-only)
+        run: |
+          set -euo pipefail
+          git clone --quiet --filter=blob:none --no-checkout https://github.com/AARMOU/arcana_table.git third_party/arcana
+          git -C third_party/arcana checkout --quiet --detach a5c428ad3da42b7325adf6630238ec992fee3113
+      - name: Stage Chimera directed-room patch in temporary donor checkout
+        run: python3 scripts/patch_directed_room_resumption.py third_party/arcana/android/cloud-room/src/index.ts
+      - name: Typecheck temporary relay only
+        working-directory: third_party/arcana/android/cloud-room
+        run: |
+          npm ci --no-audit --no-fund
+          npm run typecheck
+      - name: Test repeated authenticated takeover and latest-socket delivery
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd third_party/arcana/android/cloud-room
+          npx wrangler dev --local --port 8787 > "$RUNNER_TEMP/chimera-repeat-takeover.log" 2>&1 &
+          PID=$!
+          trap 'kill "$PID" 2>/dev/null || true' EXIT
+          healthy=0
+          for attempt in $(seq 1 50); do
+            if curl --silent --fail http://127.0.0.1:8787/health > /dev/null; then healthy=1; break; fi
+            sleep 1
+          done
+          if [ "$healthy" -ne 1 ]; then tail -100 "$RUNNER_TEMP/chimera-repeat-takeover.log"; exit 1; fi
+          node "$GITHUB_WORKSPACE/tests/verify-directed-room-repeat-takeover.mjs"
+          echo "Chimera local-only test complete. No cloud deployment or Android APK build."
