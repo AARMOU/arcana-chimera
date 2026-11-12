@@ -30,13 +30,23 @@ def patch_app(app: Path):
                         // A room whose last phone left can expire; retry as creator.
                         firstWelcome.set(false)
                         disconnected()
-                    } else { close(); onFailed(reason) }''', '''                    if (droppedAt != 0L && isHost) {
+                    } else { close(); onFailed(reason) }''', '''                    if (droppedAt != 0L && rejoinRejections < MAX_REJOIN_REJECTIONS) {
+                        // The server can refuse a rejoin for a moment (it has not
+                        // yet seen the old socket die). Ask again for the SAME
+                        // seat; one refusal must not end a live game.
+                        rejoinRejections++
+                        disconnected()
+                    } else if (droppedAt != 0L && isHost) {
                         // The old game must NOT create a new room with new
                         // private seat tokens: that would strand guests.
                         close()
                         onFailed("The internet room no longer accepts the saved host seat. " +
                             "The server must preserve the room during temporary disconnects: $reason")
                     } else { close(); onFailed(reason) }''')
+    change(rooms, '''        droppedAt = 0L
+        retryCount = 0''', '''        droppedAt = 0L
+        retryCount = 0
+        rejoinRejections = 0''')
 
     # Use the matching server recovery window, including peer-away grace.
     # A temporary background disconnect is not an intentional guest departure.
@@ -52,6 +62,8 @@ def patch_app(app: Path):
     change(rooms, '''    private var retryCount = 0
     private val timer =''', '''    private var retryCount = 0
     @Volatile private var retryScheduled = false
+    @Volatile private var rejoinRejections = 0
+    private val MAX_REJOIN_REJECTIONS = 6
     private val timer =''')
     change(rooms, '''    private fun disconnected() {
         if (ended.get()) return
