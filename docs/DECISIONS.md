@@ -1,5 +1,22 @@
 # Chimera decisions and guardrails
 
+## Owner decision: full Forge brain transplant, built in Chimera first (November 7, 2026, ~8:27 PM Mountain)
+
+Recorded by Claude B from the owner's chat answers. The owner asked to **"take the argentum rule engine out of arcana and replace it with forge"** and answered Claude B's four questions:
+
+1. **License:** GPL-3.0 accepted, **"as long as the apk is encrypted beforehand and I am able to decrypt it."** Delivery to the owner uses the encrypted-handoff route. GPL obligations attach only when a build is given to someone else, and then the corresponding source must go with it.
+2. **Where:** **Option A.** Prove it in Chimera first, then move it into Arcana later as a separate, owner-approved step.
+3. **Scope:** **"a full brain transplant"**: Forge replaces Argentum entirely as Arcana's rules engine and AI. No dual-engine switch is the goal (a temporary one may exist only as a development aid).
+4. **Priority:** **"Don't concern yourself with main arcana for this project. This is your only job for right now."**
+
+What this changes from the November 3 FrankenArcana scope:
+- The target is **Arcana's real Compose app with its engine swapped**, not an Arcana-styled overlay on Forge's own Android app. The Chimera adapter must speak the same game-message contract Arcana's UI already uses (`LocalArgentumHost` → `/game`-style messages), so Arcana's table, hand, Studio and menus run unchanged on Forge.
+- Arcana source is still **staged at build time into ignored space** from a pinned public commit and never mirrored into public Chimera history. Chimera commits only its own adapter code and minimal, clearly labelled patch files that swap the engine.
+- **Owner (Nov 7, 2026): "Don't worry about encryption."** The Arcana + Forge debug APK is delivered as a plain 1-day GitHub Actions artifact. Chimera is public, so it is visible to signed-in GitHub users until it expires; if shared beyond the owner, GPL source obligations apply.
+- **Owner chose (Nov 7, 2026):** build/test workflows run automatically on Claude B's **draft PR** pushes, on GitHub's free standard runners. Nothing is merged to `main` for this. Still no paid compute, no public APK or binary, no unencrypted artifact.
+
+Unchanged: **no writes of any kind to `AARMOU/arcana_table`**, no spending, no automatic merges, no release.
+
 ## Owner override — November 3, 2026 (Mountain time)
 
 The owner expressly authorized making this research-only repository **public** to attempt one **free** GitHub Actions Forge Commander game. This supersedes only the November 2 prohibition on publication and GitHub Actions in private repositories. Never start a paid runner. Use only standard `ubuntu-24.04` after the repository is public, with manual `workflow_dispatch`, no scheduling or automatic retries, and no publicly uploaded compiled engine or assets. Visibility must be changed by the owner in GitHub Settings; the integration cannot alter visibility.
@@ -31,3 +48,27 @@ Owner instructed **“It's arcana with forge. I want the same ui as it currently
 **Next decision:** Whether to run manual Forge compilation and gameplay tests, then (only if they succeed) develop a throwaway one-turn Android proof of concept.
 
 **Current result:** No Forge builds or gameplay tests executed by this repository's setup. All acceptance-matrix entries begin as `not_run`.
+
+## 2026-11-08 — Arcana build 142 + Studio
+Owner: build the Forge APK on the current Arcana build 142 including the latest Arcana Studio, with no changes to the Arcana repo.
+Staged read-only at `63edcb77` (head of AARMOU/arcana_table#1013, `claude/arcana-studio-ux-20261106`, versionCode 142). Debug build: Studio on, label "Arcana Forge B142 Studio", package `org.arcanachimera.arcanaforge.b142studio` (installs beside earlier Forge builds).
+
+## 2026-11-08 — No Argentum card check (priority 1: every card on Forge)
+Owner: "I want the argentum card check gone. Verifying being able to utilize all cards in the forge engine is priority 1."
+- `scripts/patch_arcana_for_forge.py` patches the staged Arcana at build time (nothing committed to arcana_table): offline decks keep every card (no Argentum filter, no basic-land fill for Argentum-missing cards), AI decks are not filtered by Argentum, and import no longer reports "not in Argentum". Forge reports any card it doesn't have when the game starts.
+- `AllCardsCheck` (proof workflow) builds every unique card in Forge's database into a game object and looks up named cards.
+
+## 2026-11-08 17:27 — Latest Arcana Studio
+Owner: fetch the latest Arcana Studio updates and integrate them into Chimera. Arcana is now staged read-only at `3d9fce0d` (head of arcana_table#1013, still versionCode 142): 7 Studio commits since `63edcb77` (per-player IDs, Fill it up, presets, Light palette, game options in Studio, two-finger scroll, Show me, clear boards, Pass copies, Background setting). UI only; no engine-file changes, and the Forge build patches apply unchanged.
+
+## 2026-11-08 17:44 — Deck import and editor on Forge's cards; parts of Goose's #19
+Owner: take the two good parts of #19 and add an end-step stop; and fix the deck import and editor, "severely hobbled by the Argentum restrictions".
+- Arcana's catalog (deck import, editor search, deck checks, card details) reads a build-time `forge-cards.jsonl` / `.index.tsv` from `ForgeCatalogExport`: Forge's cards that Arcana's library lacks, in Arcana's library-line shape, without an Argentum script. Argentum's engine never reads it. Labels say "Forge" instead of "Argentum library" / "Not in Argentum".
+- From #19: Forge's option and fixed-choice dialogs become real choices, and a pass is refused unless Forge is offering one. Not taken: always stopping at every phase (Forge already gives priority for anything on the stack; the gap was empty-stack windows, now an AI end-step stop when you can act), and freezing the game on an unknown prompt.
+
+## 2026-11-08 19:45 — Same Arcana build, mirrored going forward
+Owner: "update that so it's on the same build, and that updates from the main arcana get mirrored to it going forward."
+- `.github/workflows/arcana-follow.yml` on `main` (scheduled workflows only run from the default branch), settings in `.github/arcana-follow.env`. Every 30 minutes it reads the head of the Arcana branch Chimera follows: `claude/arcana-studio-ux-20261106`, or `gpt/arcana-integration-next` once that branch no longer exists.
+- On a new Arcana commit it builds Arcana + Forge at that commit. If the build passes, it moves `ARCANA_SHA` here (a "Follow Arcana …" commit by github-actions) and uploads the APK as a 1-day artifact. If it fails, the pin stays and an issue "Follow Arcana: build failed" has the commit and the log tail. That usually means a Forge patch in `scripts/patch_arcana_for_forge.py` or an overlay file no longer fits Arcana.
+- First run moved the pin `3d9fce0d` → `a5c428ad` (Studio: the battlefield keeps its Background when the first card is played; UI only, no file the Forge patches touch).
+- Work on this branch: fetch before pushing, because the bot may have moved the pin.
