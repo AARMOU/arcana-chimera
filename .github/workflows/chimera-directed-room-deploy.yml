@@ -1,0 +1,76 @@
+name: Deploy Chimera directed-room recovery (manual owner approval)
+on:
+  workflow_dispatch:
+    inputs:
+      confirmation:
+        description: "Type DEPLOY_CHIMERA_ROOM_RECOVERY to authorize the Cloudflare production change"
+        required: true
+        type: string
+permissions:
+  contents: read
+concurrency:
+  group: chimera-directed-room-production-deploy
+  cancel-in-progress: false
+jobs:
+  deploy:
+    if: github.repository == 'AARMOU/arcana-chimera' && inputs.confirmation == 'DEPLOY_CHIMERA_ROOM_RECOVERY'
+    runs-on: ubuntu-24.04
+    environment: production
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Check Cloudflare secrets without printing them
+        env:
+          TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          ACCOUNT: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          test -n "$TOKEN" || { echo "::error::Missing Chimera secret CLOUDFLARE_API_TOKEN"; exit 1; }
+          test -n "$ACCOUNT" || { echo "::error::Missing Chimera secret CLOUDFLARE_ACCOUNT_ID"; exit 1; }
+      - name: Fetch pinned Arcana Worker (not editing Arcana)
+        run: |
+          set -euo pipefail
+          git clone --quiet --filter=blob:none --no-checkout https://github.com/AARMOU/arcana_table.git third_party/arcana
+          git -C third_party/arcana checkout --quiet --detach a5c428ad3da42b7325adf6630238ec992fee3113
+      - name: Apply fail-closed recovery patch
+        run: python3 scripts/patch_directed_room_resumption.py third_party/arcana/android/cloud-room/src/index.ts
+      - name: Compile Worker
+        working-directory: third_party/arcana/android/cloud-room
+        run: |
+          npm ci --no-audit --no-fund
+          npm run typecheck
+      - name: Verify local WebSocket relay privacy and all-disconnected reconnect
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd third_party/arcana/android/cloud-room
+          npx wrangler dev --local --port 8787 > "$RUNNER_TEMP/worker-test.log" 2>&1 &
+          PID=$!
+          trap 'kill "$PID" 2>/dev/null || true' EXIT
+          healthy=0
+          for attempt in $(seq 1 50); do
+            if curl --silent --fail http://127.0.0.1:8787/health > /dev/null; then healthy=1; break; fi
+            sleep 1
+          done
+          if [ "$healthy" -ne 1 ]; then tail -100 "$RUNNER_TEMP/worker-test.log"; exit 1; fi
+          node scripts/verify-directed-relay.mjs
+          node "$GITHUB_WORKSPACE/tests/verify-directed-room-all-offline.mjs"
+          node "$GITHUB_WORKSPACE/tests/verify-directed-room-live-takeover.mjs"
+      - name: Deploy only existing arcana-table-rooms Worker
+        working-directory: third_party/arcana/android/cloud-room
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          set -euo pipefail
+          grep -Fxq 'name = "arcana-table-rooms"' wrangler.toml
+          grep -Fxq 'new_sqlite_classes = ["GameRoom"]' wrangler.toml
+          echo "Deploying existing Arcana room service; no other worker names or bindings."
+          npm run deploy
