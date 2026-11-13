@@ -64,6 +64,7 @@ APP="$ARCANA/android/app"
 cp "$ROOT/arcana-overlay/app/src/main/java/com/arcanatable/engine/LocalArgentumHost.kt" "$APP/src/main/java/com/arcanatable/engine/LocalArgentumHost.kt"
 mkdir -p "$APP/src/main/java/org/arcanachimera/forgehost" "$APP/libs/forge" "$APP/src/main/assets"
 cp "$ROOT/forge-host/src/main/java/org/arcanachimera/forgehost/ArcanaForgeHost.java" "$APP/src/main/java/org/arcanachimera/forgehost/"
+python3 "$ROOT/scripts/check_min_api.py" "$APP/src/main/java/org/arcanachimera/forgehost/ArcanaForgeHost.java" # owner, Nov 12: shipped code must not need a newer Android than minSdk 26
 rm -f "$APP"/libs/forge/*.jar   # a reused staging tree must not keep JARs this build no longer ships
 cp "$LIBS"/*.jar "$APP/libs/forge/"
 mkdir -p "$APP/src/main/java/org/jupnp" && cp "$STUB" "$APP/src/main/java/org/jupnp/"
