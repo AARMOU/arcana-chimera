@@ -97,6 +97,22 @@ public final class ArcanaForgeHost {
     private final Map<String, SpellAbility> offered = new ConcurrentHashMap<>();
     private volatile HostedMatch match;
     private volatile boolean gameOverSent;
+    private volatile boolean lossWatchStarted;
+
+    /**
+     * Phone, Nov 13 13:00: eliminated on turn 33, the app heard nothing for 42 s while the AIs played on to turn 38.
+     * The "you lost" message below was only sent the next time Forge called this person's screen, and Forge stops
+     * calling it once they are out. Look once a second instead, until this person's game is over.
+     */
+    private void watchForLoss() {
+        if (left || gameOverSent) return;
+        try {
+            Game game = match == null ? null : match.getGame();
+            PlayerControllerHuman you = humanController();
+            if (game != null && you != null && (game.isGameOver() || you.getPlayer().hasLost())) scheduleIn(0);
+        } catch (Throwable ignored) { } // the game moved while being read: look again next second
+        emitter.schedule(this::watchForLoss, 1, TimeUnit.SECONDS);
+    }
     private volatile Input lastAutoPaid;
     private volatile Input lastPrompted;
     /** This person's "always yes" optional triggers (Forge's yieldKey: card and trigger), for this game. */
@@ -746,6 +762,7 @@ public final class ArcanaForgeHost {
     private void emit() throws Exception {
         Game game = match == null ? null : match.getGame();
         if (game == null) return;
+        if (!lossWatchStarted) { lossWatchStarted = true; emitter.schedule(this::watchForLoss, 1, TimeUnit.SECONDS); }
         tuneAi(game);
         long buildStart = System.nanoTime();
         PlayerControllerHuman you = humanController();

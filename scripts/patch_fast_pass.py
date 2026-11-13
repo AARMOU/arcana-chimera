@@ -21,13 +21,18 @@ PASS_NEW = '''            ArgentumPassing.Step.PASS -> {
                 sendArgentumPriority()
             }
 '''
+# Owner, Nov 13: the log says whether Forge's own passing is in use, and why not when it isn't.
+START_OLD = '    recordDiagnostic("Pass to my turn: started on turn ${snapshot.turnNumber}", DiagnosticCategory.ACTION)\n'
+START_NEW = ('''    recordDiagnostic("Pass to my turn: started on turn ${snapshot.turnNumber} · Forge passes empty opponent windows: " +
+        (if (!argentumOffline) "no (the engine is not on this phone)" else if (ChimeraPhaseStops.stops.any { it.startsWith("opp:") }) "no (an opponent-turn stop is set)" else "yes"), DiagnosticCategory.ACTION)
+''')
 STOP_OLD = '    if (passToMyTurnFrom != null) { passToMyTurnFrom = null; recordDiagnostic("Pass to my turn: stopped by player", DiagnosticCategory.ACTION); return }\n'
 STOP_NEW = '    if (passToMyTurnFrom != null) { passToMyTurnFrom = null; argentumSocket.send("setPassToMyTurn", JSONObject().put("enabled", false)); recordDiagnostic("Pass to my turn: stopped by player", DiagnosticCategory.ACTION); return }\n'
 
 
 def once(path, old, new, label):
     source = path.read_text(encoding="utf-8")
-    if "setPassToMyTurn" in source:
+    if new in source:
         raise RuntimeError("fast-pass patch already applied")
     if source.count(old) != 1:
         raise RuntimeError(f"fast-pass {label} anchor found {source.count(old)} times, expected 1")
@@ -37,6 +42,7 @@ def once(path, old, new, label):
 def patch(app: Path) -> None:
     once(app / (J + "TableEffects.kt"), PASS_OLD, PASS_NEW, "auto-pass")
     once(app / (J + "TableArgentum.kt"), STOP_OLD, STOP_NEW, "stop")
+    once(app / (J + "TableArgentum.kt"), START_OLD, START_NEW, "start")
     print("Pass to my turn: Forge passes empty opponent windows itself")
 
 
