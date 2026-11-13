@@ -5,6 +5,9 @@ The room lobby's AI seats only offered difficulty and OPEN FOR A FRIEND; their d
 seat now has CHANGE DECK, listing the saved decks and the built-in preconstructed decks. The pick replaces
 that seat's AI deck and commander (keeping its difficulty) before START; decks still never leave the host.
 
+Owner, Nov 13 12:18: the list has a search box, and the same box takes a deck link (Moxfield, ManaBox,
+Archidekt): IMPORT THIS LINK FOR THIS AI fetches it with the existing link importer and gives it to that seat.
+
 Needs patch_offline_ai_decks.py first (it adds chimeraAiSeat). Fail-closed: every anchor must match exactly
 once. Apply to an ephemeral staged Arcana donor, NEVER to arcana_table.
 """
@@ -30,7 +33,7 @@ internal fun TableController.setMultiSeatAiDeck(index: Int, deckId: String) {
     val room = wifiMultiLobby ?: return
     if (argentumSocket.runningLocalHost != null) return
     val seat = runCatching { chimeraAiSeat(index - 1, deckId) }.getOrElse {
-        lobbyNotice = it.message ?: "That deck can't be used for an AI seat."
+        android.widget.Toast.makeText(context, it.message ?: "That deck can't be used for an AI seat.", android.widget.Toast.LENGTH_LONG).show()
         recordDiagnostic("Room lobby: AI seat ${index + 1} deck refused: ${it.message}")
         return
     }
@@ -40,24 +43,72 @@ internal fun TableController.setMultiSeatAiDeck(index: Int, deckId: String) {
         publishMultiLobby()
     }
 }
+
+/** Chimera (owner, Nov 13): a Moxfield, ManaBox or Archidekt link pasted into an AI seat's deck search. */
+internal fun TableController.setMultiSeatAiDeckLink(index: Int, link: String) {
+    if (wifiMultiLobby == null || argentumSocket.runningLocalHost != null) return
+    fun say(text: String) = android.widget.Toast.makeText(context, text, android.widget.Toast.LENGTH_LONG).show()
+    say("Loading that deck link…")
+    ChimeraDeckImport.fetchInto(link, { list ->
+        val built = runCatching {
+            val parsed = parseDeckListDetailed(list)
+            if (parsed.gameBlockers.isNotEmpty()) error(parsed.gameBlockers.joinToString(" "))
+            val commander = parsed.playableEntries.firstOrNull { it.commander }?.name ?: error("no commander is marked in that deck.")
+            val cards = parsed.playableEntries.flatMap { entry -> List(entry.count) { entry.name } }.toMutableList()
+            val commanderIndex = cards.indexOfFirst { it.equals(commander, true) }
+            if (commanderIndex >= 0) cards.removeAt(commanderIndex)
+            if (cards.size != 99) error("expected 99 main-deck cards; found ${cards.size}.")
+            com.arcanatable.engine.LocalSeat("AI · ${commander.substringBefore(',').trim()}", cards.toList(), commander)
+        }
+        val seat = built.getOrNull()
+        val room = wifiMultiLobby
+        if (seat == null || room == null) {
+            recordDiagnostic("Room lobby: AI seat ${index + 1} deck link refused: ${built.exceptionOrNull()?.message}")
+            say("That deck can't be used for an AI seat: ${built.exceptionOrNull()?.message ?: "the room has closed."}")
+        } else if (room.setAiSeat(index, seat)) {
+            recordDiagnostic("Room lobby: AI seat ${index + 1} deck imported from a link (commander ${seat.commander})")
+            publishMultiLobby()
+            say("AI seat ${index + 1} now plays ${seat.commander}.")
+        }
+    }, { problem -> recordDiagnostic("Room lobby: AI deck link failed: $problem"); say(problem) })
+}
 '''
 
 PARAM_OLD = "    onDifficulty: (AiDifficulty) -> Unit,\n"
-PARAM_NEW = PARAM_OLD + "    aiDecks: List<Pair<String, String>> = emptyList(),\n    onAiDeck: (String) -> Unit = {},\n"
+PARAM_NEW = PARAM_OLD + "    aiDecks: List<Pair<String, String>> = emptyList(),\n    onAiDeck: (String) -> Unit = {},\n    onAiDeckLink: (String) -> Unit = {},\n"
 
 CALL_OLD = "                            onDifficulty = { setMultiSeatAiDifficulty(index, it) },\n"
 CALL_NEW = CALL_OLD + ('                            aiDecks = savedDecks.map { "saved:${it.name}" to it.name } + preconDecks.map { "precon:${it.id}" to it.name },\n'
-                       "                            onAiDeck = { setMultiSeatAiDeck(index, it) },\n")
+                       "                            onAiDeck = { setMultiSeatAiDeck(index, it) },\n"
+                       "                            onAiDeckLink = { setMultiSeatAiDeckLink(index, it) },\n")
 
 BUTTON_OLD = '                    StudioTextButton("TableMultiLobby.TextButton.6", "Rooms and lobby", onClick = onOpenForFriend,'
 BUTTON_NEW = '''                    // Chimera: choose this AI seat's deck from the saved and built-in decks.
                     val deckListOpen = androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
-                    androidx.compose.material3.TextButton(onClick = { deckListOpen.value = !deckListOpen.value }, enabled = controlsEnabled && aiDecks.isNotEmpty(), modifier = Modifier.heightIn(min = 44.dp)) {
+                    androidx.compose.material3.TextButton(onClick = { deckListOpen.value = !deckListOpen.value }, enabled = controlsEnabled, modifier = Modifier.heightIn(min = 44.dp)) {
                         androidx.compose.material3.Text(if (deckListOpen.value) "HIDE DECKS" else "CHANGE DECK", color = if (controlsEnabled) Mint else Muted, fontWeight = FontWeight.Bold)
                     }
-                    if (deckListOpen.value) aiDecks.forEach { (deckId, deckName) ->
-                        androidx.compose.material3.TextButton(onClick = { deckListOpen.value = false; onAiDeck(deckId) }, enabled = controlsEnabled, modifier = Modifier.fillMaxWidth().heightIn(min = 44.dp)) {
-                            androidx.compose.material3.Text(deckName, color = SoftWhite)
+                    val deckQuery = androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf("") }
+                    if (deckListOpen.value) {
+                        androidx.compose.material3.OutlinedTextField(
+                            value = deckQuery.value, onValueChange = { deckQuery.value = it.take(300) }, singleLine = true,
+                            textStyle = androidx.compose.ui.text.TextStyle(color = SoftWhite, fontSize = 14.sp),
+                            placeholder = { androidx.compose.material3.Text("Search decks, or paste a Moxfield, ManaBox or Archidekt link", color = Muted, fontSize = 12.sp) },
+                            modifier = Modifier.fillMaxWidth().padding(bottom = 6.dp),
+                        )
+                        val typed = deckQuery.value.trim()
+                        if (typed.isNotEmpty() && ChimeraDeckImport.isUrl(typed)) {
+                            androidx.compose.material3.TextButton(onClick = { deckListOpen.value = false; deckQuery.value = ""; onAiDeckLink(typed) }, enabled = controlsEnabled, modifier = Modifier.fillMaxWidth().heightIn(min = 44.dp)) {
+                                androidx.compose.material3.Text("IMPORT THIS LINK FOR THIS AI", color = if (controlsEnabled) Mint else Muted, fontWeight = FontWeight.Bold)
+                            }
+                        } else {
+                            val shownDecks = aiDecks.filter { matchesSearch(it.second, typed) }
+                            if (shownDecks.isEmpty()) androidx.compose.material3.Text("No deck matches \"$typed\".", color = Muted, fontSize = 12.sp)
+                            shownDecks.forEach { (deckId, deckName) ->
+                                androidx.compose.material3.TextButton(onClick = { deckListOpen.value = false; deckQuery.value = ""; onAiDeck(deckId) }, enabled = controlsEnabled, modifier = Modifier.fillMaxWidth().heightIn(min = 44.dp)) {
+                                    androidx.compose.material3.Text(deckName, color = SoftWhite)
+                                }
+                            }
                         }
                     }
 ''' + BUTTON_OLD

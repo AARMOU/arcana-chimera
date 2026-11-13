@@ -80,6 +80,7 @@ python3 "$ROOT/scripts/patch_commander_precons.py" "$APP"
 python3 "$ROOT/scripts/patch_ai_deck_selector.py" "$APP" # Chimera #39: saved/imported and WotC precons for AI lobby seats
 python3 "$ROOT/scripts/patch_offline_ai_decks.py" "$APP" # Chimera #39: independent offline Forge AI decks
 python3 "$ROOT/scripts/patch_online_ai_decks.py" "$APP" # owner, Nov 13: CHANGE DECK for AI seats in the multiplayer room lobby
+python3 "$ROOT/scripts/patch_import_link_wording.py" "$APP" # owner, Nov 13: the import screen says it takes deck links
 echo "== Card pictures for Forge's cards (Scryfall bulk data; skipped without network)"
 python3 "$ROOT/scripts/scryfall_images.py" "$WORK/scryfall-images.tsv" || : > "$WORK/scryfall-images.tsv"
 echo "== Forge's cards for Arcana's deck import and editor (ForgeCatalogExport)"
