@@ -65,6 +65,7 @@ public final class PromptScenarios {
         Session(String board, String marker, int mulligansWanted) throws Exception { this(board, marker, mulligansWanted, false); }
 
         Session(String board, String marker, int mulligansWanted, boolean commanderRules) throws Exception {
+            protocol.trackQuestions(); // every action below goes through send(): a wiped question is a failure
             ArcanaForgeHost.initForge(forgeDir, host);
             host.setCommanderRulesForTest(commanderRules);
             host.setStartBoardForTest(board);
@@ -113,7 +114,7 @@ public final class PromptScenarios {
             }
         }
 
-        void send(JSONObject action) throws Exception { host.handle(new JSONObject().put("type", "submitAction").put("action", action)); }
+        void send(JSONObject action) throws Exception { protocol.playerActed(); host.handle(new JSONObject().put("type", "submitAction").put("action", action)); }
 
         /** Decisions already answered: the host re-sends an open decision, so a queued copy can arrive after the answer. */
         final java.util.Set<String> answered = new java.util.HashSet<>();
