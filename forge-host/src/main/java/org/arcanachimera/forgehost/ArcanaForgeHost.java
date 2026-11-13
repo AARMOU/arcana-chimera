@@ -1063,7 +1063,7 @@ public final class ArcanaForgeHost {
         java.util.List<Integer> at = new ArrayList<>(); // each shown entry's place in the full log
         for (int k = 0; k < all.size(); k++) {
             forge.game.GameLogEntry e = all.get(k);
-            if (e != null && LOGGED.contains(e.type()) && e.message() != null && !e.message().isBlank()) { shown.add(e); at.add(k); }
+            if (e != null && LOGGED.contains(e.type()) && e.message() != null && !e.message().trim().isEmpty()) { shown.add(e); at.add(k); }
         }
         int from = Math.max(0, shown.size() - 200);
         for (int i = from; i < shown.size(); i++) {
@@ -1079,7 +1079,7 @@ public final class ArcanaForgeHost {
             JSONArray details = new JSONArray();
             for (int k = at.get(i) + 1; k < end && details.length() < 30; k++) {
                 forge.game.GameLogEntry d = all.get(k);
-                if (d != null && d.message() != null && !d.message().isBlank()) details.put(plain(d.message()));
+                if (d != null && d.message() != null && !d.message().trim().isEmpty()) details.put(plain(d.message()));
             }
             if (details.length() > 0) line.put("details", details);
             out.put(line);
@@ -1166,8 +1166,8 @@ public final class ArcanaForgeHost {
 
     private static String picture(String name, String ownerSeat) {
         java.util.function.BiFunction<String, String, String> f = pictures;
-        if (f == null || name == null || name.isBlank()) return null;
-        try { String url = f.apply(name, ownerSeat); return url == null || url.isBlank() ? null : url; } catch (RuntimeException e) { return null; }
+        if (f == null || name == null || name.trim().isEmpty()) return null;
+        try { String url = f.apply(name, ownerSeat); return url == null || url.trim().isEmpty() ? null : url; } catch (RuntimeException e) { return null; }
     }
 
     private Player youPlayer() { PlayerControllerHuman y = humanController(); return y == null ? null : y.getPlayer(); }
@@ -1175,7 +1175,7 @@ public final class ArcanaForgeHost {
     /** The card's rules text; Forge's printed text when the live card has none (e.g. a card not yet fully loaded). */
     private static String text(Card c) {
         String t = c.getOracleText();
-        if ((t == null || t.isBlank()) && c.getRules() != null) t = c.getRules().getOracleText();
+        if ((t == null || t.trim().isEmpty()) && c.getRules() != null) t = c.getRules().getOracleText();
         return t == null ? "" : t.replace("\\n", "\n");
     }
 
@@ -1389,7 +1389,9 @@ public final class ArcanaForgeHost {
      */
     static String humanTypes(String t) {
         java.util.regex.Matcher m = java.util.regex.Pattern.compile("(?:(\\d+) )?\\b([A-Z][a-zA-Z]*)((?:[.+][A-Za-z]+)+)(\\(s\\))?").matcher(t);
-        StringBuilder out = new StringBuilder();
+        // StringBuffer on purpose: Matcher.appendReplacement/appendTail(StringBuilder) only exist from Android 14, and
+        // this runs on every prompt and log line (Android 13 phone, Nov 12: NoSuchMethodError, the game never started).
+        StringBuffer out = new StringBuffer();
         while (m.find()) {
             String n = m.group(1), type = m.group(2), props = m.group(3), plural = m.group(4);
             if (!props.contains(".") && !props.startsWith("+")) { m.appendReplacement(out, java.util.regex.Matcher.quoteReplacement(m.group())); continue; }
@@ -1945,7 +1947,7 @@ public final class ArcanaForgeHost {
             Map<String, Object> objects = new LinkedHashMap<>();
             JSONArray options = new JSONArray(); JSONObject info = new JSONObject();
             if (choices instanceof Iterable<?> it) for (Object o : it) if (o instanceof Card c) { String id = cardId(c); objects.put(id, c); options.put(id); info.put(id, cardInfo(c)); }
-            String what = field(input, "description") instanceof String w && !w.isBlank() ? w : "Convoke";
+            String what = field(input, "description") instanceof String w && !w.trim().isEmpty() ? w : "Convoke";
             JSONObject d = decisionBase("SelectCardsDecision", what + ": choose what to tap to help pay (none: pay with mana)").put("options", options)
                     .put("minSelections", 0).put("maxSelections", cap == null ? options.length() : Math.min(cap, options.length())).put("cardInfo", info);
             openForInput(d, objects, r -> {
@@ -1959,8 +1961,8 @@ public final class ArcanaForgeHost {
             String prompt = field(input, "message") instanceof String m ? m : "Confirm";
             // Forge's own answer names ("Library" / "Graveyard", "Top" / "Bottom"); they were read from a field that
             // doesn't exist, so every such question showed Yes / No (owner, Nov 10).
-            String yes = field(input, "yesButtonText") instanceof String y && !y.isBlank() ? y : "Yes";
-            String no = field(input, "noButtonText") instanceof String n && !n.isBlank() ? n : "No";
+            String yes = field(input, "yesButtonText") instanceof String y && !y.trim().isEmpty() ? y : "Yes";
+            String no = field(input, "noButtonText") instanceof String n && !n.trim().isEmpty() ? n : "No";
             String[] said = twoWay(prompt, yes, no); prompt = said[0]; yes = said[1]; no = said[2];
             // CR 903.9a: Forge's prompt is the rule's full text; say it the way a player would (owner, Nov 8)
             java.util.regex.Matcher cz = java.util.regex.Pattern.compile("^(.+?): If a commander is in a graveyard or in exile").matcher(prompt);
