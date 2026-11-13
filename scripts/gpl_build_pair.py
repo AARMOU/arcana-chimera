@@ -14,7 +14,7 @@ import subprocess
 import tarfile
 
 ROOT = Path(__file__).resolve().parents[1]
-ARCANA_PIN = "a5c428ad3da42b7325adf6630238ec992fee3113"
+ARCANA_PIN = "f6a149cb202587e5aa8128191beb630a7d94935d"
 FORGE_PIN = "7c34365c749ca46ab71336c5f267340d6088e600"
 ANDROID_INPUTS = ("android/app/src/main/java/", "android/app/src/main/assets/",
                   "android/app/src/main/res/", "android/app/libs/forge/")

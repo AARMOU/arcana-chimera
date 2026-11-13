@@ -18,7 +18,7 @@ import sys
 
 
 ROOT = Path(__file__).resolve().parent.parent
-DEFAULT_ARCANA = "a5c428ad3da42b7325adf6630238ec992fee3113"
+DEFAULT_ARCANA = "f6a149cb202587e5aa8128191beb630a7d94935d"
 DEFAULT_FORGE = "7c34365c749ca46ab71336c5f267340d6088e600"
 
 

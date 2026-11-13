@@ -2,7 +2,7 @@
 # Builds Arcana's real app with Forge as its rules engine (Chimera overlay), as a debug APK.
 # Arcana source is staged read-only from a pinned public commit into ignored third_party/; nothing is pushed to Arcana.
 set -euo pipefail
-ARCANA_SHA="${ARCANA_SHA:-a5c428ad3da42b7325adf6630238ec992fee3113}"
+ARCANA_SHA="${ARCANA_SHA:-f6a149cb202587e5aa8128191beb630a7d94935d}"
 FORGE_SHA="${FORGE_SHA:-7c34365c749ca46ab71336c5f267340d6088e600}"
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 # Verify host-survival patch invariants before downloading and compiling Forge.
