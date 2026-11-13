@@ -103,7 +103,7 @@ BUTTON_NEW = '''                    // Chimera: choose this AI seat's deck from 
                             }
                         } else {
                             val shownDecks = aiDecks.filter { matchesSearch(it.second, typed) }
-                            if (shownDecks.isEmpty()) androidx.compose.material3.Text("No deck matches \"$typed\".", color = Muted, fontSize = 12.sp)
+                            if (shownDecks.isEmpty()) androidx.compose.material3.Text("No saved or built-in deck matches that search.", color = Muted, fontSize = 12.sp)
                             shownDecks.forEach { (deckId, deckName) ->
                                 androidx.compose.material3.TextButton(onClick = { deckListOpen.value = false; deckQuery.value = ""; onAiDeck(deckId) }, enabled = controlsEnabled, modifier = Modifier.fillMaxWidth().heightIn(min = 44.dp)) {
                                     androidx.compose.material3.Text(deckName, color = SoftWhite)
