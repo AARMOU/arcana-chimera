@@ -128,6 +128,7 @@ python3 "$ROOT/scripts/patch_arcana_nov9.py" "$APP" # owner's Nov 9 list: drawer
 python3 "$ROOT/scripts/patch_arcana_nov9c.py" "$APP" # owner's third Nov 9 list: choices, pictures, combat, mulligan grid, home picture
 python3 "$ROOT/scripts/patch_arcana_tutorial.py" "$APP" # the tutorial's text for Arcana with Forge (owner, Nov 10)
 python3 "$ROOT/scripts/patch_diagnostic_role.py" "$APP" # owner, Nov 12: a guest reports Role: guest, not Forge on this device
+python3 "$ROOT/scripts/patch_waiting_on_other.py" "$APP" # owner, Nov 12: no "answer the open prompt" or false alarm while another player decides
 python3 "$ROOT/scripts/patch_arcana_wording.py" "$APP" # owner, Nov 9: no "Argentum" on screen (fails the build if any is left)
 python3 "$ROOT/scripts/patch_chimera_host_survival.py" "$APP" # host lock + directed relay recovery; Worker deploy separate
 python3 "$ROOT/scripts/patch_chimera_restart_host.py" "$APP" # Host Lobby ends a frozen game's open session (owner, Nov 11)
