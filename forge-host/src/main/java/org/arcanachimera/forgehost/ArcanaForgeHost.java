@@ -254,6 +254,9 @@ public final class ArcanaForgeHost {
                 Deck d = deck(seat.name(), counts);
                 if (commander) d.getOrCreate(forge.deck.DeckSection.Commander).add(card(seat.commander()), 1);
                 RegisteredPlayer rp = commander ? RegisteredPlayer.forCommander(d) : new RegisteredPlayer(d);
+                // Owner, Nov 13: the host's own player was Forge's default "Human" (or blank) in prompts and the winner line.
+                // It is named after its commander now, e.g. "Pay {2}{G}{G} for Summoner's Pact? Pantlaza, Sun-Favored loses the game."
+                if (i == 0) GamePlayerUtil.getGuiPlayer().setName(commander && seat.commander() != null && !seat.commander().trim().isEmpty() ? seat.commander() : seat.name());
                 rp.setPlayer(i == 0 ? GamePlayerUtil.getGuiPlayer()
                         : person != null ? new forge.player.LobbyPlayerHuman(seat.name()) : GamePlayerUtil.createAiPlayer(seat.name(), i));
                 if (person != null) guis.put(rp, person.guiGame());
