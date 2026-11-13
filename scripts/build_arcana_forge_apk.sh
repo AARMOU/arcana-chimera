@@ -130,6 +130,7 @@ python3 "$ROOT/scripts/patch_arcana_wording.py" "$APP" # owner, Nov 9: no "Argen
 python3 "$ROOT/scripts/patch_chimera_host_survival.py" "$APP" # host lock + directed relay recovery; Worker deploy separate
 python3 "$ROOT/scripts/patch_chimera_restart_host.py" "$APP" # Host Lobby ends a frozen game's open session (owner, Nov 11)
 python3 "$ROOT/scripts/patch_chimera_always_yes.py" "$APP" # ALWAYS on trigger questions = Forge's always-accept (owner, Nov 11)
+python3 "$ROOT/scripts/patch_view_table.py" "$APP" # owner, Nov 12: declare attackers LATER reads VIEW TABLE
 python3 "$ROOT/scripts/patch_chimera_legal_navigation.py" "$APP" # notices and source in Options; no intrusive menu shortcuts
 python3 "$ROOT/scripts/patch_engine_running_default.py" "$APP" # engine processing banner OFF unless owner opts in
 # Foreground service: keeps the Forge game alive while the player is in another app.
