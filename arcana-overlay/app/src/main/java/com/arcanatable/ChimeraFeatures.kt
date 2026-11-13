@@ -77,7 +77,7 @@ internal object ChimeraFeatureSettings {
         private set
     var reveal by mutableStateOf(prefs?.getBoolean("reveal_decks", true) ?: true)
         private set
-    var shortcuts by mutableStateOf(prefs?.getBoolean("table_shortcuts", true) ?: true)
+    var shortcuts by mutableStateOf(prefs?.getBoolean("table_shortcuts", false) ?: false)
         private set
 
     fun changeCoach(v: Boolean) { coach = v; prefs?.edit()?.putBoolean("coach", v)?.apply() }
