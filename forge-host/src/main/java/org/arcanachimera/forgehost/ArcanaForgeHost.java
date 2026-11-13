@@ -99,6 +99,8 @@ public final class ArcanaForgeHost {
     private volatile boolean gameOverSent;
     private volatile Input lastAutoPaid;
     private volatile Input lastPrompted;
+    /** This person's "always yes" optional triggers (Forge's yieldKey: card and trigger), for this game. */
+    private final java.util.Set<String> alwaysAccept = java.util.concurrent.ConcurrentHashMap.newKeySet();
     private volatile int mulligans = -1;
     private volatile boolean inMulligan;
     private volatile int chosenAbilityId = -1;
@@ -593,9 +595,13 @@ public final class ArcanaForgeHost {
         for (ArcanaForgeHost v : views) v.scheduleSelf();
     }
 
-    private void scheduleSelf() {
+    private void scheduleSelf() { scheduleIn(waitingOnPlayer() ? 40 : 300); }
+
+    /** Opening hands: look again in 300 ms until turn 1 starts (nothing else wakes a person who has kept, see emit). */
+    private void recheckMulligan() { scheduleIn(300); }
+
+    private void scheduleIn(long delay) {
         if (left) return;
-        long delay = waitingOnPlayer() ? 40 : 300;
         long due = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(delay);
         while (true) {
             long current = emitDueAt.get();
@@ -756,6 +762,11 @@ public final class ArcanaForgeHost {
         }
         if (input != null && input != lastPrompted) {
             String kind = inputClassName(input);
+            // YES · ALWAYS THIS GAME for this card's optional trigger (owner, Nov 11: Burgeoning): answer without asking.
+            if (kind.equals("InputConfirm") && field(input, "sa") instanceof forge.game.trigger.WrappedAbility w
+                    && w.getTrigger() != null && alwaysAccept.contains(w.yieldKey())) {
+                lastPrompted = input; ok(you); return;
+            }
             if (kind.equals("InputConfirm") && game.getPhaseHandler().getTurn() == 0) { // play or draw: Arcana's offline host doesn't ask; take the play
                 lastPrompted = input; youChosePlay = true; defaultedPrompts.add("play or draw: play"); ok(you); return;
             }
@@ -781,12 +792,14 @@ public final class ArcanaForgeHost {
                 lastPrompted = input; mulligans = mulligans < 0 ? 0 : mulligans; inMulligan = true;
                 sink.accept(handMessage("mulliganDecision", you.getPlayer()).put("mulliganCount", mulligans)
                         .put("cardsToPutOnBottom", 0).put("isOnThePlay", youChosePlay));
+                recheckMulligan(); // the last person to keep is followed only by AI turns, which wake no one
                 return;
             }
             if (kind.equals("InputLondonMulligan")) { // the new hand first, as Arcana expects; bottom cards after "keep"
                 lastPrompted = input; inMulligan = true; tuckOffered = true; tuckCount = intField(input, "toReturn");
                 sink.accept(handMessage("mulliganDecision", you.getPlayer()).put("mulliganCount", Math.max(mulligans, 1))
                         .put("cardsToPutOnBottom", tuckCount).put("isOnThePlay", youChosePlay));
+                recheckMulligan();
                 return;
             }
         }
@@ -807,7 +820,10 @@ public final class ArcanaForgeHost {
         // Forge shuffles and deals between mulligan prompts (and the AI mulligans too): that's still the mulligan.
         // Arcana shows the opening-hand screen only until the first game state, so send nothing until turn 1
         // (phone, Nov 8 11:31: after "Mulligan" the new hand never appeared).
-        if (inMulligan && game.getPhaseHandler().getTurn() == 0) return;
+        // Phone, Nov 11 (host + friend + 2 AIs): after keeping, nothing asked this person anything again until their
+        // own turn or a spell, because AI turns pass in silence. The host sat on the loading screen through whole AI
+        // turns. Keep looking (cheap: nothing is built) until turn 1 starts, so everyone sees the table from its start.
+        if (inMulligan && game.getPhaseHandler().getTurn() == 0) { recheckMulligan(); return; }
         if (inMulligan) { // Argentum's order: mulliganComplete, then the first game state
             inMulligan = false;
             sink.accept(new JSONObject().put("type", "mulliganComplete").put("finalHandSize", you.getPlayer().getCardsIn(ZoneType.Hand).size()));
@@ -1968,7 +1984,22 @@ public final class ArcanaForgeHost {
             java.util.regex.Matcher cz = java.util.regex.Pattern.compile("^(.+?): If a commander is in a graveyard or in exile").matcher(prompt);
             if (cz.find()) { prompt = "Return " + cz.group(1) + " to the command zone?"; yes = "Command zone"; no = "Leave it"; }
             JSONObject d = decisionBase("YesNoDecision", prompt).put("yesText", yes).put("noText", no);
-            openForInput(d, Map.of(), r -> { if (r.optBoolean("choice")) ok(you); else cancel(you); });
+            // "Use triggered ability of Burgeoning?": Forge's own "always yes" for this card's trigger. Arcana's button
+            // only remembered the exact prompt for the current turn, and the prompt names the land that triggered it,
+            // so it never matched again (owner, Nov 11: Burgeoning asked on every opponent's land, on several cards).
+            String always = field(input, "sa") instanceof forge.game.trigger.WrappedAbility w && w.getTrigger() != null
+                    ? w.yieldKey() : null;
+            if (always != null) {
+                d.put("alwaysAvailable", true);
+                Card host = ((forge.game.trigger.WrappedAbility) field(input, "sa")).getHostCard();
+                if (host != null) d.getJSONObject("context").put("sourceId", cardId(host)).put("sourceName", host.getName());
+            }
+            openForInput(d, Map.of(), r -> {
+                // Remembered here, not in Forge's yield store: that store keys by its tier settings (and can persist
+                // across games), so a plain "accept" there was never read back (scenario N, Nov 11).
+                if (always != null && r.optBoolean("choice") && r.optBoolean("always")) alwaysAccept.add(always);
+                if (r.optBoolean("choice")) ok(you); else cancel(you);
+            });
             return true;
         }
         return false;

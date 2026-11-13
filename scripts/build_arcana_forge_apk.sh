@@ -69,12 +69,15 @@ cp "$LIBS"/*.jar "$APP/libs/forge/"
 mkdir -p "$APP/src/main/java/org/jupnp" && cp "$STUB" "$APP/src/main/java/org/jupnp/"
 cp "$WORK/forge-res.zip" "$APP/src/main/assets/forge-res.zip"
 python3 "$ROOT/scripts/patch_arcana_for_forge.py" "$APP" # owner: no Argentum card check; Forge decides
+python3 "$ROOT/scripts/patch_commander_art_editor.py" "$APP" # Chimera: commander art picker and persistent previews
 echo "== Chimera official WotC Commander decklists (bundled offline; no Arcana writes)"
 mkdir -p "$APP/src/main/assets/precons"
 python3 "$ROOT/scripts/build_wotc_commander_precons.py" --out "$APP/src/main/assets/precons/wotc-commander-precons.json"
 cp "$ROOT/arcana-overlay/app/src/main/java/com/arcanatable/ChimeraPrecons.kt" "$APP/src/main/java/com/arcanatable/"
 cp "$ROOT/arcana-overlay/app/src/main/java/com/arcanatable/ChimeraPreconTree.kt" "$APP/src/main/java/com/arcanatable/"
 python3 "$ROOT/scripts/patch_commander_precons.py" "$APP"
+python3 "$ROOT/scripts/patch_ai_deck_selector.py" "$APP" # Chimera #39: saved/imported and WotC precons for AI lobby seats
+python3 "$ROOT/scripts/patch_offline_ai_decks.py" "$APP" # Chimera #39: independent offline Forge AI decks
 echo "== Card pictures for Forge's cards (Scryfall bulk data; skipped without network)"
 python3 "$ROOT/scripts/scryfall_images.py" "$WORK/scryfall-images.tsv" || : > "$WORK/scryfall-images.tsv"
 echo "== Forge's cards for Arcana's deck import and editor (ForgeCatalogExport)"
@@ -125,6 +128,8 @@ python3 "$ROOT/scripts/patch_arcana_nov9c.py" "$APP" # owner's third Nov 9 list:
 python3 "$ROOT/scripts/patch_arcana_tutorial.py" "$APP" # the tutorial's text for Arcana with Forge (owner, Nov 10)
 python3 "$ROOT/scripts/patch_arcana_wording.py" "$APP" # owner, Nov 9: no "Argentum" on screen (fails the build if any is left)
 python3 "$ROOT/scripts/patch_chimera_host_survival.py" "$APP" # host lock + directed relay recovery; Worker deploy separate
+python3 "$ROOT/scripts/patch_chimera_restart_host.py" "$APP" # Host Lobby ends a frozen game's open session (owner, Nov 11)
+python3 "$ROOT/scripts/patch_chimera_always_yes.py" "$APP" # ALWAYS on trigger questions = Forge's always-accept (owner, Nov 11)
 python3 "$ROOT/scripts/patch_chimera_legal_navigation.py" "$APP" # notices and source in Options; no intrusive menu shortcuts
 python3 "$ROOT/scripts/patch_engine_running_default.py" "$APP" # engine processing banner OFF unless owner opts in
 # Foreground service: keeps the Forge game alive while the player is in another app.
