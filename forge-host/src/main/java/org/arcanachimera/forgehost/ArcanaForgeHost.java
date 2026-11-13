@@ -885,7 +885,12 @@ public final class ArcanaForgeHost {
                     .put("ai", aiStrength.name()));
             lastPlayerActionAt = 0;
         }
-        sink.accept(update);
+        // Forge's game thread can ask a question while this table was being built (it was checked for one many
+        // milliseconds ago, above). A table without the question, sent after it, cleared the prompt on the phone and
+        // left the game waiting forever (owner's report, Nov 12: trigger order, turn 12). The question stays the last word.
+        boolean sent;
+        synchronized (sendLock) { sent = pending == null; if (sent) sink.accept(update); }
+        if (!sent) emitDecision();
     }
 
     /** A state with nothing to do yet (Argentum sends one before each mulligan prompt). */
@@ -1423,6 +1428,8 @@ public final class ArcanaForgeHost {
     private record Decision(String id, JSONObject json, Map<String, Object> objects, java.util.function.Consumer<JSONObject> onAnswer) { }
 
     private volatile Decision pending;
+    /** Guards "open a question" against "send a table that has none": see the end of emit(). */
+    private final Object sendLock = new Object();
     // Buffered: a SynchronousQueue dropped an answer that arrived before Forge's thread reached take().
     private final java.util.concurrent.LinkedBlockingQueue<JSONObject> answers = new java.util.concurrent.LinkedBlockingQueue<>();
     private final java.util.concurrent.atomic.AtomicInteger decisionSeq = new java.util.concurrent.atomic.AtomicInteger();
@@ -1437,7 +1444,7 @@ public final class ArcanaForgeHost {
     /** Shows the decision and, for GUI calls, blocks Forge's game thread until the player answers (as desktop Forge does). */
     private JSONObject ask(JSONObject json, Map<String, Object> objects) throws Exception {
         answers.clear();
-        pending = new Decision(json.getString("id"), json, objects, null);
+        synchronized (sendLock) { pending = new Decision(json.getString("id"), json, objects, null); } // see emit(): never overtaken by an older table
         emitDecision();
         try {
             JSONObject r = answers.take();
@@ -1469,7 +1476,7 @@ public final class ArcanaForgeHost {
     }
 
     private void openForInput(JSONObject json, Map<String, Object> objects, java.util.function.Consumer<JSONObject> onAnswer) throws Exception {
-        pending = new Decision(json.getString("id"), json, objects, onAnswer);
+        synchronized (sendLock) { pending = new Decision(json.getString("id"), json, objects, onAnswer); }
         emitDecision();
     }
 
