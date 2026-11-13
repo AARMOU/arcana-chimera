@@ -207,7 +207,18 @@ public final class ArcanaForgeHost {
     private java.util.function.Supplier<String> assetsDir;
 
     /** Arcana-style setup: seats[0] is you, the rest are Forge AIs. The game starts on "createQuickGameLobby". */
-    public void prepare(List<Seat> seats, java.util.function.Supplier<String> forgeAssetsDir) { this.pendingSeats = seats; this.assetsDir = forgeAssetsDir; }
+    public void prepare(List<Seat> seats, java.util.function.Supplier<String> forgeAssetsDir) { this.pendingSeats = nameBlankSeats(seats); this.assetsDir = forgeAssetsDir; }
+
+    /** Owner, Nov 12: a blank seat name made prompts read "loses the game" and "activated Sauron". Give it a number instead. */
+    static List<Seat> nameBlankSeats(List<Seat> seats) {
+        List<Seat> named = new ArrayList<>();
+        for (int i = 0; i < seats.size(); i++) {
+            Seat s = seats.get(i);
+            boolean blank = s.name() == null || s.name().trim().isEmpty();
+            named.add(blank ? new Seat("Player " + (i + 1), s.deck(), s.commander()) : s);
+        }
+        return named;
+    }
 
     private static String seatId(int i) { return i == 0 ? HUMAN_ID : i == 1 ? AI_ID : AI_ID + "-" + i; }
 
