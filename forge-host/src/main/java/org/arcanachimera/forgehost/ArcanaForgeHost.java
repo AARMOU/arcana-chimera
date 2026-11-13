@@ -697,6 +697,13 @@ public final class ArcanaForgeHost {
      */
     public volatile boolean fastPass;
     private volatile long fastPassedAt;
+    /**
+     * Phone, Nov 13 11:30 (stuck game): the app only lets you declare blockers again once it has seen a table from
+     * outside the declare-blockers step. Passing silently from one block straight into the next attack left it
+     * believing the old blocks were still being sent, so the blockers screen never opened. After any table shown
+     * in the declare-blockers step, the next window outside that step is always shown before passing silently again.
+     */
+    private volatile boolean showAfterBlocks;
 
     private boolean autoPassStack(Game game, Player me) {
         if (game.getStack().isEmpty()) return false;
@@ -857,8 +864,9 @@ public final class ArcanaForgeHost {
         if (pending != null) { fastPass = false; emitDecision(); return; } // an open question stays on screen until answered
         boolean priority = input instanceof InputPassPriority;
         if (priority && input != lastAutoPassed && autoPassStack(game, you.getPlayer())) { lastAutoPassed = input; ok(you); return; }
+        boolean blockStep = game.getPhaseHandler().getPhase() == PhaseType.COMBAT_DECLARE_BLOCKERS;
         if (priority && fastPass) {
-            if (game.getStack().isEmpty() && game.getPhaseHandler().getPlayerTurn() != you.getPlayer()) {
+            if (!showAfterBlocks && !blockStep && game.getStack().isEmpty() && game.getPhaseHandler().getPlayerTurn() != you.getPlayer()) {
                 if (input != lastAutoPassed) { lastAutoPassed = input; fastPassedAt = System.nanoTime(); ok(you); return; }
                 // The same window again: Forge is still taking the pass. If it hasn't after 1.5 s, show the table instead.
                 if (System.nanoTime() - fastPassedAt < 1_500_000_000L) return;
@@ -868,6 +876,7 @@ public final class ArcanaForgeHost {
         String inputKind = inputClassName(input);
         boolean combatInput = inputKind.equals("InputAttack") || inputKind.equals("InputBlock");
         if (combatInput) fastPass = false;
+        if (blockStep || inputKind.equals("InputBlock")) showAfterBlocks = true; // this table is from the block step
         // InputLockUI is Forge's "waiting for actions" lock while its game thread works: not a decision. Show state only.
         if (inputKind.equals("InputLockUI")) input = null;
         if (input != null && !priority && !combatInput && input != lastPrompted && decisionForInput(input, you, game)) { lastPrompted = input; return; }
@@ -941,6 +950,7 @@ public final class ArcanaForgeHost {
         // left the game waiting forever (owner's report, Nov 12: trigger order, turn 12). The question stays the last word.
         boolean sent;
         synchronized (sendLock) { sent = pending == null; if (sent) sink.accept(update); }
+        if (sent && !blockStep && !inputKind.equals("InputBlock")) showAfterBlocks = false; // the app has now seen another step
         if (!sent) emitDecision();
     }
 
