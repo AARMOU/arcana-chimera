@@ -483,6 +483,7 @@ public final class ArcanaForgeHost {
             case "requestUndo" -> error("Undo isn't available in this version.");
             case "setRespondToOwnStack" -> respondToOwnStack = message.optBoolean("enabled");
             case "setQuietOpponentTurns" -> quietOpponentTurns = message.optBoolean("enabled");
+            case "setPassToMyTurn" -> fastPass = message.optBoolean("enabled");
             default -> { }
         }
     }
@@ -686,6 +687,16 @@ public final class ArcanaForgeHost {
     public volatile boolean respondToOwnStack;
     /** Arcana's "don't stop for AI spells": on AI turns, pass AI items that don't target you or yours. */
     public volatile boolean quietOpponentTurns;
+    /**
+     * Owner, Nov 13 (slowdown): while the app's "Pass to my turn" is running, Forge passes the empty priority windows of
+     * opponents' turns itself. Before, each one cost a full table build, a send, the app's 300 ms settle and a pass back
+     * (83 round trips in one logged game). Nothing is decided here that the app would decide differently: the stack is
+     * empty and it is not this player's turn, where the app always passes. Anything else (a spell or ability on the
+     * stack, a question, blockers, this player's own turn) switches this off and is shown as before; the app switches it
+     * on again with its next automatic pass. The app only asks for it when no opponent-turn phase stop is set.
+     */
+    public volatile boolean fastPass;
+    private volatile long fastPassedAt;
 
     private boolean autoPassStack(Game game, Player me) {
         if (game.getStack().isEmpty()) return false;
@@ -840,13 +851,23 @@ public final class ArcanaForgeHost {
         if (inMulligan && game.getPhaseHandler().getTurn() == 0) { recheckMulligan(); return; }
         if (inMulligan) { // Argentum's order: mulliganComplete, then the first game state
             inMulligan = false;
+            fastPass = false; // a new game never starts with the last game's "Pass to my turn"
             sink.accept(new JSONObject().put("type", "mulliganComplete").put("finalHandSize", you.getPlayer().getCardsIn(ZoneType.Hand).size()));
         }
-        if (pending != null) { emitDecision(); return; } // an open question stays on screen until answered
+        if (pending != null) { fastPass = false; emitDecision(); return; } // an open question stays on screen until answered
         boolean priority = input instanceof InputPassPriority;
         if (priority && input != lastAutoPassed && autoPassStack(game, you.getPlayer())) { lastAutoPassed = input; ok(you); return; }
+        if (priority && fastPass) {
+            if (game.getStack().isEmpty() && game.getPhaseHandler().getPlayerTurn() != you.getPlayer()) {
+                if (input != lastAutoPassed) { lastAutoPassed = input; fastPassedAt = System.nanoTime(); ok(you); return; }
+                // The same window again: Forge is still taking the pass. If it hasn't after 1.5 s, show the table instead.
+                if (System.nanoTime() - fastPassedAt < 1_500_000_000L) return;
+            }
+            fastPass = false; // something to show: the app decides, and asks again with its next automatic pass
+        }
         String inputKind = inputClassName(input);
         boolean combatInput = inputKind.equals("InputAttack") || inputKind.equals("InputBlock");
+        if (combatInput) fastPass = false;
         // InputLockUI is Forge's "waiting for actions" lock while its game thread works: not a decision. Show state only.
         if (inputKind.equals("InputLockUI")) input = null;
         if (input != null && !priority && !combatInput && input != lastPrompted && decisionForInput(input, you, game)) { lastPrompted = input; return; }
