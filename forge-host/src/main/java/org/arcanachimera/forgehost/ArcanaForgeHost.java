@@ -119,7 +119,7 @@ public final class ArcanaForgeHost {
         this.sink = sink;
         this.me = HUMAN_ID;
         this.primary = this;
-        this.views = new java.util.concurrent.CopyOnWriteArrayList<>(List.of(this));
+        this.views = new java.util.concurrent.CopyOnWriteArrayList<>(new ArrayList<>(java.util.Arrays.asList(this)));
         this.seatIds = new java.util.IdentityHashMap<>();
         if (edtThread == null) edt.submit(() -> edtThread = Thread.currentThread());
     }
@@ -311,7 +311,7 @@ public final class ArcanaForgeHost {
         you.setPlayer(GamePlayerUtil.getGuiPlayer());
         RegisteredPlayer ai = new RegisteredPlayer(deck("AI", aiDeck));
         ai.setPlayer(GamePlayerUtil.createAiPlayer("Forge AI", 0));
-        List<RegisteredPlayer> players = List.of(you, ai);
+        List<RegisteredPlayer> players = new ArrayList<>(java.util.Arrays.asList(you, ai));
         match = GuiBase.getInterface().hostMatch();
         sink.accept(new JSONObject().put("type", "gameStarted").put("players", new JSONArray()
                 .put(new JSONObject().put("playerId", HUMAN_ID).put("isYou", true))
@@ -757,7 +757,7 @@ public final class ArcanaForgeHost {
                 }
                 JSONObject d = decisionBase("YesNoDecision", "Pay " + cost + " for " + source + "? " + paidFor.getStackDescription())
                         .put("yesText", "Pay " + cost).put("noText", "Don't pay");
-                openForInput(d, Map.of(), r -> {
+                openForInput(d, new java.util.HashMap<>(), r -> {
                     if (r.optBoolean("choice")) { lastAutoPaid = payInput; ok(you); } else cancel(you);
                 });
                 return;
@@ -1610,7 +1610,7 @@ public final class ArcanaForgeHost {
             for (T c : choices) options.put(label(c));
             d.put("options", options).put("canCancel", min == 0);
             int index = ask(d, objects).optInt("optionIndex", -1);
-            return index >= 0 && index < choices.size() ? new ArrayList<>(List.of(choices.get(index))) : new ArrayList<>();
+            return index >= 0 && index < choices.size() ? new ArrayList<>(new ArrayList<>(java.util.Arrays.asList(choices.get(index)))) : new ArrayList<>();
         }
         // Several non-card choices (colours, creature types, modes, players): a card picker with one named tile each.
         JSONObject d = decisionBase("SelectCardsDecision", prompt);
@@ -1657,7 +1657,7 @@ public final class ArcanaForgeHost {
             for (Object o : items) if (!out.contains(o)) out.add(o); // never drop anything
             return out;
         }
-        if (source == null) return List.of();
+        if (source == null) return new ArrayList<>();
         // Choose which cards move: between (size - remMax) and (size - remMin) of them.
         int min = Math.max(0, source.size() - remMax), max = Math.max(min, source.size() - remMin);
         return choose(prompt, min, max, source);
@@ -1684,7 +1684,7 @@ public final class ArcanaForgeHost {
         while (true) {
             JSONObject d = decisionBase("DistributeDecision", "Divide " + amount + " " + (label == null ? "" : label) + " from " + name)
                     .put("targets", ids).put("totalAmount", amount).put("minPerTarget", atLeastOne ? 1 : 0).put("maxPerTarget", caps);
-            JSONObject chosen = ask(d, Map.of()).optJSONObject("distribution");
+            JSONObject chosen = ask(d, new java.util.HashMap<>()).optJSONObject("distribution");
             Map<Object, Integer> out = new LinkedHashMap<>();
             int total = 0; boolean ok = chosen != null;
             if (chosen != null) for (String id : keys(chosen)) {
@@ -1735,7 +1735,7 @@ public final class ArcanaForgeHost {
                     .put("defenderId", defenderId == null ? JSONObject.NULL : defenderId).put("minimumAssignments", minimum)
                     .put("defaultAssignments", defaults).put("hasTrample", trample).put("hasDeathtouch", deathtouch);
             d.getJSONObject("context").put("phase", "COMBAT").put("sourceId", "f" + attackerView.getId()).put("sourceName", name);
-            JSONObject chosen = ask(d, Map.of()).optJSONObject("assignments");
+            JSONObject chosen = ask(d, new java.util.HashMap<>()).optJSONObject("assignments");
             Map<forge.game.card.CardView, Integer> out = new java.util.HashMap<>(); // HashMap: Forge keys the defender as null
             int total = 0; boolean ok = chosen != null;
             if (chosen != null) for (String id : keys(chosen)) {
@@ -1796,7 +1796,7 @@ public final class ArcanaForgeHost {
     private boolean askYesNo(String prompt, String yes, String no) throws Exception {
         String[] said = twoWay(prompt == null ? "" : prompt, yes == null ? "Yes" : yes, no == null ? "No" : no);
         JSONObject d = decisionBase("YesNoDecision", said[0]).put("yesText", said[1]).put("noText", said[2]);
-        return ask(d, Map.of()).optBoolean("choice");
+        return ask(d, new java.util.HashMap<>()).optBoolean("choice");
     }
 
     /** The spell or ability you last chose to cast or activate (for its X). */
@@ -1853,7 +1853,7 @@ public final class ArcanaForgeHost {
     private int askNumber(String prompt, int min, int max) throws Exception {
         if (min >= max) return min;
         JSONObject d = decisionBase("ChooseNumberDecision", prompt).put("minValue", min).put("maxValue", max);
-        return Math.max(min, Math.min(max, ask(d, Map.of()).optInt("number", min)));
+        return Math.max(min, Math.min(max, ask(d, new java.util.HashMap<>()).optInt("number", min)));
     }
 
     /** Forge's synchronous questions (called on Forge's game thread). Returns NOT_HANDLED when the name isn't a question. */
@@ -1882,21 +1882,21 @@ public final class ArcanaForgeHost {
             case "chooseEntitiesForEffect": return choose((String) a[0], (Integer) a[2], (Integer) a[3], (List<?>) a[1]);
             case "getInteger": return askNumber((String) a[0], (Integer) a[1], capX((String) a[0], (Integer) a[1], (Integer) a[2]));
             case "showOptionDialog": { // (message, title, icon, options, default) → chosen index (from Goose's PR #19)
-                List<?> opts = a.length > 3 && a[3] instanceof List<?> l ? l : List.of();
+                List<?> opts = a.length > 3 && a[3] instanceof List<?> l ? l : new ArrayList<>();
                 if (opts.size() < 2) return a.length > 4 ? a[4] : 0;
                 JSONObject d = decisionBase("ChooseOptionDecision", String.valueOf(a[0]));
                 JSONArray options = new JSONArray(); for (Object o : opts) options.put(String.valueOf(o));
                 d.put("options", options).put("canCancel", false);
-                int i = ask(d, Map.of()).optInt("optionIndex", -1);
+                int i = ask(d, new java.util.HashMap<>()).optInt("optionIndex", -1);
                 return i >= 0 && i < opts.size() ? i : (a.length > 4 ? a[4] : 0);
             }
             case "showInputDialog": { // (message, title, icon, initial, options...) → with options, a real choice
-                List<?> opts = a.length > 4 && a[4] instanceof List<?> l ? l : List.of();
+                List<?> opts = a.length > 4 && a[4] instanceof List<?> l ? l : new ArrayList<>();
                 if (opts.isEmpty()) { notice("gui-free-text", "Forge asked for typed text (" + a[0] + "); Arcana can't show that yet, so its suggested text was used."); return a.length > 3 ? a[3] : null; }
                 JSONObject d = decisionBase("ChooseOptionDecision", String.valueOf(a[0]));
                 JSONArray options = new JSONArray(); for (Object o : opts) options.put(String.valueOf(o));
                 d.put("options", options).put("canCancel", false);
-                int i = ask(d, Map.of()).optInt("optionIndex", -1);
+                int i = ask(d, new java.util.HashMap<>()).optInt("optionIndex", -1);
                 return String.valueOf(opts.get(i >= 0 && i < opts.size() ? i : 0));
             }
             case "assignGenericAmount": return assignGenericAmount((forge.game.card.CardView) a[0], (Map<?, ?>) a[1], (Integer) a[2], (Boolean) a[3], (String) a[4]);
@@ -2005,7 +2005,7 @@ public final class ArcanaForgeHost {
                 Card host = ((forge.game.trigger.WrappedAbility) field(input, "sa")).getHostCard();
                 if (host != null) d.getJSONObject("context").put("sourceId", cardId(host)).put("sourceName", host.getName());
             }
-            openForInput(d, Map.of(), r -> {
+            openForInput(d, new java.util.HashMap<>(), r -> {
                 // Remembered here, not in Forge's yield store: that store keys by its tier settings (and can persist
                 // across games), so a plain "accept" there was never read back (scenario N, Nov 11).
                 if (always != null && r.optBoolean("choice") && r.optBoolean("always")) alwaysAccept.add(always);
@@ -2182,7 +2182,7 @@ public final class ArcanaForgeHost {
         if (name.equals("getChoices") || name.equals("many")) {
             List<?> choices = firstList(args);
             int min = firstInt(args);
-            return choices == null ? List.of() : new ArrayList<>(choices.subList(0, Math.min(Math.max(min, 0), choices.size())));
+            return choices == null ? new ArrayList<>() : new ArrayList<>(choices.subList(0, Math.min(Math.max(min, 0), choices.size())));
         }
         if (name.equals("one") || name.equals("chooseSingleEntityForEffect")) {
             List<?> choices = firstList(args);
