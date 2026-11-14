@@ -14,7 +14,7 @@ Because a full Arcana Compose port would be much larger, this trial uses an Arca
 
 ## Isolation and build
 
-- Forge source SHA: 7c34365c749ca46ab71336c5f267340d6088e600
+- Forge source SHA: 583714b8bfbd9cb04f8bc39ad95861190caf7691
 - Arcana UI read-only reference SHA: 05cdd6dae84e7df4c88e630054cdc6a76dfa2964
 - Debug application ID: org.arcanachimera.frankenarcana (not com.arcanatable)
 - Only downloaded Forge and Chimera-created source are patched inside ignored third_party/forge-device.

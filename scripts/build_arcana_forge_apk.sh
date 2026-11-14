@@ -3,7 +3,7 @@
 # Arcana source is staged read-only from a pinned public commit into ignored third_party/; nothing is pushed to Arcana.
 set -euo pipefail
 ARCANA_SHA="${ARCANA_SHA:-f6a149cb202587e5aa8128191beb630a7d94935d}"
-FORGE_SHA="${FORGE_SHA:-7c34365c749ca46ab71336c5f267340d6088e600}"
+FORGE_SHA="${FORGE_SHA:-583714b8bfbd9cb04f8bc39ad95861190caf7691}"
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 # Verify host-survival patch invariants before downloading and compiling Forge.
 python3 -m unittest discover -s "$ROOT/tests" -p "test_chimera_host_survival.py" -v

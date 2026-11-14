@@ -19,7 +19,7 @@ import sys
 
 ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_ARCANA = "f6a149cb202587e5aa8128191beb630a7d94935d"
-DEFAULT_FORGE = "7c34365c749ca46ab71336c5f267340d6088e600"
+DEFAULT_FORGE = "583714b8bfbd9cb04f8bc39ad95861190caf7691"
 
 
 def git(path: Path, *arguments: str) -> str:

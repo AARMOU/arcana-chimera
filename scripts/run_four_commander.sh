@@ -3,7 +3,7 @@
 # Manual public-only standard runner or local machine; no Arcana changes or paid services.
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-FORGE_SHA="7c34365c749ca46ab71336c5f267340d6088e600"
+FORGE_SHA="583714b8bfbd9cb04f8bc39ad95861190caf7691"
 FORGE="$ROOT/third_party/forge"
 REPORTS="$ROOT/reports"
 RUN_ID="$(date -u +%Y%m%dT%H%M%SZ)"

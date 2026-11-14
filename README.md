@@ -38,7 +38,7 @@ Once the owner manually starts [FrankenArcana encrypted APK handoff](.github/wor
 6. Review ignored `reports/` output and record findings in [the acceptance matrix](scenarios/acceptance-matrix.csv). A Maven build by itself is **not** gameplay evidence.
 
 ## Forge baseline
-Pinned upstream Forge commit: `7c34365c749ca46ab71336c5f267340d6088e600` (source inspected November 2, 2026, Mountain time).
+Pinned upstream Forge commit: `583714b8bfbd9cb04f8bc39ad95861190caf7691` (source inspected November 2, 2026, Mountain time).
 
 - [Forge repository](https://github.com/Card-Forge/forge)
 - [Argentum repository](https://github.com/wingedsheep/argentum-engine)

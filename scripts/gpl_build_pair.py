@@ -15,7 +15,7 @@ import tarfile
 
 ROOT = Path(__file__).resolve().parents[1]
 ARCANA_PIN = "f6a149cb202587e5aa8128191beb630a7d94935d"
-FORGE_PIN = "7c34365c749ca46ab71336c5f267340d6088e600"
+FORGE_PIN = "583714b8bfbd9cb04f8bc39ad95861190caf7691"
 ANDROID_INPUTS = ("android/app/src/main/java/", "android/app/src/main/assets/",
                   "android/app/src/main/res/", "android/app/libs/forge/")
 SKIP_DIRS = {".git", ".gradle", "node_modules", "__pycache__", "build", "target", ".venv"}

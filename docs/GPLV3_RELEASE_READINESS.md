@@ -7,7 +7,7 @@
 ## Current architecture (audit of draft PR #16 on 2026-11-09)
 
 - Chimera's current public repository provides adapter/overlay code, but *not* the full combined APK source tree. The draft build script `scripts/build_arcana_forge_apk.sh` stages Arcana and Forge at build time under ignored `third_party/`.
-- At audit time the script's defaults were Arcana `a5c428ad3da42b7325adf6630238ec992fee3113` and Forge `7c34365c749ca46ab71336c5f267340d6088e600`. These are **defaults, not timeless facts**; the actual artifact must record resolved commits and hashes.
+- At audit time the script's defaults were Arcana `a5c428ad3da42b7325adf6630238ec992fee3113` and Forge `583714b8bfbd9cb04f8bc39ad95861190caf7691`. These are **defaults, not timeless facts**; the actual artifact must record resolved commits and hashes.
 - It copies Forge-derived JARs, a Forge resource ZIP, and Chimera adapter/patch code into a staged, modified Arcana Android project, then compiles an APK.
 - The draft workflow `.github/workflows/arcana-forge-apk.yml` uploads the debug APK to a one-day GitHub Actions artifact in a *public* repository. Do not assume a one-day expiry or "debug" label removes distribution obligations.
 - Existing `docs/LICENSING_AND_IP.md` is preliminary. The complete GPLv3 license text, preserved verbatim from pinned upstream Forge, is included at `third_party_licenses/Forge-GPL-3.0.txt`. This file is a **third-party license copy**, not a unilateral license grant over all independently authored Chimera files.
