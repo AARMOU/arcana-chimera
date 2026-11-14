@@ -73,7 +73,7 @@ python3 "$ROOT/scripts/patch_arcana_for_forge.py" "$APP" # owner: no Argentum ca
 python3 "$ROOT/scripts/patch_commander_art_editor.py" "$APP" # Chimera: commander art picker and persistent previews
 echo "== Chimera official WotC Commander decklists (bundled offline; no Arcana writes)"
 mkdir -p "$APP/src/main/assets/precons"
-python3 "$ROOT/scripts/build_wotc_commander_precons.py" --out "$APP/src/main/assets/precons/wotc-commander-precons.json"
+python3 "$ROOT/scripts/build_wotc_commander_precons.py" --out "$APP/src/main/assets/precons/wotc-commander-precons.json" --forge-cards "$RES/cardsfolder"
 cp "$ROOT/arcana-overlay/app/src/main/java/com/arcanatable/ChimeraPrecons.kt" "$APP/src/main/java/com/arcanatable/"
 cp "$ROOT/arcana-overlay/app/src/main/java/com/arcanatable/ChimeraPreconTree.kt" "$APP/src/main/java/com/arcanatable/"
 python3 "$ROOT/scripts/patch_commander_precons.py" "$APP"
