@@ -977,6 +977,7 @@ public final class ArcanaForgeHost {
                 .put("undoAvailable", false)
                 .put("priorityMode", "auto")
                 .put("stateVersion", ++version)
+                .put("chimeraAttackWarning", attackWarning(game, you.getPlayer()))
                 .put("interactive", priority || combatInput)
                 .put("interactionEpoch", "forge-" + version)
                 .put("forgeInput", input == null ? "none" : inputClassName(input));
@@ -1196,6 +1197,51 @@ public final class ArcanaForgeHost {
     }
 
     private static JSONObject fillPlayer(JSONObject p) throws Exception { return fill(p, "player"); }
+
+    /**
+     * Phone, Nov 14 (Borg Queen game): "Pass to my turn" passed through the declare-blockers step and the player died
+     * to 57 damage without a word, because there was nothing to block with and so no block question. When blocks are
+     * in and the unblocked attackers would kill this player (life, or 21 from one commander), the table says so and
+     * the app stops passing once. JSONObject.NULL when there is nothing to warn about.
+     */
+    private static Object attackWarning(Game game, Player me) {
+        try {
+            if (game.getPhaseHandler().getPlayerTurn() == me || game.getPhaseHandler().getPhase() != PhaseType.COMBAT_DECLARE_BLOCKERS) return JSONObject.NULL;
+            forge.game.combat.Combat combat = game.getCombat();
+            if (combat == null) return JSONObject.NULL;
+            int damage = 0, attackers = 0;
+            String commander = null;
+            for (Card a : combat.getAttackersOf(me)) {
+                if (combat.isBlocked(a)) continue;
+                int d = Math.max(0, a.getNetCombatDamage());
+                attackers++; damage += d;
+                if (a.isCommander()) {
+                    int before = 0;
+                    for (Map.Entry<Card, Integer> e : me.getCommanderDamage()) if (e.getKey().equals(a)) before = e.getValue();
+                    if (before + d >= 21) commander = a.getName();
+                }
+            }
+            if (attackers == 0) return JSONObject.NULL;
+            if (damage >= me.getLife()) return damage + " unblocked damage is coming and you have " + me.getLife() + " life. You can respond.";
+            if (commander != null) return commander + " is about to reach 21 commander damage on you. You can respond.";
+            return JSONObject.NULL;
+        } catch (RuntimeException e) { return JSONObject.NULL; } // combat changed while being read: no warning
+    }
+
+    /**
+     * Phone, Nov 14: "Choose a card" twice after attacking, with no hint of what was asking. When Forge's question is
+     * that bare and an ability is resolving, name its card: "Choose a card for Locutus of Borg".
+     */
+    private String withSource(String prompt) {
+        try {
+            if (prompt == null || !prompt.trim().matches("(?i)choose (a |an |one |\\d+ )?(card|creature|permanent|land|artifact)s?\\.?")) return prompt;
+            Game game = match == null ? null : match.getGame();
+            if (game == null || game.getStack().isEmpty() || !game.getStack().isResolving()) return prompt;
+            SpellAbility sa = game.getStack().peekAbility();
+            Card host = sa == null ? null : sa.getHostCard();
+            return host == null ? prompt : prompt.trim().replaceAll("\\.$", "") + " for " + host.getName();
+        } catch (RuntimeException e) { return prompt; }
+    }
 
     private JSONArray commanderDamage(Player p) throws Exception {
         JSONArray out = new JSONArray();
@@ -1668,6 +1714,7 @@ public final class ArcanaForgeHost {
     /** Pick min..max of the choices: cards via SelectCardsDecision, anything else (single pick) via ChooseOptionDecision. */
     private <T> List<T> choose(String prompt, int min, int max, List<T> choices) throws Exception {
         if (choices == null || choices.isEmpty()) return new ArrayList<>();
+        prompt = withSource(prompt);
         max = Math.min(max, choices.size());
         min = Math.min(min, max);
         boolean cards = choices.stream().allMatch(c -> c instanceof Card || c instanceof forge.game.card.CardView);

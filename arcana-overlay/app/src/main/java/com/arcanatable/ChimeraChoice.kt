@@ -193,6 +193,10 @@ internal object ChimeraHomeArt {
 internal object ChimeraPlayState {
     /** The turn "Pass to my turn" last declared an attack for you on (it tries once per turn). */
     @Volatile var autoAttackTurn = -1
+    /** The table (turn and state) "Pass to my turn" last stopped on for a spell or ability; starting it again there passes it. */
+    @Volatile var stackStopSeen = ""
+    /** The turn "Pass to my turn" last stopped on for a lethal unblocked attack (it warns once per turn). */
+    @Volatile var attackStopTurn = -1
     /** Studio's "Start practice game": reopen Studio once the game is up and the opening hand is kept. */
     var studioAfterPractice by mutableStateOf(false)
 }

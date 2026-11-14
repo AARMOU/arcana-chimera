@@ -134,6 +134,7 @@ python3 "$ROOT/scripts/patch_diagnostic_role.py" "$APP" # owner, Nov 12: a guest
 python3 "$ROOT/scripts/patch_waiting_on_other.py" "$APP" # owner, Nov 12: no "answer the open prompt" or false alarm while another player decides
 python3 "$ROOT/scripts/patch_accept_all_targets.py" "$APP" # owner, Nov 13: ACCEPT ALL ON STACK on a repeated target prompt
 python3 "$ROOT/scripts/patch_fast_pass.py" "$APP" # owner, Nov 13 slowdown: Forge passes empty opponent windows itself during Pass to my turn
+python3 "$ROOT/scripts/patch_pass_safety.py" "$APP" # owner, Nov 14: Pass to my turn stops for a lethal unblocked attack; restarting passes the same spell
 python3 "$ROOT/scripts/patch_arcana_wording.py" "$APP" # owner, Nov 9: no "Argentum" on screen (fails the build if any is left)
 python3 "$ROOT/scripts/patch_chimera_host_survival.py" "$APP" # host lock + directed relay recovery; Worker deploy separate
 python3 "$ROOT/scripts/patch_chimera_restart_host.py" "$APP" # Host Lobby ends a frozen game's open session (owner, Nov 11)
