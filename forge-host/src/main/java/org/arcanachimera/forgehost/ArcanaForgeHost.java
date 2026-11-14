@@ -680,10 +680,40 @@ public final class ArcanaForgeHost {
         return untapped + "/" + me.getManaPool().totalMana() + "/" + me.getGame().getPhaseHandler().getTurn();
     }
 
+    /**
+     * Phone, Nov 13 (Kappa Cannoneer, {5}{U} Improvise): shown as playable from the turn it was drawn and cancelled
+     * with "Not enough mana" eight times, because Convoke and Improvise spells are always offered (their real check
+     * would stop to ask). This is a count that never asks: your mana, plus one for every untapped card that could
+     * help pay. Only a spell that count cannot reach is held back. It leans towards offering: a mana rock counts
+     * twice, commander tax is ignored, and with any cost reducer in play, or X in the cost, the spell is offered.
+     */
+    private static boolean clearlyShort(SpellAbility sa, Player me) {
+        try {
+            Card host = sa.getHostCard();
+            if (host == null || sa.getPayCosts() == null || sa.getPayCosts().getCostMana() == null) return false;
+            boolean convoke = host.hasKeyword(forge.game.keyword.Keyword.CONVOKE), improvise = host.hasKeyword(forge.game.keyword.Keyword.IMPROVISE);
+            if ((!convoke && !improvise) || sa.hasParam("TapCreaturesForMana")) return false; // other helpers: leave it to Forge
+            forge.card.mana.ManaCost cost = sa.getPayCosts().getTotalMana();
+            if (cost == null || cost.countX() > 0) return false;
+            for (ZoneType zone : new ZoneType[] { ZoneType.Battlefield, ZoneType.Command })
+                for (Card c : me.getGame().getCardsIn(zone))
+                    for (forge.game.staticability.StaticAbility st : c.getStaticAbilities()) {
+                        String mode = st.getParam("Mode");
+                        if (mode != null && mode.contains("ReduceCost")) return false;
+                    }
+            int have = forge.ai.ComputerUtilMana.getAvailableManaEstimate(me, true) + me.getManaPool().totalMana();
+            for (Card c : me.getCardsIn(ZoneType.Battlefield)) {
+                if (c.isTapped()) continue;
+                if ((convoke && c.isCreature()) || (improvise && c.isArtifact())) have++;
+            }
+            return have < cost.getCMC();
+        } catch (RuntimeException e) { return false; } // could not count: offer it, as before
+    }
+
     private boolean affordable(SpellAbility sa, Player me) {
         String failed = failedPayments.get(payKey(sa));
         if (failed != null) { if (failed.equals(manaNow(me))) return false; failedPayments.remove(payKey(sa)); }
-        if (asksWhilePricing(sa)) return true;
+        if (asksWhilePricing(sa)) return !clearlyShort(sa, me);
         PlayerControllerHuman you = humanController();
         Input before = you == null ? null : you.getInputQueue().getInput();
         PRICING.set(true);
