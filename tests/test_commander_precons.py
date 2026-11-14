@@ -104,7 +104,7 @@ class CommanderPreconTests(unittest.TestCase):
         self.assertIn('patch_commander_precons.py', build)
 
 class PreconDuplicateTests(unittest.TestCase):
-    """Owner, Nov 9: one entry per precon; a Collector's Edition goes when its regular edition is listed."""
+    """Owner, Nov 9: one entry per precon. Owner, Nov 14: no Collector's Editions at all."""
 
     def test_collector_and_reprint_duplicates_removed(self):
         import importlib.util
@@ -116,7 +116,7 @@ class PreconDuplicateTests(unittest.TestCase):
                          d("c", "Mind Seize", "Nekusar, the Mindrazer", "2013-11-01"),
                          d("d", "Mind Seize", "Nekusar, the Mindrazer", "2023-01-01"),
                          d("e", "Only Collector's Edition", "X", "2024-01-01")])
-        self.assertEqual(sorted(x["id"] for x in kept), ["a", "c", "e"])
+        self.assertEqual(sorted(x["id"] for x in kept), ["a", "c"])
 
 
 if __name__ == "__main__":
