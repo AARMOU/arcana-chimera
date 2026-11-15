@@ -18,6 +18,12 @@ other licensed materials.
   `AARMOU/arcana_table` at build time. Preserve its original component
   notices and any licenses for transitive dependencies. Do not assume a
   repo-level GPL statement replaces those existing notices.
+  **Owner grant (2026-11-15):** the copyright owner of Arcana Table offers
+  the Arcana Table source that is staged into and built with Chimera under
+  **GPL-3.0-only**, for every Chimera build, including releases published
+  before this date (first: `chimera-0.35.0-beta1`). This covers Arcana's own
+  code as staged and patched here; it does not relicense `arcana_table` as a
+  whole, and third-party parts keep their own licences (Argentum: MIT).
 - **Third-party Java/Android libraries, card assets and card data:** License
   inventory and redistribution conditions remain to be independently audited
   for each final AAB, including items fetched/generated during the build.

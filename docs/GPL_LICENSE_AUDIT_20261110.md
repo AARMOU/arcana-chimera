@@ -29,7 +29,7 @@ on the pinned Forge commit `7c34365c` (72 JARs, matching run 42954804869).
 | XStream | 1 | BSD-3-Clause | yes | Licence text packaged |
 | xmlpull | 1 | Public domain | yes | Listed |
 | JGraphT 1.5.2 | 1 | LGPL-2.1-or-later **or** EPL-2.0 | yes, under the LGPL | LGPL elected and packaged |
-| MXParser 1.2.2 | 1 | Indiana University Extreme! Lab 1.2 | **disputed** | Open item 1 |
+| MXParser 1.2.2 | 1 | Indiana University Extreme! Lab 1.2 | **disputed** | Kept by owner decision, 2026-11-15 (open item 1) |
 | **jUPnP 3.0.5** (+ support) | 2 | **CDDL-1.0** | **no** | **Removed** |
 | Jetty 9.4.57 | 8 | Apache-2.0 or EPL-1.0 | yes under Apache | Removed with jUPnP (its only user) |
 | javax.servlet-api 3.1.0 | 1 | CDDL-1.0 or GPL-2.0 with Classpath exception | only via the exception | Removed with jUPnP |
@@ -88,10 +88,13 @@ a JAR is unreviewed or forbidden. CI then inspects the real APK for the legal fi
    such as Debian and Fedora ship it as free software. Forge upstream ships it too. Practical
    risk is low. Removing it means making Forge's XStream use a different parser, which is a
    Forge patch and needs device testing.
+   **Decided 2026-11-15:** the owner keeps it; revisit only if it is raised.
 2. **Arcana's own code has no licence file.** `AARMOU/arcana_table` is public with no
    LICENSE, so nothing yet grants GPLv3 rights in the Arcana UI code inside this app. The
    owner needs to state that the Arcana source used here is offered under GPL-3.0 (a line in
    Chimera's `LICENSE_SCOPE.md` or a LICENSE in Arcana).
+   **Decided 2026-11-15:** GPL-3.0-only for the Arcana source built into Chimera, stated in
+   `LICENSE_SCOPE.md`; `arcana_table` itself gets no LICENSE for now.
 3. **XP wallpaper photos** (`chimera_xp/wall_*.jpg`) have no recorded origin. They are not
    the Microsoft "Bliss" photograph, but a photo needs a known licence to be redistributed.
 4. **Not licence questions, but Play policy risks:** card names, rules text and card images

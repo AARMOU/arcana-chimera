@@ -72,3 +72,8 @@ Owner: "update that so it's on the same build, and that updates from the main ar
 - On a new Arcana commit it builds Arcana + Forge at that commit. If the build passes, it moves `ARCANA_SHA` here (a "Follow Arcana …" commit by github-actions) and uploads the APK as a 1-day artifact. If it fails, the pin stays and an issue "Follow Arcana: build failed" has the commit and the log tail. That usually means a Forge patch in `scripts/patch_arcana_for_forge.py` or an overlay file no longer fits Arcana.
 - First run moved the pin `3d9fce0d` → `a5c428ad` (Studio: the battlefield keeps its Background when the first card is played; UI only, no file the Forge patches touch).
 - Work on this branch: fetch before pushing, because the bot may have moved the pin.
+
+## 2026-11-15 — Licence decisions for the Play beta
+Owner, after the `chimera-0.35.0-beta1` source release:
+- **Arcana's code:** GPL-3.0-only for the Arcana Table source built into Chimera, for every build including `0.35.0-beta1`. Stated in `LICENSE_SCOPE.md`; no LICENSE added to `arcana_table` for now.
+- **MXParser:** kept. Its Apache-1.1-style licence is disputed as GPL-compatible but shipped by Forge and Linux distributions; revisit only if raised.
