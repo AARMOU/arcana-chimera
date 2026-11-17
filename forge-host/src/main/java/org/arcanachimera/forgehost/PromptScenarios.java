@@ -300,6 +300,37 @@ public final class PromptScenarios {
         pickThread.join(30_000);
         if (!List.of("Black", "White").equals(picks.get())) return "multi-pick returned " + picks.get() + " (expected [Black, White])";
         out.append(", multi-pick ok");
+        // "Any number" (-1) picks, the opening-hand shape (phone, Nov 16: Leyline Axe showed "Choose -1–-1 card(s)" with
+        // Confirm dead). Through `many` and through the raw `order` form: 0..all offered, and none is a legal answer.
+        for (String shape : new String[]{"many", "order"}) {
+            for (boolean none : new boolean[]{false, true}) {
+                AtomicReference<Object> any = new AtomicReference<>();
+                Thread anyThread = new Thread(() -> {
+                    try {
+                        any.set(shape.equals("many")
+                                ? gui.many("Choose cards to activate from opening hand and their order", "Activate first", -1, new ArrayList<>(List.of(a, b)), null)
+                                : gui.order("Choose cards to activate from opening hand and their order", "Activate first", -1, -1, new ArrayList<>(List.of(a, b)), null, null, false));
+                    } catch (Throwable e) { any.set(e); }
+                }, "any-number-" + shape);
+                anyThread.start();
+                while (true) {
+                    JSONObject m = s.next(30);
+                    JSONObject d = m.optJSONObject("pendingDecision");
+                    if (s.fresh(d) && d.optString("type").equals("SelectCardsDecision")) {
+                        if (d.optInt("minSelections", -9) != 0 || d.optInt("maxSelections", -9) != 2)
+                            return "any-number " + shape + " offered " + d.optInt("minSelections", -9) + ".." + d.optInt("maxSelections", -9) + " (expected 0..2)";
+                        JSONArray pick = new JSONArray();
+                        if (!none) pick.put(d.getJSONArray("options").get(1));
+                        s.answer(d, new JSONObject().put("type", "CardsSelectedResponse").put("selectedCards", pick));
+                        break;
+                    }
+                }
+                anyThread.join(30_000);
+                if (!(any.get() instanceof List<?> got) || !got.equals(none ? List.of() : List.of(b)))
+                    return "any-number " + shape + " returned " + any.get() + " (expected " + (none ? "nothing" : "the second card") + ")";
+            }
+        }
+        out.append(", any-number picks ok");
         // Forge's option dialog is a real choice (Goose's PR #19), and a stray pass can't answer it.
         AtomicReference<Object> chosen = new AtomicReference<>();
         Thread dialog = new Thread(() -> {

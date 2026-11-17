@@ -1715,6 +1715,10 @@ public final class ArcanaForgeHost {
     private <T> List<T> choose(String prompt, int min, int max, List<T> choices) throws Exception {
         if (choices == null || choices.isEmpty()) return new ArrayList<>();
         prompt = withSource(prompt);
+        // Forge passes -1 for "any number" (opening-hand actions such as Leyline Axe; phone, Nov 16: the picker read
+        // "Choose -1–-1 card(s)" and Confirm could never light up). No minimum, no cap.
+        if (max < 0) max = choices.size();
+        if (min < 0) min = 0;
         max = Math.min(max, choices.size());
         min = Math.min(min, max);
         boolean cards = choices.stream().allMatch(c -> c instanceof Card || c instanceof forge.game.card.CardView);
@@ -1762,6 +1766,9 @@ public final class ArcanaForgeHost {
 
     /** Forge's dual-list prompt: pure ordering (OrderObjectsDecision) or "move some of these" (SelectCardsDecision). */
     private List<?> order(String prompt, List<?> source, List<?> dest, int remMin, int remMax) throws Exception {
+        // Forge's -1 means unbounded here too: any number may stay behind, down to none.
+        if (remMin < 0) remMin = 0;
+        if (remMax < 0) remMax = source == null ? 0 : source.size();
         boolean cardItems = source != null && source.stream().allMatch(o -> o instanceof Card || o instanceof forge.game.card.CardView);
         // Everything ends up in the result (remMin == remMax == 0), or non-card items (replacement effects, abilities)
         // where moving all of them is always allowed (remMin == 0): only the order is the player's.
