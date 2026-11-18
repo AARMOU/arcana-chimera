@@ -39,6 +39,13 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
+      - name: Maven Central through Google's mirror (Central refused GitHub runners, Nov 17)
+        run: |
+          mkdir -p ~/.m2
+          cat > ~/.m2/settings.xml <<'XML'
+          <settings><mirrors><mirror><id>google-maven-central</id><mirrorOf>central</mirrorOf>
+          <url>https://maven-central.storage-download.googleapis.com/maven2/</url></mirror></mirrors></settings>
+          XML
       - name: Android SDK packages (preinstalled SDK)
         run: yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" 'platforms;android-36' 'build-tools;36.0.0' > /dev/null
       - name: Build Arcana with Forge inside
