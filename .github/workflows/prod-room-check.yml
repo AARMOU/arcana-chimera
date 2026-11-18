@@ -1,0 +1,43 @@
+name: Production room check (read-only test rooms on the live Worker)
+on:
+  push:
+    branches: [claude/prod-room-check-20261117]
+permissions:
+  contents: read
+jobs:
+  check:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Live Worker health
+        run: curl -sS --max-time 15 -w '\nHTTP %{http_code}\n' https://arcana-table-rooms.arcanamtg.workers.dev/health
+      - name: Live Worker relay test (create, join, reconnect)
+        env:
+          ARCANA_RELAY_TEST_ORIGIN: https://arcana-table-rooms.arcanamtg.workers.dev
+        run: node room-server/test/vendor-verify-directed-relay.mjs
+      - name: Live Worker same-code join as the app does it (password arcana-argentum-CODE)
+        env:
+          ORIGIN: https://arcana-table-rooms.arcanamtg.workers.dev
+        run: |
+          cat > /tmp/join.mjs <<'JS'
+          const code = ("P" + crypto.randomUUID().replace(/-/g, "").slice(0, 5)).toUpperCase();
+          const url = process.env.ORIGIN.replace(/^http/, "ws") + "/room/" + code;
+          const pw = "arcana-argentum-" + code;
+          const open = () => new Promise((res, rej) => { const s = new WebSocket(url); const q = []; s.onmessage = e => q.push(JSON.parse(e.data)); s.onopen = () => res({ s, q }); s.onerror = rej; });
+          const wait = async (c, ok) => { for (let i = 0; i < 300; i++) { const k = c.q.findIndex(ok); if (k >= 0) return c.q.splice(k, 1)[0]; await new Promise(r => setTimeout(r, 20)); } throw Error("timeout; got " + JSON.stringify(c.q)); };
+          const h = await open(); h.s.send(JSON.stringify({ type: "create", code, password: pw, name: "Host" }));
+          console.log("host:", JSON.stringify(await wait(h, p => p.type === "welcome" || p.type === "rejected")).slice(0, 120));
+          h.s.send(JSON.stringify({ type: "relaySeats", kinds: ["friend"] })); console.log("seats:", (await wait(h, p => p.type === "relay-seats-ack" || p.type === "rejected")).type);
+          await new Promise(r => setTimeout(r, 3000));
+          const g = await open(); g.s.send(JSON.stringify({ type: "join", code, password: pw, name: "Guest" }));
+          const ans = await wait(g, p => p.type === "welcome" || p.type === "rejected");
+          console.log("guest:", JSON.stringify(ans).slice(0, 160));
+          process.exit(ans.type === "welcome" ? 0 : 1);
+          JS
+          node /tmp/join.mjs
