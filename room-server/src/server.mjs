@@ -35,7 +35,10 @@ function sendJson(res, status, value) {
 }
 
 function clientIp(req) {
-  // The server listens on localhost behind Cloudflare Tunnel, which sets this header.
+  // The server listens on localhost behind Cloudflare Tunnel, which sets cf-connecting-ip.
+  // Old app builds arrive through the arcana-table-rooms pass-through Worker; Cloudflare
+  // marks those with cf-worker, and the Worker passes the phone's own IP along.
+  if (req.headers["cf-worker"] && req.headers["x-arcana-client-ip"]) return "via-worker:" + String(req.headers["x-arcana-client-ip"]);
   return String(req.headers["cf-connecting-ip"] ?? req.socket.remoteAddress ?? "unknown");
 }
 
