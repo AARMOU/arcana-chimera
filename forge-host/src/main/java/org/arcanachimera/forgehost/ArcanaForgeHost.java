@@ -853,7 +853,7 @@ public final class ArcanaForgeHost {
             // not humanController(): while Forge pays automatically, your seat is briefly run by its AI controller
             boolean isYou = p != null && p == lifeYou;
             PhaseHandler ph = game.getPhaseHandler();
-            String name = p != null && p.getName() != null && !p.getName().isBlank() ? p.getName() : pv.getName();
+            String name = p != null && p.getName() != null && !p.getName().trim().isEmpty() ? p.getName() : pv.getName();
             return new JSONObject().put("playerId", p == null ? JSONObject.NULL : playerId(p)).put("name", name).put("isYou", isYou).put("fid", pv.getId())
                     .put("from", from).put("to", to).put("change", to - from).put("cause", cause)
                     .put("turn", ph.getTurn()).put("step", ph.getPhase() == null ? "" : ph.getPhase().name().replace('_', ' '));
@@ -1052,7 +1052,7 @@ public final class ArcanaForgeHost {
             // Owner, Nov 17 (lost 38 life on turn 5): Forge's automatic payment spent Treasonous Ogre's "Pay 3 life: Add {R}"
             // over and over without asking, down to 1 life. Mana that costs life is never spent automatically now: if the
             // cost can be paid without it, it is; if not, you're asked first.
-            List<SpellAbility> lifeMana = paidFor == null ? List.of() : lifeManaAbilities(you.getPlayer());
+            List<SpellAbility> lifeMana = paidFor == null ? new ArrayList<SpellAbility>() : lifeManaAbilities(you.getPlayer());
             if (optionalTrigger && input != lastAutoPaid && input != lastPrompted) {
                 // "You may pay {1}" on a trigger (phone, Nov 8: Ultron's Robot): Forge's payment prompt is the choice
                 // itself, so ask instead of paying automatically; if it can't be paid, say so and skip it.
@@ -1062,7 +1062,7 @@ public final class ArcanaForgeHost {
                 String source = paidFor.getHostCard() == null ? "an ability" : paidFor.getHostCard().getName();
                 // check the cost being asked for ("unless you pay {1}"), not the trigger's own cost, which is nothing
                 // (soak seeds 118/130, Nov 8: Rhystic Study / Overencumbered looked payable with no mana open)
-                boolean payable = canPayNow(input, paidFor, you.getPlayer(), List.of());
+                boolean payable = canPayNow(input, paidFor, you.getPlayer(), new ArrayList<SpellAbility>());
                 if (!asksWhilePricing(paidFor) && !payable) {
                     note("You can't pay " + cost + " for " + source + " right now, so it was skipped."); // a note, not an error (owner list, Nov 10)
                     cancel(you);
@@ -1086,7 +1086,7 @@ public final class ArcanaForgeHost {
             if (input != lastAutoPaid) {
                 if (!lifeMana.isEmpty()) {
                     if (canPayNow(input, paidFor, you.getPlayer(), lifeMana)) { lastAutoPaid = input; payWithoutLife(you, lifeMana); return; }
-                    if (canPayNow(input, paidFor, you.getPlayer(), List.of())) { askToPayWithLife(input, paidFor, you, lifeMana); return; }
+                    if (canPayNow(input, paidFor, you.getPlayer(), new ArrayList<SpellAbility>())) { askToPayWithLife(input, paidFor, you, lifeMana); return; }
                 }
                 lastAutoPaid = input; ok(you);
             } else {
