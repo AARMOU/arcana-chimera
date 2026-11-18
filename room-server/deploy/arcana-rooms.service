@@ -1,0 +1,26 @@
+[Unit]
+Description=Arcana online room server
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=arcana
+Group=arcana
+WorkingDirectory=/opt/arcana-rooms/current/room-server
+ExecStart=/usr/bin/node src/server.mjs
+Environment=NODE_ENV=production
+Environment=HOST=127.0.0.1
+Environment=PORT=8787
+Environment=ROOM_DATA_DIR=/var/lib/arcana-rooms
+Restart=always
+RestartSec=2
+TimeoutStopSec=20
+LimitNOFILE=200000
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/var/lib/arcana-rooms
+
+[Install]
+WantedBy=multi-user.target

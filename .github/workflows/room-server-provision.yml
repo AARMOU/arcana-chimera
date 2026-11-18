@@ -1,0 +1,152 @@
+name: Room server — set up Hetzner + Cloudflare (owner-approved)
+# Creates (once) and configures Arcana's self-hosted room server:
+#   * Cloudflare Tunnel "arcana-rooms" + DNS name (e.g. rooms.example.com)
+#   * Hetzner server "arcana-rooms" (cheapest shared type, >= 2 GB RAM, US West then US East)
+#     with a firewall that blocks ALL inbound traffic; players reach it only through the tunnel.
+# Safe to re-run: existing tunnel, DNS record and server are reused, never duplicated.
+# After setup the server updates itself from the room-server-live branch, only when tests pass.
+on:
+  workflow_dispatch:
+    inputs:
+      hostname:
+        description: "Room server address, e.g. rooms.example.com"
+        required: true
+      live_branch:
+        description: "Branch the server runs and auto-updates from"
+        default: room-server-live
+        required: true
+permissions:
+  contents: read
+concurrency: room-server-provision
+jobs:
+  provision:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      HCLOUD_TOKEN: ${{ secrets.HCLOUD_TOKEN }}
+      CF_TOKEN: ${{ secrets.CLOUDFLARE_ROOMS_TOKEN }}
+      CF_ACCOUNT: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      HOSTNAME_IN: ${{ inputs.hostname }}
+      LIVE_BRANCH: ${{ inputs.live_branch }}
+      SERVER_NAME: arcana-rooms
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Check secrets and inputs (values never printed)
+        run: |
+          set -euo pipefail
+          missing=0
+          for name in HCLOUD_TOKEN CF_TOKEN CF_ACCOUNT; do
+            if [ -z "${!name}" ]; then echo "::error::Missing secret for $name"; missing=1; fi
+          done
+          [ "$missing" -eq 0 ] || { echo "::error::Add HCLOUD_TOKEN, CLOUDFLARE_ROOMS_TOKEN (and CLOUDFLARE_ACCOUNT_ID) under Settings → Secrets and variables → Actions."; exit 1; }
+          HOST="$(echo "$HOSTNAME_IN" | tr 'A-Z' 'a-z' | sed 's#^https\?://##; s#/.*##')"
+          echo "$HOST" | grep -Eq '^[a-z0-9-]+(\.[a-z0-9-]+)+$' || { echo "::error::Not a hostname: $HOSTNAME_IN"; exit 1; }
+          git ls-remote --exit-code "https://github.com/${GITHUB_REPOSITORY}.git" "refs/heads/$LIVE_BRANCH" > /dev/null \
+            || { echo "::error::Branch $LIVE_BRANCH does not exist"; exit 1; }
+          echo "HOST=$HOST" >> "$GITHUB_ENV"
+
+      - name: Cloudflare — tunnel, routing and DNS
+        run: |
+          set -euo pipefail
+          cf() { # method path [json]
+            local out
+            out="$(curl -sS -X "$1" "https://api.cloudflare.com/client/v4$2" -H "Authorization: Bearer $CF_TOKEN" -H "Content-Type: application/json" ${3:+--data "$3"})"
+            if [ "$(echo "$out" | jq -r .success)" != "true" ]; then echo "::error::Cloudflare $1 $2 failed: $(echo "$out" | jq -c .errors)"; exit 1; fi
+            echo "$out"
+          }
+          ZONE_ID=""; candidate="$HOST"
+          while [ -z "$ZONE_ID" ] && [[ "$candidate" == *.* ]]; do
+            ZONE_ID="$(cf GET "/zones?name=$candidate" | jq -r '.result[0].id // empty')"
+            [ -n "$ZONE_ID" ] || candidate="${candidate#*.}"
+          done
+          [ -n "$ZONE_ID" ] || { echo "::error::No Cloudflare zone found for $HOST. Is the domain in this Cloudflare account, and does the token have Zone → DNS → Edit on it?"; exit 1; }
+          echo "Zone: $candidate"
+
+          TUNNEL_ID="$(cf GET "/accounts/$CF_ACCOUNT/cfd_tunnel?name=$SERVER_NAME&is_deleted=false" | jq -r '.result[0].id // empty')"
+          if [ -z "$TUNNEL_ID" ]; then
+            TUNNEL_ID="$(cf POST "/accounts/$CF_ACCOUNT/cfd_tunnel" "$(jq -nc --arg n "$SERVER_NAME" '{name:$n, config_src:"cloudflare"}')" | jq -r .result.id)"
+            echo "Created tunnel $TUNNEL_ID"
+          else
+            echo "Reusing tunnel $TUNNEL_ID"
+          fi
+          cf PUT "/accounts/$CF_ACCOUNT/cfd_tunnel/$TUNNEL_ID/configurations" "$(jq -nc --arg h "$HOST" \
+            '{config:{ingress:[{hostname:$h, service:"http://127.0.0.1:8787"}, {service:"http_status:404"}]}}')" > /dev/null
+          TUNNEL_TOKEN="$(cf GET "/accounts/$CF_ACCOUNT/cfd_tunnel/$TUNNEL_ID/token" | jq -r .result)"
+          echo "::add-mask::$TUNNEL_TOKEN"
+          echo "TUNNEL_TOKEN=$TUNNEL_TOKEN" >> "$GITHUB_ENV"
+
+          RECORD="$(jq -nc --arg n "$HOST" --arg c "$TUNNEL_ID.cfargotunnel.com" '{type:"CNAME", name:$n, content:$c, proxied:true, ttl:1, comment:"Arcana room server (Cloudflare Tunnel)"}')"
+          EXISTING="$(cf GET "/zones/$ZONE_ID/dns_records?name=$HOST" | jq -r '.result[0].id // empty')"
+          if [ -n "$EXISTING" ]; then cf PUT "/zones/$ZONE_ID/dns_records/$EXISTING" "$RECORD" > /dev/null; echo "Updated DNS $HOST"
+          else cf POST "/zones/$ZONE_ID/dns_records" "$RECORD" > /dev/null; echo "Created DNS $HOST"; fi
+
+      - name: Hetzner — firewall and server
+        run: |
+          set -euo pipefail
+          hz() { # method path [json]
+            local out code
+            out="$(curl -sS -w '\n%{http_code}' -X "$1" "https://api.hetzner.cloud/v1$2" -H "Authorization: Bearer $HCLOUD_TOKEN" -H "Content-Type: application/json" ${3:+--data "$3"})"
+            code="$(echo "$out" | tail -1)"; out="$(echo "$out" | sed '$d')"
+            if [ "$code" -ge 300 ]; then echo "HETZNER_ERROR $code $(echo "$out" | jq -c .error)" >&2; return 1; fi
+            echo "$out"
+          }
+          SERVER="$(hz GET "/servers?name=$SERVER_NAME" | jq -c '.servers[0] // empty')"
+          if [ -n "$SERVER" ]; then
+            echo "Server $SERVER_NAME already exists ($(echo "$SERVER" | jq -r '.server_type.name + " in " + .datacenter.location.name')). Not creating another."
+            echo "It keeps updating itself from its live branch."
+            exit 0
+          fi
+          FW="$(hz GET "/firewalls?name=$SERVER_NAME-no-inbound" | jq -r '.firewalls[0].id // empty')"
+          if [ -z "$FW" ]; then
+            FW="$(hz POST /firewalls "$(jq -nc --arg n "$SERVER_NAME-no-inbound" '{name:$n, rules:[], labels:{app:"arcana-rooms"}}')" | jq -r .firewall.id)"
+          fi
+          {
+            echo '#!/bin/bash'
+            printf 'export REPO_URL=%q BRANCH=%q TUNNEL_TOKEN=%q\n' "https://github.com/${GITHUB_REPOSITORY}.git" "$LIVE_BRANCH" "$TUNNEL_TOKEN"
+            echo 'bash -s > /var/log/arcana-rooms-install.log 2>&1 <<'"'"'ARCANA_INSTALL'"'"''
+            cat room-server/deploy/install.sh
+            echo 'ARCANA_INSTALL'
+          } > "$RUNNER_TEMP/user-data.sh"
+          TYPES="$(hz GET '/server_types?per_page=50')"
+          created=""
+          for LOC in hil ash; do
+            CANDIDATES="$(echo "$TYPES" | jq -r --arg loc "$LOC" '[.server_types[]
+              | select((.deprecation == null) and (.cpu_type == "shared") and (.memory >= 2))
+              | {name, price: ((.prices[] | select(.location == $loc) | .price_monthly.gross | tonumber) // null)}
+              | select(.price != null)] | sort_by(.price) | .[] | "\(.name) \(.price)"')"
+            while read -r TYPE PRICE; do
+              [ -n "$TYPE" ] || continue
+              BODY="$(jq -nc --arg n "$SERVER_NAME" --arg t "$TYPE" --arg l "$LOC" --argjson fw "$FW" --rawfile ud "$RUNNER_TEMP/user-data.sh" \
+                '{name:$n, server_type:$t, location:$l, image:"ubuntu-24.04", user_data:$ud, firewalls:[{firewall:$fw}],
+                  labels:{app:"arcana-rooms"}, public_net:{enable_ipv4:true, enable_ipv6:true}}')"
+              if OUT="$(hz POST /servers "$BODY" 2>"$RUNNER_TEMP/err")"; then
+                created="$TYPE in $LOC (about €$(printf '%.2f' "$PRICE")/month incl. VAT, plus IPv4)"
+                break 2
+              fi
+              echo "Could not create $TYPE in $LOC: $(cat "$RUNNER_TEMP/err")"
+            done <<< "$CANDIDATES"
+          done
+          [ -n "$created" ] || { echo "::error::Hetzner had no suitable server available. Re-run later."; exit 1; }
+          echo "Created $SERVER_NAME: $created"
+          echo "CREATED=$created" >> "$GITHUB_ENV"
+
+      - name: Wait until the room server answers on https://${{ env.HOST }}/health
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 90); do
+            if BODY="$(curl -fsS --max-time 10 "https://$HOST/health" 2>/dev/null)" && echo "$BODY" | jq -e '.service == "arcana-table-rooms" and .host == "self"' > /dev/null; then
+              echo "LIVE: $BODY"
+              {
+                echo "## Arcana room server is live"
+                echo "- Address: https://$HOST"
+                echo "- ${CREATED:-Existing server reused}"
+                echo "- Health: \`$BODY\`"
+              } >> "$GITHUB_STEP_SUMMARY"
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "::error::https://$HOST/health did not answer within 15 minutes. A brand-new server can take a little longer; re-run this workflow (it reuses everything) to check again."
+          exit 1

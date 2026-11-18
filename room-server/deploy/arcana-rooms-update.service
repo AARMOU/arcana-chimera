@@ -1,0 +1,7 @@
+[Unit]
+Description=Update the Arcana room server from its live branch (only if tests pass)
+After=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/opt/arcana-rooms/update.sh
