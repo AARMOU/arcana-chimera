@@ -5,7 +5,11 @@ name: Room server — set up Hetzner + Cloudflare (owner-approved)
 #     with a firewall that blocks ALL inbound traffic; players reach it only through the tunnel.
 # Safe to re-run: existing tunnel, DNS record and server are reused, never duplicated.
 # After setup the server updates itself from the room-server-live branch, only when tests pass.
+# Start it either from Actions → Run workflow, or by pushing to the
+# room-server-provision branch (hostname then comes from config/room-server.env).
 on:
+  push:
+    branches: [room-server-provision]
   workflow_dispatch:
     inputs:
       hostname:
@@ -27,7 +31,7 @@ jobs:
       CF_TOKEN: ${{ secrets.CLOUDFLARE_ROOMS_TOKEN }}
       CF_ACCOUNT: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
       HOSTNAME_IN: ${{ inputs.hostname }}
-      LIVE_BRANCH: ${{ inputs.live_branch }}
+      LIVE_BRANCH: ${{ inputs.live_branch || 'room-server-live' }}
       SERVER_NAME: arcana-rooms
     steps:
       - uses: actions/checkout@v4
@@ -41,6 +45,8 @@ jobs:
             if [ -z "${!name}" ]; then echo "::error::Missing secret for $name"; missing=1; fi
           done
           [ "$missing" -eq 0 ] || { echo "::error::Add HCLOUD_TOKEN, CLOUDFLARE_ROOMS_TOKEN (and CLOUDFLARE_ACCOUNT_ID) under Settings → Secrets and variables → Actions."; exit 1; }
+          if [ -z "$HOSTNAME_IN" ]; then HOSTNAME_IN="$(sed -n 's/^ROOM_SERVER_HOSTNAME=//p' config/room-server.env | tr -d '[:space:]')"; fi
+          [ -n "$HOSTNAME_IN" ] || { echo "::error::Set ROOM_SERVER_HOSTNAME in config/room-server.env or pass a hostname."; exit 1; }
           HOST="$(echo "$HOSTNAME_IN" | tr 'A-Z' 'a-z' | sed 's#^https\?://##; s#/.*##')"
           echo "$HOST" | grep -Eq '^[a-z0-9-]+(\.[a-z0-9-]+)+$' || { echo "::error::Not a hostname: $HOSTNAME_IN"; exit 1; }
           git ls-remote --exit-code "https://github.com/${GITHUB_REPOSITORY}.git" "refs/heads/$LIVE_BRANCH" > /dev/null \
