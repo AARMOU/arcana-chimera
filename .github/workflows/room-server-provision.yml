@@ -108,7 +108,7 @@ jobs:
             us) LOCATIONS="hil ash" ;;
             *) echo "::error::ROOM_SERVER_REGION must be eu or us, not '$REGION'"; exit 1 ;;
           esac
-          EXISTING="$(hz GET '/servers?label_selector=app%3Darcana-rooms&per_page=50' | jq -c '[.servers[] | {id, name, loc: .datacenter.location.name, type: .server_type.name}]')"
+          EXISTING="$(hz GET '/servers?label_selector=app%3Darcana-rooms&per_page=50' | jq -c '[.servers[] | {id, name, loc: (.location.name // .datacenter.location.name), type: .server_type.name}]')"
           KEEP="$(echo "$EXISTING" | jq -r --arg locs "$LOCATIONS" '[.[] | select(.loc as $l | ($locs | split(" ") | index($l)))][0].name // empty')"
           if [ -n "$KEEP" ]; then
             echo "Server $KEEP is already in region $REGION. Nothing to create."
