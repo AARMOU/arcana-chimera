@@ -1,9 +1,11 @@
 name: Room server — set up Hetzner + Cloudflare (owner-approved)
 # Creates (once) and configures Arcana's self-hosted room server:
 #   * Cloudflare Tunnel "arcana-rooms" + DNS name (e.g. rooms.example.com)
-#   * Hetzner server "arcana-rooms" (cheapest shared type, >= 2 GB RAM, US West then US East)
+#   * Hetzner server "arcana-rooms-<location>" (cheapest shared type >= 2 GB RAM in ROOM_SERVER_REGION, eu or us)
 #     with a firewall that blocks ALL inbound traffic; players reach it only through the tunnel.
 # Safe to re-run: existing tunnel, DNS record and server are reused, never duplicated.
+# Changing ROOM_SERVER_REGION moves the server: the new one must be tested and serving
+# through the tunnel before the old one is deleted.
 # After setup the server updates itself from the room-server-live branch, only when tests pass.
 # Start it either from Actions → Run workflow, or by pushing to the
 # room-server-provision branch (hostname then comes from config/room-server.env).
@@ -52,6 +54,8 @@ jobs:
           git ls-remote --exit-code "https://github.com/${GITHUB_REPOSITORY}.git" "refs/heads/$LIVE_BRANCH" > /dev/null \
             || { echo "::error::Branch $LIVE_BRANCH does not exist"; exit 1; }
           echo "HOST=$HOST" >> "$GITHUB_ENV"
+          REGION="$(sed -n 's/^ROOM_SERVER_REGION=//p' config/room-server.env | tr -d '[:space:]')"
+          echo "REGION=${REGION:-eu}" >> "$GITHUB_ENV"
 
       - name: Cloudflare — tunnel, routing and DNS
         run: |
@@ -81,6 +85,7 @@ jobs:
             '{config:{ingress:[{hostname:$h, service:"http://127.0.0.1:8787"}, {service:"http_status:404"}]}}')" > /dev/null
           TUNNEL_TOKEN="$(cf GET "/accounts/$CF_ACCOUNT/cfd_tunnel/$TUNNEL_ID/token" | jq -r .result)"
           echo "::add-mask::$TUNNEL_TOKEN"
+          echo "TUNNEL_ID=$TUNNEL_ID" >> "$GITHUB_ENV"
           echo "TUNNEL_TOKEN=$TUNNEL_TOKEN" >> "$GITHUB_ENV"
 
           RECORD="$(jq -nc --arg n "$HOST" --arg c "$TUNNEL_ID.cfargotunnel.com" '{type:"CNAME", name:$n, content:$c, proxied:true, ttl:1, comment:"Arcana room server (Cloudflare Tunnel)"}')"
@@ -88,7 +93,7 @@ jobs:
           if [ -n "$EXISTING" ]; then cf PUT "/zones/$ZONE_ID/dns_records/$EXISTING" "$RECORD" > /dev/null; echo "Updated DNS $HOST"
           else cf POST "/zones/$ZONE_ID/dns_records" "$RECORD" > /dev/null; echo "Created DNS $HOST"; fi
 
-      - name: Hetzner — firewall and server
+      - name: Hetzner — firewall and server (replaces a server in the wrong region only after the new one is serving)
         run: |
           set -euo pipefail
           hz() { # method path [json]
@@ -98,12 +103,22 @@ jobs:
             if [ "$code" -ge 300 ]; then echo "HETZNER_ERROR $code $(echo "$out" | jq -c .error)" >&2; return 1; fi
             echo "$out"
           }
-          SERVER="$(hz GET "/servers?name=$SERVER_NAME" | jq -c '.servers[0] // empty')"
-          if [ -n "$SERVER" ]; then
-            echo "Server $SERVER_NAME already exists ($(echo "$SERVER" | jq -r '.server_type.name + " in " + .datacenter.location.name')). Not creating another."
-            echo "It keeps updating itself from its live branch."
+          case "$REGION" in
+            eu) LOCATIONS="fsn1 nbg1 hel1" ;;
+            us) LOCATIONS="hil ash" ;;
+            *) echo "::error::ROOM_SERVER_REGION must be eu or us, not '$REGION'"; exit 1 ;;
+          esac
+          EXISTING="$(hz GET '/servers?label_selector=app%3Darcana-rooms&per_page=50' | jq -c '[.servers[] | {id, name, loc: .datacenter.location.name, type: .server_type.name}]')"
+          KEEP="$(echo "$EXISTING" | jq -r --arg locs "$LOCATIONS" '[.[] | select(.loc as $l | ($locs | split(" ") | index($l)))][0].name // empty')"
+          if [ -n "$KEEP" ]; then
+            echo "Server $KEEP is already in region $REGION. Nothing to create."
+            echo "OLD_IDS=$(echo "$EXISTING" | jq -r --arg k "$KEEP" '[.[] | select(.name != $k) | .id] | join(" ")')" >> "$GITHUB_ENV"
+            echo "NEW_IP=" >> "$GITHUB_ENV"
             exit 0
           fi
+          echo "OLD_IDS=$(echo "$EXISTING" | jq -r '[.[].id] | join(" ")')" >> "$GITHUB_ENV"
+          echo "Existing servers to replace: $(echo "$EXISTING" | jq -r '[.[] | "\(.name) (\(.type) in \(.loc))"] | join(", ") | if . == "" then "none" else . end')"
+
           FW="$(hz GET "/firewalls?name=$SERVER_NAME-no-inbound" | jq -r '.firewalls[0].id // empty')"
           if [ -z "$FW" ]; then
             FW="$(hz POST /firewalls "$(jq -nc --arg n "$SERVER_NAME-no-inbound" '{name:$n, rules:[], labels:{app:"arcana-rooms"}}')" | jq -r .firewall.id)"
@@ -116,27 +131,58 @@ jobs:
             echo 'ARCANA_INSTALL'
           } > "$RUNNER_TEMP/user-data.sh"
           TYPES="$(hz GET '/server_types?per_page=50')"
+          # Cheapest shared server with >= 2 GB in the region, x86 or Arm, across all its locations.
+          CANDIDATES="$(echo "$TYPES" | jq -r --arg locs "$LOCATIONS" '[.server_types[]
+            | select((.deprecation == null) and (.cpu_type == "shared") and (.memory >= 2)) as $t
+            | ($locs | split(" ") | to_entries[]) as $l
+            | ($t.prices[] | select(.location == $l.value) | .price_monthly.gross | tonumber) as $price
+            | {name: $t.name, loc: $l.value, order: $l.key, price: $price, arch: $t.architecture, mem: $t.memory}]
+            | sort_by(.price, .order) | .[] | "\(.name) \(.loc) \(.price) \(.arch) \(.mem)"')"
+          echo "Candidates (type location €/month arch GB):"; echo "$CANDIDATES" | head -8
           created=""
-          for LOC in hil ash; do
-            CANDIDATES="$(echo "$TYPES" | jq -r --arg loc "$LOC" '[.server_types[]
-              | select((.deprecation == null) and (.cpu_type == "shared") and (.memory >= 2))
-              | {name, price: ((.prices[] | select(.location == $loc) | .price_monthly.gross | tonumber) // null)}
-              | select(.price != null)] | sort_by(.price) | .[] | "\(.name) \(.price)"')"
-            while read -r TYPE PRICE; do
-              [ -n "$TYPE" ] || continue
-              BODY="$(jq -nc --arg n "$SERVER_NAME" --arg t "$TYPE" --arg l "$LOC" --argjson fw "$FW" --rawfile ud "$RUNNER_TEMP/user-data.sh" \
-                '{name:$n, server_type:$t, location:$l, image:"ubuntu-24.04", user_data:$ud, firewalls:[{firewall:$fw}],
-                  labels:{app:"arcana-rooms"}, public_net:{enable_ipv4:true, enable_ipv6:true}}')"
-              if OUT="$(hz POST /servers "$BODY" 2>"$RUNNER_TEMP/err")"; then
-                created="$TYPE in $LOC (about €$(printf '%.2f' "$PRICE")/month incl. VAT, plus IPv4)"
-                break 2
-              fi
-              echo "Could not create $TYPE in $LOC: $(cat "$RUNNER_TEMP/err")"
-            done <<< "$CANDIDATES"
-          done
-          [ -n "$created" ] || { echo "::error::Hetzner had no suitable server available. Re-run later."; exit 1; }
-          echo "Created $SERVER_NAME: $created"
+          while read -r TYPE LOC PRICE ARCH MEM; do
+            [ -n "$TYPE" ] || continue
+            NAME="$SERVER_NAME-$LOC"
+            BODY="$(jq -nc --arg n "$NAME" --arg t "$TYPE" --arg l "$LOC" --argjson fw "$FW" --rawfile ud "$RUNNER_TEMP/user-data.sh" \
+              '{name:$n, server_type:$t, location:$l, image:"ubuntu-24.04", user_data:$ud, firewalls:[{firewall:$fw}],
+                labels:{app:"arcana-rooms"}, public_net:{enable_ipv4:true, enable_ipv6:true}}')"
+            if OUT="$(hz POST /servers "$BODY" 2>"$RUNNER_TEMP/err")"; then
+              created="$NAME: $TYPE ($ARCH, $MEM GB) in $LOC, about €$(printf '%.2f' "$PRICE")/month incl. VAT, plus IPv4"
+              echo "NEW_IP=$(echo "$OUT" | jq -r .server.public_net.ipv4.ip)" >> "$GITHUB_ENV"
+              echo "NEW_IP6=$(echo "$OUT" | jq -r '.server.public_net.ipv6.ip | sub("::/64$"; "")')" >> "$GITHUB_ENV"
+              break
+            fi
+            echo "Could not create $TYPE in $LOC: $(cat "$RUNNER_TEMP/err")"
+          done <<< "$CANDIDATES"
+          [ -n "$created" ] || { echo "::error::Hetzner had no suitable server available in region $REGION. Re-run later."; exit 1; }
+          echo "Created $created"
           echo "CREATED=$created" >> "$GITHUB_ENV"
+
+      - name: Wait until the NEW server is tested and connected to the tunnel
+        if: env.NEW_IP != ''
+        run: |
+          set -euo pipefail
+          # install.sh connects the tunnel only after the server passed its own tests and started.
+          for attempt in $(seq 1 90); do
+            CONNS="$(curl -sS "https://api.cloudflare.com/client/v4/accounts/$CF_ACCOUNT/cfd_tunnel/$TUNNEL_ID/connections" -H "Authorization: Bearer $CF_TOKEN")"
+            if echo "$CONNS" | jq -e --arg ip "$NEW_IP" --arg ip6 "$NEW_IP6" \
+                '[.result[]?.conns[]?.origin_ip // empty] | any(. == $ip or startswith($ip6))' > /dev/null; then
+              echo "New server is connected to the tunnel."
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "::error::The new server did not connect within 15 minutes. The old server (if any) was NOT removed. Re-run this workflow to check again."
+          exit 1
+
+      - name: Remove replaced servers
+        if: env.OLD_IDS != ''
+        run: |
+          set -euo pipefail
+          for id in $OLD_IDS; do
+            curl -fsS -X DELETE "https://api.hetzner.cloud/v1/servers/$id" -H "Authorization: Bearer $HCLOUD_TOKEN" > /dev/null
+            echo "Deleted old server $id"
+          done
 
       - name: Wait until the room server answers on https://${{ env.HOST }}/health
         run: |
@@ -154,5 +200,5 @@ jobs:
             fi
             sleep 10
           done
-          echo "::error::https://$HOST/health did not answer within 15 minutes. A brand-new server can take a little longer; re-run this workflow (it reuses everything) to check again."
+          echo "::error::https://$HOST/health did not answer within 15 minutes. Re-run this workflow (it reuses everything) to check again."
           exit 1

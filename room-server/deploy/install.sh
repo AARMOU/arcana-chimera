@@ -16,12 +16,6 @@ printf 'APT::Periodic::Update-Package-Lists "1";\nAPT::Periodic::Unattended-Upgr
 curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
 apt-get install -yq nodejs
 
-# Cloudflare Tunnel: the only way in. The server opens no inbound ports.
-mkdir -p --mode=0755 /usr/share/keyrings
-curl -fsSL https://pkg.cloudflare.com/cloudflare-main.gpg -o /usr/share/keyrings/cloudflare-main.gpg
-echo 'deb [signed-by=/usr/share/keyrings/cloudflare-main.gpg] https://pkg.cloudflare.com/cloudflared any main' > /etc/apt/sources.list.d/cloudflared.list
-apt-get update -q && apt-get install -yq cloudflared
-cloudflared service install "$TUNNEL_TOKEN"
 
 # Many simultaneous phones
 cat > /etc/sysctl.d/90-arcana-rooms.conf <<'SYSCTL'
@@ -47,4 +41,14 @@ rm -rf "$TMP"
 "$BASE/update.sh"
 systemctl daemon-reload
 systemctl enable --now arcana-rooms.service arcana-rooms-update.timer
+for attempt in $(seq 1 30); do curl -fsS http://127.0.0.1:8787/health > /dev/null && break; sleep 2; done
+curl -fsS http://127.0.0.1:8787/health > /dev/null
+
+# Cloudflare Tunnel: the only way in. The server opens no inbound ports.
+# Connected LAST, so players only ever reach a server that passed its tests and is running.
+mkdir -p --mode=0755 /usr/share/keyrings
+curl -fsSL https://pkg.cloudflare.com/cloudflare-main.gpg -o /usr/share/keyrings/cloudflare-main.gpg
+echo 'deb [signed-by=/usr/share/keyrings/cloudflare-main.gpg] https://pkg.cloudflare.com/cloudflared any main' > /etc/apt/sources.list.d/cloudflared.list
+apt-get update -q && apt-get install -yq cloudflared
+cloudflared service install "$TUNNEL_TOKEN"
 echo "ARCANA_ROOMS_INSTALLED"

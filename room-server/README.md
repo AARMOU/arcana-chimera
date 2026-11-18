@@ -29,7 +29,10 @@ connected at once, 37,500 relayed 2 KB messages in 1.5 s, about 230 MB memory.
 ## Setting up / changing the server
 
 - **First setup:** Actions → *Room server — set up Hetzner + Cloudflare* → Run,
-  with the hostname (e.g. `rooms.example.com`). Needs repository secrets
+  with the hostname (e.g. `rooms.example.com`), or push to `room-server-provision`
+  (hostname and region from `config/room-server.env`; region `eu` or `us`).
+  Changing the region moves the server safely: the new one must be tested and
+  connected before the old one is deleted. Needs repository secrets
   `HCLOUD_TOKEN`, `CLOUDFLARE_ROOMS_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`. Re-running is
   safe: it reuses the tunnel, DNS record and server.
 - **Updates:** the server checks the `room-server-live` branch every 5 minutes.
