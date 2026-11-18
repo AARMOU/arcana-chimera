@@ -143,6 +143,7 @@ python3 "$ROOT/scripts/patch_view_table.py" "$APP" # owner, Nov 12: declare atta
 python3 "$ROOT/scripts/patch_blocker_strip_center.py" "$APP" # owner, Nov 11-12: "CAN BLOCK WITH" strip centered
 python3 "$ROOT/scripts/patch_chimera_legal_navigation.py" "$APP" # notices and source in Options; no intrusive menu shortcuts
 python3 "$ROOT/scripts/patch_engine_running_default.py" "$APP" # engine processing banner OFF unless owner opts in
+python3 "$ROOT/scripts/patch_life_log.py" "$APP" # owner, Nov 17: every life change, with its cause, in the diagnostic log
 # Foreground service: keeps the Forge game alive while the player is in another app.
 python3 - "$APP/src/main/AndroidManifest.xml" <<'PY'
 import sys; p = sys.argv[1]; s = open(p).read()

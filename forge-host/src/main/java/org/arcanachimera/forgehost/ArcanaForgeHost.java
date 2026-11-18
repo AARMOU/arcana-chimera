@@ -115,6 +115,7 @@ public final class ArcanaForgeHost {
     }
     private volatile Input lastAutoPaid;
     private volatile Input lastPrompted;
+    private volatile Input lifeAsked; // the payment waiting on "pay with life?"
     /** This person's "always yes" optional triggers (Forge's yieldKey: card and trigger), for this game. */
     private final java.util.Set<String> alwaysAccept = java.util.concurrent.ConcurrentHashMap.newKeySet();
     private volatile int mulligans = -1;
@@ -725,6 +726,251 @@ public final class ArcanaForgeHost {
         finally { PRICING.set(false); }
     }
 
+    // ---- Mana that costs life (owner, Nov 17: Treasonous Ogre paid 3 life a time, silently, down to 1 life) ----
+
+    /** Your mana abilities that cost life to activate ("Pay 3 life: Add {R}"), on the battlefield or in the command zone. */
+    private static List<SpellAbility> lifeManaAbilities(Player p) {
+        List<SpellAbility> out = new ArrayList<>();
+        if (p == null) return out;
+        for (ZoneType z : new ZoneType[] { ZoneType.Battlefield, ZoneType.Command })
+            for (Card c : p.getCardsIn(z))
+                for (SpellAbility ma : c.getManaAbilities())
+                    if (ma.getPayCosts() != null && ma.getPayCosts().getCostParts().stream().anyMatch(part -> part instanceof forge.game.cost.CostPayLife))
+                        out.add(ma);
+        return out;
+    }
+
+    /** "Treasonous Ogre (Pay 3 life: Add {R})", one per card. */
+    private static String lifeManaText(List<SpellAbility> lifeMana) {
+        java.util.LinkedHashSet<String> names = new java.util.LinkedHashSet<>();
+        for (SpellAbility ma : lifeMana) names.add((ma.getHostCard() == null ? "a card" : ma.getHostCard().getName()) + " (" + ma.toUnsuppressedString().trim().replaceAll("\\.$", "") + ")");
+        return String.join(", ", names);
+    }
+
+    /**
+     * Forge's automatic payment keeps each life-costing mana ability's "AILifeThreshold" (life it must leave you with).
+     * Raised out of reach, the payment can't use it; the old values come back afterwards.
+     */
+    private static final String NO_LIFE = String.valueOf(Integer.MAX_VALUE / 2);
+    private static Map<SpellAbility, String> withoutLifeMana(List<SpellAbility> lifeMana) {
+        Map<SpellAbility, String> before = new java.util.HashMap<>();
+        for (SpellAbility ma : lifeMana) { before.put(ma, ma.hasParam("AILifeThreshold") ? ma.getParam("AILifeThreshold") : null); ma.putParam("AILifeThreshold", NO_LIFE); }
+        return before;
+    }
+    private static void restoreLifeMana(Map<SpellAbility, String> before) {
+        for (Map.Entry<SpellAbility, String> e : before.entrySet()) {
+            if (e.getValue() == null) e.getKey().removeParam("AILifeThreshold"); else e.getKey().putParam("AILifeThreshold", e.getValue());
+        }
+    }
+
+    /** Can the open payment be made now, leaving out {@code avoided} mana abilities? Never stops to ask you while checking. */
+    private boolean canPayNow(Input input, SpellAbility paidFor, Player payer, List<SpellAbility> avoided) {
+        Map<SpellAbility, String> before = withoutLifeMana(avoided);
+        PRICING.set(true);
+        try {
+            return field(input, "manaCost") instanceof forge.game.mana.ManaCostBeingPaid mc
+                    ? forge.ai.ComputerUtilMana.canPayManaCost(new forge.game.mana.ManaCostBeingPaid(mc), paidFor, payer, Boolean.TRUE.equals(field(input, "effect")))
+                    : forge.ai.ComputerUtilMana.canPayManaCost(paidFor, payer, 0, false);
+        } catch (AskedWhilePricing asked) {
+            return true; // Forge will ask while paying
+        } catch (RuntimeException e) {
+            return avoided.isEmpty(); // could not check: never assume the life-free payment works
+        } finally {
+            PRICING.set(false);
+            restoreLifeMana(before);
+        }
+    }
+
+    /**
+     * Forge's automatic payment, with your life-costing mana held back. Forge's own "Auto" button pays on a game thread
+     * (InputPayMana.onOk); pressing it from one runs the payment right here, so the held-back abilities come back only
+     * after it has finished.
+     */
+    private void payWithoutLife(PlayerControllerHuman you, List<SpellAbility> lifeMana) {
+        Game game = you.getPlayer().getGame();
+        game.getAction().invoke(() -> {
+            Map<SpellAbility, String> before = withoutLifeMana(lifeMana);
+            try { ok(you); } finally { restoreLifeMana(before); }
+        });
+    }
+
+    /** Paying needs mana that costs life: ask first. No: the spell is cancelled, and you can tap mana yourself. */
+    private void askToPayWithLife(Input input, SpellAbility paidFor, PlayerControllerHuman you, List<SpellAbility> lifeMana) throws Exception {
+        final Input payInput = input;
+        lifeAsked = input;
+        String what = paidFor.getHostCard() == null ? "this" : paidFor.getHostCard().getName();
+        String cost = String.valueOf(field(input, "manaCost")).trim();
+        JSONObject d = decisionBase("YesNoDecision", "Paying " + cost + " for " + what + " needs mana from " + lifeManaText(lifeMana)
+                + ". You have " + you.getPlayer().getLife() + " life. Pay with life?")
+                .put("yesText", "Pay with life").put("noText", "Cancel, I'll tap mana myself");
+        openForInput(d, new java.util.HashMap<>(), r -> {
+            if (r.optBoolean("choice")) { lastAutoPaid = payInput; ok(you); }
+            else { lastAutoPaid = payInput; cancel(you); note(what + " was cancelled. Tap the mana you want to use first, then cast it again."); }
+        });
+    }
+
+    // ---- Life ledger (owner, Nov 17: "I need to figure out how I lost so much life"): every life change, with its cause ----
+
+    private final Object lifeLock = new Object();
+    private final List<JSONObject> lifeEvents = new ArrayList<>();
+    private volatile Game lifeWatched;
+    private volatile Player lifeYou; // this view's own player, for "You" in the log
+
+    private void watchLife(Game game) {
+        if (lifeWatched == game) return;
+        synchronized (lifeLock) { lifeEvents.clear(); }
+        lifeWatched = game;
+        game.subscribeToEvents(new LifeLedger(game));
+    }
+
+    /** The life changes not yet sent to the app (oldest first); put back with {@link #unsendLife} if not sent. */
+    private JSONArray takeLife() {
+        synchronized (lifeLock) {
+            JSONArray out = new JSONArray();
+            for (JSONObject e : lifeEvents) { e.remove("pending"); e.remove("fid"); out.put(e); }
+            lifeEvents.clear();
+            return out;
+        }
+    }
+    private void unsendLife(JSONArray sent) {
+        synchronized (lifeLock) { for (int i = sent.length() - 1; i >= 0; i--) lifeEvents.add(0, sent.optJSONObject(i)); }
+    }
+
+    /** Listens to Forge's game events (on its game thread) and writes down who lost or gained life, and why. */
+    public final class LifeLedger {
+        private final Game game;
+        /** Damage dealt but not yet taken off a life total (Forge subtracts it afterwards, all at once). */
+        private final Map<Integer, List<Object[]>> dealt = new java.util.HashMap<>();
+        LifeLedger(Game game) { this.game = game; }
+
+        private Player player(forge.game.player.PlayerView pv) {
+            for (Player p : game.getRegisteredPlayers()) if (p.getId() == pv.getId()) return p;
+            return null;
+        }
+
+        private JSONObject entry(forge.game.player.PlayerView pv, int from, int to, String cause) throws Exception {
+            Player p = player(pv);
+            // not humanController(): while Forge pays automatically, your seat is briefly run by its AI controller
+            boolean isYou = p != null && p == lifeYou;
+            PhaseHandler ph = game.getPhaseHandler();
+            String name = p != null && p.getName() != null && !p.getName().isBlank() ? p.getName() : pv.getName();
+            return new JSONObject().put("playerId", p == null ? JSONObject.NULL : playerId(p)).put("name", name).put("isYou", isYou).put("fid", pv.getId())
+                    .put("from", from).put("to", to).put("change", to - from).put("cause", cause)
+                    .put("turn", ph.getTurn()).put("step", ph.getPhase() == null ? "" : ph.getPhase().name().replace('_', ' '));
+        }
+
+        private void add(JSONObject e) { synchronized (lifeLock) { if (lifeWatched == game && lifeEvents.size() < 2000) lifeEvents.add(e); } }
+
+        @com.google.common.eventbus.Subscribe
+        public void damaged(forge.game.event.GameEventPlayerDamaged ev) {
+            try {
+                if (ev.infect()) { // poison, not life
+                    int before = player(ev.target()) == null ? 0 : Math.max(0, player(ev.target()).getPoisonCounters() - ev.amount());
+                    JSONObject e = entry(ev.target(), 0, 0, ev.amount() + " infect damage from " + ev.source().getName() + " (poison counters, not life)");
+                    add(e.put("kind", "poison").put("change", 0).put("from", before).put("to", before + ev.amount()));
+                    return;
+                }
+                synchronized (dealt) {
+                    dealt.computeIfAbsent(ev.target().getId(), k -> new ArrayList<>())
+                            .add(new Object[] { ev.source() == null ? "an unknown source" : ev.source().getName(), ev.amount(), ev.combat() });
+                }
+            } catch (Exception ignored) { }
+        }
+
+        @com.google.common.eventbus.Subscribe
+        public void lifeChanged(forge.game.event.GameEventPlayerLivesChanged ev) {
+            try {
+                int change = ev.newLives() - ev.oldLives();
+                if (change == 0) return;
+                List<Object[]> hits;
+                synchronized (dealt) { hits = dealt.remove(ev.player().getId()); }
+                String cause;
+                boolean pending = false;
+                if (change < 0 && hits != null && !hits.isEmpty()) {
+                    cause = damageText(hits);
+                } else if (change < 0 && inCall("payLife")) {
+                    cause = "paid " + (-change) + " life"; pending = true; // which card: the mana or spell it paid for, next
+                } else if (inCall("setLife")) {
+                    cause = "life total set to " + ev.newLives() + by(" by ");
+                } else {
+                    cause = (change < 0 ? "lost " + (-change) + " life" : "gained " + change + " life") + by(change < 0 ? " to " : " from ");
+                    if (cause.endsWith(" life")) cause += " (Forge didn't say from what)";
+                }
+                JSONObject e = entry(ev.player(), ev.oldLives(), ev.newLives(), cause);
+                if (pending) e.put("pending", true);
+                add(e);
+            } catch (Exception ignored) { }
+        }
+
+        /** Mana added after life was paid: the life paid for that mana. */
+        @com.google.common.eventbus.Subscribe
+        public void mana(forge.game.event.GameEventManaPool ev) {
+            if (ev.mode() != forge.game.event.EventValueChangeType.Added || !hasPending(ev.player())) return;
+            Player p = player(ev.player());
+            if (p == null) return;
+            forge.game.mana.Mana last = null;
+            try { for (forge.game.mana.Mana m : p.getManaPool()) last = m; } catch (RuntimeException ignored) { }
+            if (last == null || last.getSourceCard() == null) return;
+            finishPaid(ev.player(), " for mana from " + last.getSourceCard().getName());
+        }
+
+        /** A spell or ability cast after life was paid (Phyrexian mana, "As an additional cost, pay 2 life"...). */
+        @com.google.common.eventbus.Subscribe
+        public void cast(forge.game.event.GameEventSpellAbilityCast ev) {
+            try {
+                forge.game.card.CardView host = ev.sa().getHostCard();
+                if (host != null && host.getController() != null && hasPending(host.getController()))
+                    finishPaid(host.getController(), (ev.sa().isSpell() ? " to cast " : " to activate ") + host.getName());
+            } catch (RuntimeException ignored) { }
+        }
+
+        private boolean hasPending(forge.game.player.PlayerView pv) {
+            synchronized (lifeLock) {
+                for (JSONObject e : lifeEvents) if (e.optBoolean("pending") && e.optInt("fid", -1) == pv.getId()) return true;
+                return false;
+            }
+        }
+
+        private void finishPaid(forge.game.player.PlayerView pv, String what) {
+            synchronized (lifeLock) {
+                for (int i = lifeEvents.size() - 1; i >= 0; i--) {
+                    JSONObject e = lifeEvents.get(i);
+                    if (!e.optBoolean("pending") || e.optInt("fid", -1) != pv.getId()) continue;
+                    try { e.remove("pending"); e.put("cause", e.optString("cause") + what); } catch (Exception ignored) { }
+                    return;
+                }
+            }
+        }
+
+        private String damageText(List<Object[]> hits) {
+            Map<String, Integer> bySource = new LinkedHashMap<>();
+            int total = 0; boolean combat = false;
+            for (Object[] h : hits) { bySource.merge((String) h[0], (Integer) h[1], Integer::sum); total += (Integer) h[1]; combat |= (Boolean) h[2]; }
+            StringBuilder b = new StringBuilder(total + (combat ? " combat" : "") + " damage");
+            if (bySource.size() == 1) return b.append(" from ").append(bySource.keySet().iterator().next()).toString();
+            b.append(":");
+            boolean first = true;
+            for (Map.Entry<String, Integer> e : bySource.entrySet()) { b.append(first ? " " : ", ").append(e.getValue()).append(" from ").append(e.getKey()); first = false; }
+            return b.toString();
+        }
+
+        /** The spell or ability resolving now, if any ("lost 2 life to Vampire Nighthawk's trigger"). */
+        private String by(String joiner) {
+            try {
+                if (!game.getStack().isResolving() || game.getStack().getResolvingAbility() == null) return "";
+                SpellAbility sa = game.getStack().getResolvingAbility();
+                return sa.getHostCard() == null ? "" : joiner + sa.getHostCard().getName() + (sa.isTrigger() ? " (trigger)" : sa.isSpell() ? "" : " (ability)");
+            } catch (RuntimeException e) { return ""; }
+        }
+    }
+
+    /** Whether Forge's game thread is inside {@code Player.method} right now (how a life payment is told from a loss). */
+    private static boolean inCall(String method) {
+        for (StackTraceElement f : Thread.currentThread().getStackTrace())
+            if (f.getMethodName().equals(method) && f.getClassName().equals("forge.game.player.Player")) return true;
+        return false;
+    }
+
     private static final ThreadLocal<Boolean> PRICING = ThreadLocal.withInitial(() -> false);
     private static final class AskedWhilePricing extends RuntimeException { AskedWhilePricing() { super(null, null, false, false); } }
 
@@ -794,6 +1040,8 @@ public final class ArcanaForgeHost {
         if (game == null) return;
         if (!lossWatchStarted) { lossWatchStarted = true; emitter.schedule(this::watchForLoss, 1, TimeUnit.SECONDS); }
         tuneAi(game);
+        watchLife(game);
+        { PlayerControllerHuman h = humanController(); if (h != null) lifeYou = h.getPlayer(); }
         long buildStart = System.nanoTime();
         PlayerControllerHuman you = humanController();
         Input input = you == null ? null : you.getInputQueue().getActualInput(you);
@@ -801,6 +1049,10 @@ public final class ArcanaForgeHost {
             if (pending != null) { emitDecision(); return; }
             SpellAbility paidFor = field(input, "saPaidFor") instanceof SpellAbility sa ? sa : null;
             boolean optionalTrigger = paidFor != null && (paidFor.isTrigger() || paidFor.getRootAbility().isTrigger());
+            // Owner, Nov 17 (lost 38 life on turn 5): Forge's automatic payment spent Treasonous Ogre's "Pay 3 life: Add {R}"
+            // over and over without asking, down to 1 life. Mana that costs life is never spent automatically now: if the
+            // cost can be paid without it, it is; if not, you're asked first.
+            List<SpellAbility> lifeMana = paidFor == null ? List.of() : lifeManaAbilities(you.getPlayer());
             if (optionalTrigger && input != lastAutoPaid && input != lastPrompted) {
                 // "You may pay {1}" on a trigger (phone, Nov 8: Ultron's Robot): Forge's payment prompt is the choice
                 // itself, so ask instead of paying automatically; if it can't be paid, say so and skip it.
@@ -810,30 +1062,34 @@ public final class ArcanaForgeHost {
                 String source = paidFor.getHostCard() == null ? "an ability" : paidFor.getHostCard().getName();
                 // check the cost being asked for ("unless you pay {1}"), not the trigger's own cost, which is nothing
                 // (soak seeds 118/130, Nov 8: Rhystic Study / Overencumbered looked payable with no mana open)
-                boolean payable;
-                PRICING.set(true);
-                try {
-                    payable = field(input, "manaCost") instanceof forge.game.mana.ManaCostBeingPaid mc
-                            ? forge.ai.ComputerUtilMana.canPayManaCost(mc, paidFor, you.getPlayer(), Boolean.TRUE.equals(field(input, "effect")))
-                            : forge.ai.ComputerUtilMana.canPayManaCost(paidFor, you.getPlayer(), 0, false);
-                } catch (AskedWhilePricing asked) { payable = true; } // Forge will ask while paying
-                finally { PRICING.set(false); }
+                boolean payable = canPayNow(input, paidFor, you.getPlayer(), List.of());
                 if (!asksWhilePricing(paidFor) && !payable) {
                     note("You can't pay " + cost + " for " + source + " right now, so it was skipped."); // a note, not an error (owner list, Nov 10)
                     cancel(you);
                     return;
                 }
-                JSONObject d = decisionBase("YesNoDecision", "Pay " + cost + " for " + source + "? " + paidFor.getStackDescription())
-                        .put("yesText", "Pay " + cost).put("noText", "Don't pay");
+                boolean needsLife = !lifeMana.isEmpty() && !canPayNow(input, paidFor, you.getPlayer(), lifeMana);
+                JSONObject d = decisionBase("YesNoDecision", "Pay " + cost + " for " + source + "? " + paidFor.getStackDescription()
+                        + (needsLife ? " This needs mana from " + lifeManaText(lifeMana) + ". You have " + you.getPlayer().getLife() + " life." : ""))
+                        .put("yesText", needsLife ? "Pay " + cost + " with life" : "Pay " + cost).put("noText", "Don't pay");
                 openForInput(d, new java.util.HashMap<>(), r -> {
-                    if (r.optBoolean("choice")) { lastAutoPaid = payInput; ok(you); } else cancel(you);
+                    if (!r.optBoolean("choice")) { cancel(you); return; }
+                    lastAutoPaid = payInput;
+                    if (needsLife || lifeMana.isEmpty()) ok(you); else payWithoutLife(you, lifeMana);
                 });
                 return;
             }
             // waiting for the answer; once you said "pay" and it still isn't paid, cancel below instead of waiting forever
             if (optionalTrigger && input == lastPrompted && input != lastAutoPaid) return;
+            if (input == lifeAsked && input != lastAutoPaid) return; // waiting for "pay with life?"
             // Spells and abilities you chose: auto-pay (Argentum's default); if that can't pay, cancel instead of looping
-            if (input != lastAutoPaid) { lastAutoPaid = input; ok(you); } else {
+            if (input != lastAutoPaid) {
+                if (!lifeMana.isEmpty()) {
+                    if (canPayNow(input, paidFor, you.getPlayer(), lifeMana)) { lastAutoPaid = input; payWithoutLife(you, lifeMana); return; }
+                    if (canPayNow(input, paidFor, you.getPlayer(), List.of())) { askToPayWithLife(input, paidFor, you, lifeMana); return; }
+                }
+                lastAutoPaid = input; ok(you);
+            } else {
                 if (paidFor != null) failedPayments.put(payKey(paidFor), manaNow(you.getPlayer())); // don't offer it again until your mana changes
                 cancel(you); error("Not enough mana for that, so it was cancelled.");
             }
@@ -889,7 +1145,8 @@ public final class ArcanaForgeHost {
             gameOverSent = true;
             sink.accept(fill(new JSONObject().put("type", "stateUpdate").put("state", state(game, you.getPlayer()))
                     .put("legalActions", new JSONArray()).put("pendingDecision", JSONObject.NULL).put("stateVersion", ++version)
-                    .put("interactive", false).put("interactionEpoch", "forge-" + version).put("priorityMode", "auto"), "top"));
+                    .put("interactive", false).put("interactionEpoch", "forge-" + version).put("priorityMode", "auto")
+                    .put("chimeraLifeEvents", takeLife()), "top"));
             sink.accept(new JSONObject().put("type", "gameOver").put("winnerId", winnerId(game))
                     .put("reason", you.getPlayer().hasLost() && !game.isGameOver() ? "ELIMINATED" : "GAME_OVER")
                     .put("chimeraReveal", reveal(game, you.getPlayer())));
@@ -996,8 +1253,11 @@ public final class ArcanaForgeHost {
         // Forge's game thread can ask a question while this table was being built (it was checked for one many
         // milliseconds ago, above). A table without the question, sent after it, cleared the prompt on the phone and
         // left the game waiting forever (owner's report, Nov 12: trigger order, turn 12). The question stays the last word.
+        JSONArray life = takeLife(); // Arcana's diagnostic log writes each one down (owner, Nov 17)
+        if (life.length() > 0) update.put("chimeraLifeEvents", life);
         boolean sent;
         synchronized (sendLock) { sent = pending == null; if (sent) sink.accept(update); }
+        if (!sent) unsendLife(life);
         if (sent && !blockStep && !inputKind.equals("InputBlock")) showAfterBlocks = false; // the app has now seen another step
         if (!sent) emitDecision();
     }
