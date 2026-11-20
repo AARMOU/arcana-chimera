@@ -10,17 +10,17 @@ import org.robolectric.RuntimeEnvironment
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk=[35])
 class GooseClippyPreferencesTest {
-    @Test fun defaultsToOnAndPersistsAnIndependentOffState() {
+    @Test fun defaultsToOffAndPersistsAnIndependentOnState() {
         val prefs=GooseClippyPreferences.prefs(RuntimeEnvironment.getApplication())
         prefs.edit().clear().commit()
         try {
-            assertTrue(GooseClippyPreferences.read(prefs))
-            GooseClippyPreferences.write(prefs,false)
             assertFalse(GooseClippyPreferences.read(prefs))
-            assertFalse(GooseClippyPreferences.read(
-                GooseClippyPreferences.prefs(RuntimeEnvironment.getApplication())))
             GooseClippyPreferences.write(prefs,true)
             assertTrue(GooseClippyPreferences.read(prefs))
+            assertTrue(GooseClippyPreferences.read(
+                GooseClippyPreferences.prefs(RuntimeEnvironment.getApplication())))
+            GooseClippyPreferences.write(prefs,false)
+            assertFalse(GooseClippyPreferences.read(prefs))
         } finally {
             prefs.edit().clear().commit()
         }

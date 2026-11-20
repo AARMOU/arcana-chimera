@@ -40,7 +40,7 @@ import kotlin.math.max
 internal object GooseClippyPreferences {
     const val FILE="gooseclippy_preferences"
     const val ENABLED="gooseclippy_enabled"
-    const val DEFAULT_ENABLED=true
+    const val DEFAULT_ENABLED=false // owner, Nov 19: off by default
 
     fun read(prefs:SharedPreferences):Boolean=prefs.getBoolean(ENABLED,DEFAULT_ENABLED)
     fun write(prefs:SharedPreferences,enabled:Boolean){prefs.edit().putBoolean(ENABLED,enabled).apply()}

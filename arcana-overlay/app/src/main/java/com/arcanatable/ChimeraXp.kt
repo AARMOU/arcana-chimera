@@ -516,7 +516,8 @@ private fun MenuBar(g: SkinGame) {
         MenuTitle("Game", listOf("Concede" to { ChimeraConcede.asking = true }, "Leave game…" to { g.t.argentumLeaveConfirm = true },
             "Classic screen" to { ChimeraSkins.set("") }))
         MenuTitle("View", listOf("Board summary" to { ChimeraFeatures.boardOpen = true }, "Game log" to { g.log() },
-            "Stack" to { g.stack() }, "Game history" to { ChimeraFeatures.historyOpen = true }))
+            "Stack" to { g.stack() }, "Game history" to { ChimeraFeatures.historyOpen = true },
+            (if (ChimeraCardGroups.nested) "✓ Group by card type" else "Group by card type") to { ChimeraCardGroups.change(!ChimeraCardGroups.nested) }))
         MenuTitle("Actions", listOf(g.passLabel to { g.pass() }, "Pass to my turn" to { g.holdPass() }, "Undo" to { g.undo() },
             "Actions (${g.actions.size})" to { g.openActions() }) +
             (if (ChimeraFeatureSettings.coach) listOf("Coach: what would the AI do?" to { ChimeraCoach.ask(g.t) }) else emptyList()))
@@ -867,12 +868,12 @@ private fun BoardGroup(key: String, title: String, cards: List<GameCard>, g: Ski
     }
     if (!open) return
     if (cards.isEmpty()) XText("   (empty)", 12.sp, Xp.muted, mono = true)
-    cards.forEach { c ->
+    val row: @Composable (GameCard, androidx.compose.ui.unit.Dp) -> Unit = { c, indent ->
         val sel = hand && ui.selected?.id == c.id
         val hot = if (hand) g.castable(c) else mine && c.id in g.playable && !g.busy
         Row(Modifier.fillMaxWidth().heightIn(min = 26.dp).background(if (sel) Xp.select else if (hot) Color(0xFFE6F6DF) else Color.Transparent)
             .combinedClickable(onClick = { if (hand) ui.pick(c) else g.tapPermanent(c, mine) }, onLongClick = { g.preview(c) })
-            .padding(horizontal = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+            .padding(start = 6.dp + indent, end = 6.dp), verticalAlignment = Alignment.CenterVertically) {
             Text(typeIcon(c), fontSize = 12.sp, modifier = Modifier.width(24.dp))
             val counters = c.counters.filterValues { it > 0 }.entries.joinToString("") { " +${it.value}" }.take(12)
             XText((if (c.isFaceDown) "Face-down card" else c.name) + counters, 12.sp, if (sel) Color.White else Xp.ink, mono = true, modifier = Modifier.weight(1f))
@@ -880,6 +881,18 @@ private fun BoardGroup(key: String, title: String, cards: List<GameCard>, g: Ski
             XText(when { c.tapped -> "TAP"; c.summoningSick && c.type.contains("Creature", true) -> "NEW"; else -> "" }, 11.sp,
                 if (c.tapped) Xp.ink else Color(0xFF1F4FD1), mono = true, modifier = Modifier.width(30.dp))
         }
+    }
+    // Owner, Nov 19: optionally nested by card type, each heading opens and closes (View › Group by card type).
+    if (!ChimeraCardGroups.nested) { cards.forEach { row(it, 0.dp) }; return }
+    ChimeraCardGroups.groups(cards).forEach { (cat, list) ->
+        val sub = "$key/$cat"
+        val subOpen = ChimeraCardGroups.isOpen(sub)
+        Row(Modifier.fillMaxWidth().heightIn(min = 26.dp).background(Color(0xFFE3EBF8)).combinedClickableNoHold { ChimeraCardGroups.toggle(sub) }
+            .padding(start = 18.dp, end = 6.dp).testTag("xp-group-$cat"), verticalAlignment = Alignment.CenterVertically) {
+            Box(Modifier.size(11.dp).background(Color.White).border(1.dp, Color(0xFF7F9DB9)), contentAlignment = Alignment.Center) { XText(if (subOpen) "−" else "+", 9.sp, bold = true) }
+            XText("$cat (${list.size})", 12.sp, bold = true, mono = true, modifier = Modifier.padding(start = 6.dp))
+        }
+        if (subOpen) list.forEach { row(it, 18.dp) }
     }
 }
 
