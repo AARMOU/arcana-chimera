@@ -165,6 +165,7 @@ public final class SoakTest {
         final ArcanaForgeHost.AiStrength ai;
         final LinkedBlockingQueue<JSONObject> inbox = new LinkedBlockingQueue<>();
         final ProtocolGuard guard = new ProtocolGuard();
+        { guard.trackQuestions(); } // owner, Nov 12: a table that wipes an unanswered question is a failure
         final Set<String> answered = new HashSet<>();
         final Map<String, Integer> decisionTypes = new LinkedHashMap<>();
         int turn, actions, decisions, actionsThisStep, unboundedNumbers;
@@ -187,7 +188,7 @@ public final class SoakTest {
             this.seed = seed; this.rng = rng; this.decks = decks; this.turnLimit = turnLimit; this.ai = ai; this.forgeDir = forgeDir;
         }
 
-        void send(ArcanaForgeHost host, JSONObject message) { host.handleFrom(me, message); }
+        void send(ArcanaForgeHost host, JSONObject message) { guard.playerActed(); host.handleFrom(me, message); }
 
         String play() throws Exception {
             ArcanaForgeHost host = new ArcanaForgeHost(m -> { guard.observe(m); inbox.add(m); });

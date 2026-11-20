@@ -70,6 +70,21 @@ public final class ProtocolGuardSelfTest {
         oneRefusal.observe(snapshot(2));
         oneRefusal.assertClean();
 
+        JSONObject question = new JSONObject().put("id", "forge-d1").put("type", "OrderObjectsDecision").put("prompt", "Select order");
+        ProtocolGuard wiped = new ProtocolGuard();
+        wiped.trackQuestions();
+        wiped.observe(snapshot(1).put("legalActions", new JSONArray()).put("pendingDecision", question));
+        wiped.observe(snapshot(2).put("interactive", false).put("legalActions", new JSONArray()));
+        require(!wiped.clean(), "a table without the open question must fail");
+
+        ProtocolGuard answeredFirst = new ProtocolGuard();
+        answeredFirst.trackQuestions();
+        answeredFirst.observe(snapshot(1).put("legalActions", new JSONArray()).put("pendingDecision", question));
+        answeredFirst.observe(snapshot(2).put("legalActions", new JSONArray()).put("pendingDecision", question)); // re-sent: fine
+        answeredFirst.playerActed();
+        answeredFirst.observe(snapshot(3));
+        answeredFirst.assertClean();
+
         System.out.println("PROTOCOL GUARD RESULT PASS");
     }
 

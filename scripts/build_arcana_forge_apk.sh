@@ -2,8 +2,8 @@
 # Builds Arcana's real app with Forge as its rules engine (Chimera overlay), as a debug APK.
 # Arcana source is staged read-only from a pinned public commit into ignored third_party/; nothing is pushed to Arcana.
 set -euo pipefail
-ARCANA_SHA="${ARCANA_SHA:-a5c428ad3da42b7325adf6630238ec992fee3113}"
-FORGE_SHA="${FORGE_SHA:-7c34365c749ca46ab71336c5f267340d6088e600}"
+ARCANA_SHA="${ARCANA_SHA:-f6a149cb202587e5aa8128191beb630a7d94935d}"
+FORGE_SHA="${FORGE_SHA:-583714b8bfbd9cb04f8bc39ad95861190caf7691}"
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 # Verify host-survival patch invariants before downloading and compiling Forge.
 python3 -m unittest discover -s "$ROOT/tests" -p "test_chimera_host_survival.py" -v
@@ -64,17 +64,24 @@ APP="$ARCANA/android/app"
 cp "$ROOT/arcana-overlay/app/src/main/java/com/arcanatable/engine/LocalArgentumHost.kt" "$APP/src/main/java/com/arcanatable/engine/LocalArgentumHost.kt"
 mkdir -p "$APP/src/main/java/org/arcanachimera/forgehost" "$APP/libs/forge" "$APP/src/main/assets"
 cp "$ROOT/forge-host/src/main/java/org/arcanachimera/forgehost/ArcanaForgeHost.java" "$APP/src/main/java/org/arcanachimera/forgehost/"
+python3 "$ROOT/scripts/check_min_api.py" "$APP/src/main/java/org/arcanachimera/forgehost/ArcanaForgeHost.java" # owner, Nov 12: shipped code must not need a newer Android than minSdk 26
 rm -f "$APP"/libs/forge/*.jar   # a reused staging tree must not keep JARs this build no longer ships
 cp "$LIBS"/*.jar "$APP/libs/forge/"
 mkdir -p "$APP/src/main/java/org/jupnp" && cp "$STUB" "$APP/src/main/java/org/jupnp/"
 cp "$WORK/forge-res.zip" "$APP/src/main/assets/forge-res.zip"
 python3 "$ROOT/scripts/patch_arcana_for_forge.py" "$APP" # owner: no Argentum card check; Forge decides
+python3 "$ROOT/scripts/patch_commander_art_editor.py" "$APP" # Chimera: commander art picker and persistent previews
 echo "== Chimera official WotC Commander decklists (bundled offline; no Arcana writes)"
 mkdir -p "$APP/src/main/assets/precons"
-python3 "$ROOT/scripts/build_wotc_commander_precons.py" --out "$APP/src/main/assets/precons/wotc-commander-precons.json"
+python3 "$ROOT/scripts/build_wotc_commander_precons.py" --out "$APP/src/main/assets/precons/wotc-commander-precons.json" --forge-cards "$RES/cardsfolder"
 cp "$ROOT/arcana-overlay/app/src/main/java/com/arcanatable/ChimeraPrecons.kt" "$APP/src/main/java/com/arcanatable/"
 cp "$ROOT/arcana-overlay/app/src/main/java/com/arcanatable/ChimeraPreconTree.kt" "$APP/src/main/java/com/arcanatable/"
 python3 "$ROOT/scripts/patch_commander_precons.py" "$APP"
+python3 "$ROOT/scripts/patch_ai_deck_selector.py" "$APP" # Chimera #39: saved/imported and WotC precons for AI lobby seats
+python3 "$ROOT/scripts/patch_offline_ai_decks.py" "$APP" # Chimera #39: independent offline Forge AI decks
+python3 "$ROOT/scripts/patch_online_ai_decks.py" "$APP" # owner, Nov 13: CHANGE DECK for AI seats in the multiplayer room lobby
+python3 "$ROOT/scripts/patch_import_link_wording.py" "$APP" # owner, Nov 13: the import screen says it takes deck links
+python3 "$ROOT/scripts/patch_rematch_same_room.py" "$APP" # owner, Nov 13: PLAY AGAIN returns a host to the same room
 echo "== Card pictures for Forge's cards (Scryfall bulk data; skipped without network)"
 python3 "$ROOT/scripts/scryfall_images.py" "$WORK/scryfall-images.tsv" || : > "$WORK/scryfall-images.tsv"
 echo "== Forge's cards for Arcana's deck import and editor (ForgeCatalogExport)"
@@ -123,10 +130,22 @@ cp "$ROOT/docs/GPLV3_RELEASE_READINESS.md" "$APP/src/main/assets/legal/GPL-RELEA
 python3 "$ROOT/scripts/patch_arcana_nov9.py" "$APP" # owner's Nov 9 list: drawer, Commander, presets, fan/catalogue, backgrounds, log detail
 python3 "$ROOT/scripts/patch_arcana_nov9c.py" "$APP" # owner's third Nov 9 list: choices, pictures, combat, mulligan grid, home picture
 python3 "$ROOT/scripts/patch_arcana_tutorial.py" "$APP" # the tutorial's text for Arcana with Forge (owner, Nov 10)
+python3 "$ROOT/scripts/patch_diagnostic_role.py" "$APP" # owner, Nov 12: a guest reports Role: guest, not Forge on this device
+python3 "$ROOT/scripts/patch_waiting_on_other.py" "$APP" # owner, Nov 12: no "answer the open prompt" or false alarm while another player decides
+python3 "$ROOT/scripts/patch_accept_all_targets.py" "$APP" # owner, Nov 13: ACCEPT ALL ON STACK on a repeated target prompt
+python3 "$ROOT/scripts/patch_fast_pass.py" "$APP" # owner, Nov 13 slowdown: Forge passes empty opponent windows itself during Pass to my turn
+python3 "$ROOT/scripts/patch_pass_safety.py" "$APP" # owner, Nov 14: Pass to my turn stops for a lethal unblocked attack; restarting passes the same spell
 python3 "$ROOT/scripts/patch_arcana_wording.py" "$APP" # owner, Nov 9: no "Argentum" on screen (fails the build if any is left)
 python3 "$ROOT/scripts/patch_chimera_host_survival.py" "$APP" # host lock + directed relay recovery; Worker deploy separate
+python3 "$ROOT/scripts/patch_chimera_restart_host.py" "$APP" # Host Lobby ends a frozen game's open session (owner, Nov 11)
+python3 "$ROOT/scripts/patch_chimera_always_yes.py" "$APP" # ALWAYS on trigger questions = Forge's always-accept (owner, Nov 11)
+python3 "$ROOT/scripts/patch_view_table.py" "$APP" # owner, Nov 12: declare attackers LATER reads VIEW TABLE
+python3 "$ROOT/scripts/patch_blocker_strip_center.py" "$APP" # owner, Nov 11-12: "CAN BLOCK WITH" strip centered
 python3 "$ROOT/scripts/patch_chimera_legal_navigation.py" "$APP" # notices and source in Options; no intrusive menu shortcuts
 python3 "$ROOT/scripts/patch_engine_running_default.py" "$APP" # engine processing banner OFF unless owner opts in
+python3 "$ROOT/scripts/patch_life_log.py" "$APP" # owner, Nov 17: every life change, with its cause, in the diagnostic log
+python3 "$ROOT/scripts/patch_room_server_endpoint.py" "$APP" # owner, Nov 17: online rooms on Arcana's own domain (config/room-server.env)
+python3 "$ROOT/scripts/patch_studio_usability.py" "$APP" # owner, Nov 19: Studio + Options audit fixes, Stack lesson, home picture
 # Foreground service: keeps the Forge game alive while the player is in another app.
 python3 - "$APP/src/main/AndroidManifest.xml" <<'PY'
 import sys; p = sys.argv[1]; s = open(p).read()

@@ -23,6 +23,8 @@ import java.util.concurrent.atomic.AtomicReference;
  *     Also calls the 8- and 9-argument `order` forms directly and checks the returned order and wrapper type.
  *  B. Combat damage: Prized Unicorn (all able creatures must block it) attacks into two Grizzly Bears. The player
  *     puts all 2 damage on the SECOND blocker; the second must die and the first must survive.
+ *  N. Burgeoning (owner, Nov 11): "Use triggered ability?" answered YES · ALWAYS once; the AI's next land must
+ *     trigger it again without asking, and both triggers must put a land from your hand onto the battlefield.
  *  Every scenario fails on a timeout, a "can't show yet" notice, or a missing follow-up state.
  */
 public final class PromptScenarios {
@@ -33,10 +35,13 @@ public final class PromptScenarios {
     public static void main(String[] args) throws Exception {
         forgeDir = args.length > 0 ? args[0] : "../forge-gui/";
         List<String> failures = new ArrayList<>();
-        for (String name : List.of("A-ghalta-order", "B-combat-damage", "C-mulligan", "D-trample-short", "E-stack", "F-mana-convoke", "G-you-lose", "H-end-step", "I-may-pay", "J-ayula-fight-0", "J-ayula-fight-1", "J-ayula-fight-2", "K-commander-dies", "L-illegal-block", "M-forced-block")) {
+        String only = args.length > 1 ? args[1] : ""; // optional: run only the scenarios starting with this
+        for (String name : List.of("A-ghalta-order", "B-combat-damage", "C-mulligan", "D-trample-short", "E-stack", "F-mana-convoke", "G-you-lose", "H-end-step", "I-may-pay", "J-ayula-fight-0", "J-ayula-fight-1", "J-ayula-fight-2", "K-commander-dies", "L-illegal-block", "M-forced-block", "N-always-yes", "O-life-mana-ask", "O-life-mana-avoid", "O-life-log-damage")) {
+            if (!name.startsWith(only)) continue;
             String r;
             try { r = name.startsWith("A") ? ghalta() : name.startsWith("B") ? combatDamage() : name.startsWith("C") ? mulligan() : name.startsWith("D") ? trampleShort() : name.startsWith("E") ? stack() : name.startsWith("F") ? manaAndConvoke() : name.startsWith("G") ? youLose() : name.startsWith("H") ? endStep() : name.startsWith("I") ? mayPay() : name.startsWith("J") ? ayulaFight(name.charAt(name.length() - 1) - '0') : name.startsWith("K") ? commanderDies()
-                    : name.startsWith("L") ? illegalBlock() : forcedBlock(); }
+                    : name.startsWith("L") ? illegalBlock() : name.startsWith("N") ? alwaysYes()
+                    : name.equals("O-life-mana-ask") ? lifeManaAsk() : name.equals("O-life-mana-avoid") ? lifeManaAvoid() : name.startsWith("O") ? lifeLogDamage() : forcedBlock(); }
             catch (Throwable t) { t.printStackTrace(); r = "FAIL: " + t; }
             System.out.println("SCENARIO " + name + " " + r);
             if (!r.startsWith("PASS")) failures.add(name);
@@ -65,6 +70,7 @@ public final class PromptScenarios {
         Session(String board, String marker, int mulligansWanted) throws Exception { this(board, marker, mulligansWanted, false); }
 
         Session(String board, String marker, int mulligansWanted, boolean commanderRules) throws Exception {
+            protocol.trackQuestions(); // every action below goes through send(): a wiped question is a failure
             ArcanaForgeHost.initForge(forgeDir, host);
             host.setCommanderRulesForTest(commanderRules);
             host.setStartBoardForTest(board);
@@ -113,7 +119,7 @@ public final class PromptScenarios {
             }
         }
 
-        void send(JSONObject action) throws Exception { host.handle(new JSONObject().put("type", "submitAction").put("action", action)); }
+        void send(JSONObject action) throws Exception { protocol.playerActed(); host.handle(new JSONObject().put("type", "submitAction").put("action", action)); }
 
         /** Decisions already answered: the host re-sends an open decision, so a queued copy can arrive after the answer. */
         final java.util.Set<String> answered = new java.util.HashSet<>();
@@ -297,6 +303,37 @@ public final class PromptScenarios {
         pickThread.join(30_000);
         if (!List.of("Black", "White").equals(picks.get())) return "multi-pick returned " + picks.get() + " (expected [Black, White])";
         out.append(", multi-pick ok");
+        // "Any number" (-1) picks, the opening-hand shape (phone, Nov 16: Leyline Axe showed "Choose -1–-1 card(s)" with
+        // Confirm dead). Through `many` and through the raw `order` form: 0..all offered, and none is a legal answer.
+        for (String shape : new String[]{"many", "order"}) {
+            for (boolean none : new boolean[]{false, true}) {
+                AtomicReference<Object> any = new AtomicReference<>();
+                Thread anyThread = new Thread(() -> {
+                    try {
+                        any.set(shape.equals("many")
+                                ? gui.many("Choose cards to activate from opening hand and their order", "Activate first", -1, new ArrayList<>(List.of(a, b)), null)
+                                : gui.order("Choose cards to activate from opening hand and their order", "Activate first", -1, -1, new ArrayList<>(List.of(a, b)), null, null, false));
+                    } catch (Throwable e) { any.set(e); }
+                }, "any-number-" + shape);
+                anyThread.start();
+                while (true) {
+                    JSONObject m = s.next(30);
+                    JSONObject d = m.optJSONObject("pendingDecision");
+                    if (s.fresh(d) && d.optString("type").equals("SelectCardsDecision")) {
+                        if (d.optInt("minSelections", -9) != 0 || d.optInt("maxSelections", -9) != 2)
+                            return "any-number " + shape + " offered " + d.optInt("minSelections", -9) + ".." + d.optInt("maxSelections", -9) + " (expected 0..2)";
+                        JSONArray pick = new JSONArray();
+                        if (!none) pick.put(d.getJSONArray("options").get(1));
+                        s.answer(d, new JSONObject().put("type", "CardsSelectedResponse").put("selectedCards", pick));
+                        break;
+                    }
+                }
+                anyThread.join(30_000);
+                if (!(any.get() instanceof List<?> got) || !got.equals(none ? List.of() : List.of(b)))
+                    return "any-number " + shape + " returned " + any.get() + " (expected " + (none ? "nothing" : "the second card") + ")";
+            }
+        }
+        out.append(", any-number picks ok");
         // Forge's option dialog is a real choice (Goose's PR #19), and a stray pass can't answer it.
         AtomicReference<Object> chosen = new AtomicReference<>();
         Thread dialog = new Thread(() -> {
@@ -717,6 +754,167 @@ public final class PromptScenarios {
                 if (attacked && state.optString("currentStep").equals("POSTCOMBAT_MAIN")) return "FAIL: no Robot after attacking (discardShown=" + discardOk + ", payAsked=" + payAsked + ") notices " + s.notices;
                 s.send(new JSONObject().put("type", "PassPriority").put("playerId", ArcanaForgeHost.HUMAN_ID));
             }
+        } finally { s.close(); }
+    }
+
+    // ------------------------------------------------------------------ O. Mana that costs life (owner, Nov 17)
+
+    private static void collectLife(JSONObject m, List<String> into) {
+        JSONArray ev = m.optJSONArray("chimeraLifeEvents");
+        if (ev == null) return;
+        for (int i = 0; i < ev.length(); i++) {
+            JSONObject e = ev.getJSONObject(i);
+            String line = (e.optBoolean("isYou") ? "You" : e.optString("name")) + " " + e.optInt("from") + "->" + e.optInt("to") + ": " + e.optString("cause");
+            System.out.println("  life: " + line);
+            into.add(line);
+        }
+    }
+
+    private static final String OGRE_BOARD = String.join("\n",
+            "activeplayer=human", "activephase=MAIN1", "removesummoningsickness=true",
+            "humanlife=20", "ailife=20", "humanlibrary=" + LIBRARY, "ailibrary=" + LIBRARY,
+            "humanhand=Hill Giant", "aibattlefield=", "aihand=");
+
+    /** Ogre + 1 Mountain, Hill Giant {3}{R}: asked first; "no" cancels and costs nothing; "yes" pays 9 life, logged per payment. */
+    private static String lifeManaAsk() throws Exception {
+        Session s = new Session(OGRE_BOARD + "\nhumanbattlefield=Treasonous Ogre;Mountain", "Treasonous Ogre");
+        try {
+            int asked = 0, casts = 0;
+            List<String> lifeLog = new ArrayList<>();
+            long deadline = System.currentTimeMillis() + 180_000;
+            while (System.currentTimeMillis() < deadline) {
+                JSONObject m = s.next(60);
+                if (m.optString("type").equals("stateUpdate")) collectLife(m, lifeLog);
+                if (!interactive(m)) continue;
+                JSONObject state = m.getJSONObject("state");
+                JSONObject d = m.optJSONObject("pendingDecision");
+                if (d != null && !s.fresh(d)) continue;
+                if (d != null) {
+                    String prompt = d.optString("prompt");
+                    if (!d.optString("type").equals("YesNoDecision") || !prompt.contains("Treasonous Ogre")) return "FAIL: unexpected decision " + d.optString("type") + " (" + prompt + ")";
+                    asked++;
+                    if (life(state, ArcanaForgeHost.HUMAN_ID) != 20) return "FAIL: life already " + life(state, ArcanaForgeHost.HUMAN_ID) + " before answering";
+                    s.answer(d, new JSONObject().put("type", "YesNoResponse").put("choice", asked > 1)); // first no, then yes
+                    continue;
+                }
+                if (!battlefield(state, ArcanaForgeHost.HUMAN_ID, "Hill Giant").isEmpty()) {
+                    int now = life(state, ArcanaForgeHost.HUMAN_ID);
+                    long ogreLines = lifeLog.stream().filter(l -> l.startsWith("You ") && l.contains("paid 3 life for mana from Treasonous Ogre")).count();
+                    if (asked != 2) return "FAIL: asked " + asked + " times, expected 2";
+                    if (now != 11) return "FAIL: life " + now + " after paying with life, expected 11";
+                    if (ogreLines != 3) return "FAIL: " + ogreLines + " Ogre payments logged, expected 3: " + lifeLog;
+                    return "PASS: asked before paying with life; \"no\" cancelled at 20 life; \"yes\" paid 9 life, each payment logged";
+                }
+                JSONObject cast = castAction(m, "Hill Giant");
+                if (cast != null && casts < 3) {
+                    if (casts == 1 && life(state, ArcanaForgeHost.HUMAN_ID) != 20) return "FAIL: \"no\" still cost life: " + life(state, ArcanaForgeHost.HUMAN_ID);
+                    casts++;
+                    s.send(cast);
+                    continue;
+                }
+                return "FAIL: stuck (asked " + asked + ", casts " + casts + ", life " + life(state, ArcanaForgeHost.HUMAN_ID) + ") notices " + s.notices;
+            }
+            return "FAIL: timed out";
+        } finally { s.close(); }
+    }
+
+    /** Ogre + 4 Mountains, Hill Giant: paid with the Mountains, no question, no life. */
+    private static String lifeManaAvoid() throws Exception {
+        Session s = new Session(OGRE_BOARD + "\nhumanbattlefield=Treasonous Ogre;Mountain;Mountain;Mountain;Mountain", "Treasonous Ogre");
+        try {
+            boolean cast = false;
+            long deadline = System.currentTimeMillis() + 120_000;
+            while (System.currentTimeMillis() < deadline) {
+                JSONObject m = s.next(60);
+                if (!interactive(m)) continue;
+                JSONObject state = m.getJSONObject("state");
+                JSONObject d = m.optJSONObject("pendingDecision");
+                if (d != null && s.fresh(d)) return "FAIL: asked " + d.optString("type") + " (" + d.optString("prompt") + ")";
+                if (d != null) continue;
+                if (!battlefield(state, ArcanaForgeHost.HUMAN_ID, "Hill Giant").isEmpty()) {
+                    int now = life(state, ArcanaForgeHost.HUMAN_ID);
+                    return now == 20 ? "PASS: paid with lands; Treasonous Ogre not used, still 20 life" : "FAIL: life " + now + ", expected 20";
+                }
+                JSONObject a = castAction(m, "Hill Giant");
+                if (a != null && !cast) { cast = true; s.send(a); continue; }
+                return "FAIL: stuck (cast " + cast + ") notices " + s.notices;
+            }
+            return "FAIL: timed out";
+        } finally { s.close(); }
+    }
+
+    /** Ancient Tomb + 2 Mountains, Hill Giant: 2 life lost, logged as damage from Ancient Tomb. */
+    private static String lifeLogDamage() throws Exception {
+        Session s = new Session(OGRE_BOARD + "\nhumanbattlefield=Ancient Tomb;Mountain;Mountain", "Ancient Tomb");
+        try {
+            boolean cast = false;
+            List<String> lifeLog = new ArrayList<>();
+            long deadline = System.currentTimeMillis() + 120_000;
+            while (System.currentTimeMillis() < deadline) {
+                JSONObject m = s.next(60);
+                if (m.optString("type").equals("stateUpdate")) collectLife(m, lifeLog);
+                if (!interactive(m)) continue;
+                JSONObject state = m.getJSONObject("state");
+                JSONObject d = m.optJSONObject("pendingDecision");
+                if (d != null && s.fresh(d)) return "FAIL: asked " + d.optString("type") + " (" + d.optString("prompt") + ")";
+                if (d != null) continue;
+                if (!battlefield(state, ArcanaForgeHost.HUMAN_ID, "Hill Giant").isEmpty()) {
+                    if (!lifeLog.contains("You 20->18: 2 damage from Ancient Tomb")) return "FAIL: life log " + lifeLog;
+                    return "PASS: \"You 20->18: 2 damage from Ancient Tomb\" logged";
+                }
+                JSONObject a = castAction(m, "Hill Giant");
+                if (a != null && !cast) { cast = true; s.send(a); continue; }
+                return "FAIL: stuck (cast " + cast + ") notices " + s.notices;
+            }
+            return "FAIL: timed out";
+        } finally { s.close(); }
+    }
+
+    // ------------------------------------------------------------------ N. "Always yes" for an optional trigger
+
+    private static String alwaysYes() throws Exception {
+        Session s = new Session(String.join("\n",
+                "activeplayer=ai", "activephase=MAIN1",
+                "humanlife=20", "ailife=20", "humanlibrary=" + LIBRARY, "ailibrary=" + LIBRARY,
+                "humanbattlefield=Burgeoning", "humanhand=Forest;Forest;Forest", "aibattlefield=", "aihand=Forest;Forest"), "Burgeoning");
+        try {
+            int asked = 0, aiLands = -1, triggersSeen = 0;
+            boolean offered = false;
+            long deadline = System.currentTimeMillis() + 240_000;
+            while (System.currentTimeMillis() < deadline) {
+                JSONObject m = s.next(90);
+                if (!m.optString("type").equals("stateUpdate")) continue;
+                JSONObject state = m.getJSONObject("state");
+                int now = battlefield(state, ArcanaForgeHost.AI_ID, "Forest").size();
+                if (aiLands >= 0 && now > aiLands) triggersSeen += now - aiLands;
+                aiLands = now;
+                int yours = battlefield(state, ArcanaForgeHost.HUMAN_ID, "Forest").size();
+                if (triggersSeen >= 2 && yours >= 2) {
+                    if (asked != 1) return "FAIL: asked " + asked + " times for " + triggersSeen + " opponent lands (always-yes ignored)";
+                    if (!offered) return "FAIL: the trigger question did not offer ALWAYS";
+                    return "PASS: asked once, answered YES · ALWAYS; the next opponent land triggered without asking; " + yours + " Forests put onto your battlefield";
+                }
+                if (!interactive(m)) continue;
+                JSONObject d = m.optJSONObject("pendingDecision");
+                if (d != null && !s.fresh(d)) continue;
+                if (d != null) {
+                    String type = d.optString("type"), prompt = d.optString("prompt");
+                    if (type.equals("YesNoDecision") && prompt.startsWith("Use triggered ability of Burgeoning")) {
+                        asked++;
+                        offered |= d.optBoolean("alwaysAvailable");
+                        s.answer(d, new JSONObject().put("type", "YesNoResponse").put("choice", true).put("always", true));
+                    } else if (type.equals("SelectCardsDecision") || type.equals("ChooseCardsDecision")) {
+                        JSONArray opts = d.optJSONArray("options");
+                        s.answer(d, new JSONObject().put("type", "CardsSelectedResponse").put("selectedCards",
+                                opts == null || opts.isEmpty() ? new JSONArray() : new JSONArray().put(opts.get(0))));
+                    } else if (type.equals("YesNoDecision")) {
+                        s.answer(d, new JSONObject().put("type", "YesNoResponse").put("choice", false));
+                    } else return "FAIL: unexpected decision " + type + " (" + prompt + ")";
+                    continue;
+                }
+                s.send(new JSONObject().put("type", "PassPriority").put("playerId", ArcanaForgeHost.HUMAN_ID));
+            }
+            return "FAIL: timed out; asked " + asked + ", opponent lands seen " + triggersSeen;
         } finally { s.close(); }
     }
 

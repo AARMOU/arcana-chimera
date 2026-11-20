@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Builds pinned Forge plus Chimera's forge-host and runs the milestone 1 proof (Forge behind Argentum's messages).
 set -euo pipefail
-FORGE_SHA="${FORGE_SHA:-7c34365c749ca46ab71336c5f267340d6088e600}"
+FORGE_SHA="${FORGE_SHA:-583714b8bfbd9cb04f8bc39ad95861190caf7691}"
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 FORGE="${FORGE_DIR:-$ROOT/third_party/forge}"
 if [ ! -d "$FORGE/.git" ]; then
@@ -23,6 +23,10 @@ timeout 900s java -Xmx4g -Djava.awt.headless=true -cp "$OUT/classes:$CP" \
 # 4-player Commander start, AI rotation and return to you, through the real host (Goose, PR #17)
 timeout 300s java -Xmx4g -Djava.awt.headless=true -cp "$OUT/classes:$CP" \
   org.arcanachimera.forgehost.FourSeatProof "$FORGE/forge-gui/"
+# Host + friend + 2 AIs: each person's first table state is turn 1, not whenever a person is next asked something
+# (phone, Nov 11: host stuck on the loading screen through AI turns after keeping its hand)
+timeout 600s java -Xmx4g -Djava.awt.headless=true -cp "$OUT/classes:$CP" \
+  org.arcanachimera.forgehost.MultiStartProof "$FORGE/forge-gui/" 8
 # Owner priority 1: every card Forge ships must build into a game object; plus the cards Arcana used to drop
 # from the owner's deck (Nov 8 09:45). Report-only for now: printed as ALLCARDS lines, doesn't fail the job.
 # Every card in Arcana's bundled decks (precons + AI Commander decks), read at build time from the pinned

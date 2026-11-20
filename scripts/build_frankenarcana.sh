@@ -5,7 +5,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-FORGE_SHA="7c34365c749ca46ab71336c5f267340d6088e600"
+FORGE_SHA="583714b8bfbd9cb04f8bc39ad95861190caf7691"
 FORGE="$ROOT/third_party/forge-device"
 APP_ID="org.arcanachimera.frankenarcana"
 MAVEN_PLUGIN_VERSION="4.6.2"

@@ -142,15 +142,52 @@ def dedupe(decks: list[dict]) -> list[dict]:
             print(f"WOTC COMMANDER PRECONS: removed duplicate {d['name']} ({d['setName']}), kept {keep[key]['name']} ({keep[key]['setName']})")
             continue
         keep[key] = d
-    # a Collector's Edition whose regular edition has a different commander printing is still the same deck by name
+    # Owner, Nov 14: "Do not include collector editions". Every Collector's Edition goes, whether or not its regular
+    # edition is listed; one with no regular edition is named in the build log so the gap is visible.
     regular = {base_name(d["name"]) for d in keep.values() if not COLLECTOR.search(d["name"])}
     out = []
     for d in keep.values():
-        if COLLECTOR.search(d["name"]) and base_name(d["name"]) in regular:
-            print(f"WOTC COMMANDER PRECONS: removed {d['name']} ({d['setName']}): the regular edition is listed")
+        if COLLECTOR.search(d["name"]):
+            why = "the regular edition is listed" if base_name(d["name"]) in regular else "Collector's Editions are left out (NO regular edition is listed)"
+            print(f"WOTC COMMANDER PRECONS: removed {d['name']} ({d['setName']}): {why}")
             continue
         out.append(d)
     return out
+
+def forge_card_names(cardsfolder: Path) -> set[str]:
+    """Every card name Forge has a script for (each face of a multi-face card counts)."""
+    names: set[str] = set()
+    for script in cardsfolder.rglob("*.txt"):
+        for line in script.read_text("utf-8", errors="replace").splitlines():
+            if line.startswith("Name:"):
+                names.add(line[5:].strip().casefold())
+    return names
+
+def report(catalog: dict, cardsfolder: Path | None) -> None:
+    """Owner, Nov 14 (Star Trek): say in the build log which decks are newest, and which Forge cannot fully play."""
+    decks = sorted(catalog["decks"], key=lambda d: d.get("releaseDate") or "", reverse=True)
+    for d in decks[:16]:
+        print(f"WOTC COMMANDER PRECONS: newest: {d.get('releaseDate')} {d['name']} ({d['setName']}) - {d['commander']}")
+    if cardsfolder is None or not cardsfolder.is_dir():
+        return
+    known = forge_card_names(cardsfolder)
+    if len(known) < 20000:
+        print(f"WOTC COMMANDER PRECONS: Forge card check skipped (only {len(known)} names found)")
+        return
+    short = 0
+    for d in decks:
+        missing = []
+        for line in d["decklist"].splitlines():
+            match = re.match(r"(\d+) (.+)", line)
+            if not match:
+                continue
+            name = match.group(2).strip()
+            if name.casefold() not in known and name.split(" // ")[0].strip().casefold() not in known:
+                missing.append(name)
+        if missing:
+            short += 1
+            print(f"WOTC COMMANDER PRECONS: Forge lacks {len(missing)} card(s) in {d['name']} ({d['setName']}): {'; '.join(missing[:8])}")
+    print(f"WOTC COMMANDER PRECONS: {len(decks) - short} of {len(decks)} decks are fully playable in this Forge")
 
 def build(archive: Path, sets: Path, cutoff: str) -> dict:
     names = set_names(sets)
@@ -235,6 +272,7 @@ def main() -> None:
     parser.add_argument("--sets", type=Path)
     parser.add_argument("--out", type=Path, required=True)
     parser.add_argument("--as-of", default=dt.date.today().isoformat())
+    parser.add_argument("--forge-cards", type=Path, help="Forge's res/cardsfolder: report decks with cards Forge lacks")
     args = parser.parse_args()
     with tempfile.TemporaryDirectory(prefix="chimera-precon-") as folder:
         tmp = Path(folder)
@@ -255,6 +293,7 @@ def main() -> None:
         args.out.write_text(json.dumps(catalog, ensure_ascii=False, separators=(",", ":")) + "\n",
                             encoding="utf-8")
         print(f"WOTC COMMANDER PRECONS: {len(catalog['decks'])} bundled (original six included)")
+        report(catalog, args.forge_cards)
 
 
 def sha(path: Path) -> str:

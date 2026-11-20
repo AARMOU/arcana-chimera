@@ -624,3 +624,56 @@ private fun SkinStorybook(ui: SkinUi) {
         }
     }
 }
+
+
+// ------------------------------------------------------------------ list views grouped by card type (owner, Nov 19)
+
+/** XP and Terminal list views: an option to nest each list under card-type headings that open and close. */
+internal object ChimeraCardGroups {
+    private val prefs: android.content.SharedPreferences? by lazy {
+        runCatching {
+            val app = Class.forName("android.app.ActivityThread").getMethod("currentApplication").invoke(null) as android.content.Context
+            app.getSharedPreferences("chimera_skin", android.content.Context.MODE_PRIVATE)
+        }.getOrNull()
+    }
+    var nested by mutableStateOf(prefs?.getBoolean("list_by_type", false) ?: false)
+        private set
+    fun change(v: Boolean) { nested = v; prefs?.edit()?.putBoolean("list_by_type", v)?.apply() }
+
+    /** Open or closed, per list and heading; open unless closed. */
+    val closed = androidx.compose.runtime.mutableStateMapOf<String, Boolean>()
+    fun isOpen(key: String) = closed[key] != true
+    fun toggle(key: String) { closed[key] = isOpen(key) }
+
+    /** A card's heading. A card with two types goes under the first in this order (an artifact creature is a creature). */
+    val ORDER = listOf("Creatures", "Planeswalkers", "Battles", "Lands", "Artifacts", "Enchantments", "Instants", "Sorceries", "Other")
+    fun category(c: GameCard): String {
+        val t = c.type
+        fun has(w: String) = t.contains(w, ignoreCase = true)
+        return when {
+            has("Creature") -> "Creatures"; has("Planeswalker") -> "Planeswalkers"; has("Battle") -> "Battles"; has("Land") -> "Lands"
+            has("Artifact") -> "Artifacts"; has("Enchantment") -> "Enchantments"; has("Instant") -> "Instants"; has("Sorcery") -> "Sorceries"
+            else -> "Other"
+        }
+    }
+    /** The non-empty headings in [ORDER], each with its cards in their existing order. */
+    /**
+     * Owner, Nov 19: more than five of one card is one line with a ×N label. Each entry is the card a tap acts on
+     * (the first untapped copy), how many there are, and how many of them are tapped.
+     */
+    data class Line(val card: GameCard, val count: Int, val tapped: Int)
+    fun lines(cards: List<GameCard>): List<Line> {
+        val byName = cards.groupBy { if (it.isFaceDown) "\u0000${it.id}" else it.name }
+        val seen = mutableSetOf<String>()
+        return cards.mapNotNull { c ->
+            val key = if (c.isFaceDown) "\u0000${c.id}" else c.name
+            val same = byName.getValue(key)
+            if (same.size <= 5) Line(c, 1, if (c.tapped) 1 else 0)
+            else if (seen.add(key)) Line(same.firstOrNull { !it.tapped } ?: same.first(), same.size, same.count { it.tapped })
+            else null
+        }
+    }
+
+    fun groups(cards: List<GameCard>): List<Pair<String, List<GameCard>>> =
+        cards.groupBy(::category).let { m -> ORDER.mapNotNull { k -> m[k]?.let { k to it } } }
+}

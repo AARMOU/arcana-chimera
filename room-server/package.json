@@ -1,0 +1,17 @@
+{
+  "name": "arcana-room-server",
+  "private": true,
+  "license": "GPL-3.0-only",
+  "type": "module",
+  "description": "Self-hosted Arcana online room server (same protocol as the arcana-table-rooms Cloudflare Worker).",
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "build": "node build.mjs",
+    "start": "node src/server.mjs",
+    "test": "node build.mjs && node test/run-tests.mjs"
+  },
+  "dependencies": {
+    "esbuild": "0.25.12",
+    "ws": "8.18.3"
+  }
+}

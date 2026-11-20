@@ -97,8 +97,27 @@ public final class ArcanaForgeHost {
     private final Map<String, SpellAbility> offered = new ConcurrentHashMap<>();
     private volatile HostedMatch match;
     private volatile boolean gameOverSent;
+    private volatile boolean lossWatchStarted;
+
+    /**
+     * Phone, Nov 13 13:00: eliminated on turn 33, the app heard nothing for 42 s while the AIs played on to turn 38.
+     * The "you lost" message below was only sent the next time Forge called this person's screen, and Forge stops
+     * calling it once they are out. Look once a second instead, until this person's game is over.
+     */
+    private void watchForLoss() {
+        if (left || gameOverSent) return;
+        try {
+            Game game = match == null ? null : match.getGame();
+            PlayerControllerHuman you = humanController();
+            if (game != null && you != null && (game.isGameOver() || you.getPlayer().hasLost())) scheduleIn(0);
+        } catch (Throwable ignored) { } // the game moved while being read: look again next second
+        emitter.schedule(this::watchForLoss, 1, TimeUnit.SECONDS);
+    }
     private volatile Input lastAutoPaid;
     private volatile Input lastPrompted;
+    private volatile Input lifeAsked; // the payment waiting on "pay with life?"
+    /** This person's "always yes" optional triggers (Forge's yieldKey: card and trigger), for this game. */
+    private final java.util.Set<String> alwaysAccept = java.util.concurrent.ConcurrentHashMap.newKeySet();
     private volatile int mulligans = -1;
     private volatile boolean inMulligan;
     private volatile int chosenAbilityId = -1;
@@ -117,7 +136,7 @@ public final class ArcanaForgeHost {
         this.sink = sink;
         this.me = HUMAN_ID;
         this.primary = this;
-        this.views = new java.util.concurrent.CopyOnWriteArrayList<>(List.of(this));
+        this.views = new java.util.concurrent.CopyOnWriteArrayList<>(new ArrayList<>(java.util.Arrays.asList(this)));
         this.seatIds = new java.util.IdentityHashMap<>();
         if (edtThread == null) edt.submit(() -> edtThread = Thread.currentThread());
     }
@@ -205,7 +224,18 @@ public final class ArcanaForgeHost {
     private java.util.function.Supplier<String> assetsDir;
 
     /** Arcana-style setup: seats[0] is you, the rest are Forge AIs. The game starts on "createQuickGameLobby". */
-    public void prepare(List<Seat> seats, java.util.function.Supplier<String> forgeAssetsDir) { this.pendingSeats = seats; this.assetsDir = forgeAssetsDir; }
+    public void prepare(List<Seat> seats, java.util.function.Supplier<String> forgeAssetsDir) { this.pendingSeats = nameBlankSeats(seats); this.assetsDir = forgeAssetsDir; }
+
+    /** Owner, Nov 12: a blank seat name made prompts read "loses the game" and "activated Sauron". Give it a number instead. */
+    static List<Seat> nameBlankSeats(List<Seat> seats) {
+        List<Seat> named = new ArrayList<>();
+        for (int i = 0; i < seats.size(); i++) {
+            Seat s = seats.get(i);
+            boolean blank = s.name() == null || s.name().trim().isEmpty();
+            named.add(blank ? new Seat("Player " + (i + 1), s.deck(), s.commander()) : s);
+        }
+        return named;
+    }
 
     private static String seatId(int i) { return i == 0 ? HUMAN_ID : i == 1 ? AI_ID : AI_ID + "-" + i; }
 
@@ -241,6 +271,9 @@ public final class ArcanaForgeHost {
                 Deck d = deck(seat.name(), counts);
                 if (commander) d.getOrCreate(forge.deck.DeckSection.Commander).add(card(seat.commander()), 1);
                 RegisteredPlayer rp = commander ? RegisteredPlayer.forCommander(d) : new RegisteredPlayer(d);
+                // Owner, Nov 13: the host's own player was Forge's default "Human" (or blank) in prompts and the winner line.
+                // It is named after its commander now, e.g. "Pay {2}{G}{G} for Summoner's Pact? Pantlaza, Sun-Favored loses the game."
+                if (i == 0) GamePlayerUtil.getGuiPlayer().setName(commander && seat.commander() != null && !seat.commander().trim().isEmpty() ? seat.commander() : seat.name());
                 rp.setPlayer(i == 0 ? GamePlayerUtil.getGuiPlayer()
                         : person != null ? new forge.player.LobbyPlayerHuman(seat.name()) : GamePlayerUtil.createAiPlayer(seat.name(), i));
                 if (person != null) guis.put(rp, person.guiGame());
@@ -298,7 +331,7 @@ public final class ArcanaForgeHost {
         you.setPlayer(GamePlayerUtil.getGuiPlayer());
         RegisteredPlayer ai = new RegisteredPlayer(deck("AI", aiDeck));
         ai.setPlayer(GamePlayerUtil.createAiPlayer("Forge AI", 0));
-        List<RegisteredPlayer> players = List.of(you, ai);
+        List<RegisteredPlayer> players = new ArrayList<>(java.util.Arrays.asList(you, ai));
         match = GuiBase.getInterface().hostMatch();
         sink.accept(new JSONObject().put("type", "gameStarted").put("players", new JSONArray()
                 .put(new JSONObject().put("playerId", HUMAN_ID).put("isYou", true))
@@ -467,6 +500,7 @@ public final class ArcanaForgeHost {
             case "requestUndo" -> error("Undo isn't available in this version.");
             case "setRespondToOwnStack" -> respondToOwnStack = message.optBoolean("enabled");
             case "setQuietOpponentTurns" -> quietOpponentTurns = message.optBoolean("enabled");
+            case "setPassToMyTurn" -> fastPass = message.optBoolean("enabled");
             default -> { }
         }
     }
@@ -593,9 +627,13 @@ public final class ArcanaForgeHost {
         for (ArcanaForgeHost v : views) v.scheduleSelf();
     }
 
-    private void scheduleSelf() {
+    private void scheduleSelf() { scheduleIn(waitingOnPlayer() ? 40 : 300); }
+
+    /** Opening hands: look again in 300 ms until turn 1 starts (nothing else wakes a person who has kept, see emit). */
+    private void recheckMulligan() { scheduleIn(300); }
+
+    private void scheduleIn(long delay) {
         if (left) return;
-        long delay = waitingOnPlayer() ? 40 : 300;
         long due = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(delay);
         while (true) {
             long current = emitDueAt.get();
@@ -643,10 +681,40 @@ public final class ArcanaForgeHost {
         return untapped + "/" + me.getManaPool().totalMana() + "/" + me.getGame().getPhaseHandler().getTurn();
     }
 
+    /**
+     * Phone, Nov 13 (Kappa Cannoneer, {5}{U} Improvise): shown as playable from the turn it was drawn and cancelled
+     * with "Not enough mana" eight times, because Convoke and Improvise spells are always offered (their real check
+     * would stop to ask). This is a count that never asks: your mana, plus one for every untapped card that could
+     * help pay. Only a spell that count cannot reach is held back. It leans towards offering: a mana rock counts
+     * twice, commander tax is ignored, and with any cost reducer in play, or X in the cost, the spell is offered.
+     */
+    private static boolean clearlyShort(SpellAbility sa, Player me) {
+        try {
+            Card host = sa.getHostCard();
+            if (host == null || sa.getPayCosts() == null || sa.getPayCosts().getCostMana() == null) return false;
+            boolean convoke = host.hasKeyword(forge.game.keyword.Keyword.CONVOKE), improvise = host.hasKeyword(forge.game.keyword.Keyword.IMPROVISE);
+            if ((!convoke && !improvise) || sa.hasParam("TapCreaturesForMana")) return false; // other helpers: leave it to Forge
+            forge.card.mana.ManaCost cost = sa.getPayCosts().getTotalMana();
+            if (cost == null || cost.countX() > 0) return false;
+            for (ZoneType zone : new ZoneType[] { ZoneType.Battlefield, ZoneType.Command })
+                for (Card c : me.getGame().getCardsIn(zone))
+                    for (forge.game.staticability.StaticAbility st : c.getStaticAbilities()) {
+                        String mode = st.getParam("Mode");
+                        if (mode != null && mode.contains("ReduceCost")) return false;
+                    }
+            int have = forge.ai.ComputerUtilMana.getAvailableManaEstimate(me, true) + me.getManaPool().totalMana();
+            for (Card c : me.getCardsIn(ZoneType.Battlefield)) {
+                if (c.isTapped()) continue;
+                if ((convoke && c.isCreature()) || (improvise && c.isArtifact())) have++;
+            }
+            return have < cost.getCMC();
+        } catch (RuntimeException e) { return false; } // could not count: offer it, as before
+    }
+
     private boolean affordable(SpellAbility sa, Player me) {
         String failed = failedPayments.get(payKey(sa));
         if (failed != null) { if (failed.equals(manaNow(me))) return false; failedPayments.remove(payKey(sa)); }
-        if (asksWhilePricing(sa)) return true;
+        if (asksWhilePricing(sa)) return !clearlyShort(sa, me);
         PlayerControllerHuman you = humanController();
         Input before = you == null ? null : you.getInputQueue().getInput();
         PRICING.set(true);
@@ -658,6 +726,251 @@ public final class ArcanaForgeHost {
         finally { PRICING.set(false); }
     }
 
+    // ---- Mana that costs life (owner, Nov 17: Treasonous Ogre paid 3 life a time, silently, down to 1 life) ----
+
+    /** Your mana abilities that cost life to activate ("Pay 3 life: Add {R}"), on the battlefield or in the command zone. */
+    private static List<SpellAbility> lifeManaAbilities(Player p) {
+        List<SpellAbility> out = new ArrayList<>();
+        if (p == null) return out;
+        for (ZoneType z : new ZoneType[] { ZoneType.Battlefield, ZoneType.Command })
+            for (Card c : p.getCardsIn(z))
+                for (SpellAbility ma : c.getManaAbilities())
+                    if (ma.getPayCosts() != null && ma.getPayCosts().getCostParts().stream().anyMatch(part -> part instanceof forge.game.cost.CostPayLife))
+                        out.add(ma);
+        return out;
+    }
+
+    /** "Treasonous Ogre (Pay 3 life: Add {R})", one per card. */
+    private static String lifeManaText(List<SpellAbility> lifeMana) {
+        java.util.LinkedHashSet<String> names = new java.util.LinkedHashSet<>();
+        for (SpellAbility ma : lifeMana) names.add((ma.getHostCard() == null ? "a card" : ma.getHostCard().getName()) + " (" + ma.toUnsuppressedString().trim().replaceAll("\\.$", "") + ")");
+        return String.join(", ", names);
+    }
+
+    /**
+     * Forge's automatic payment keeps each life-costing mana ability's "AILifeThreshold" (life it must leave you with).
+     * Raised out of reach, the payment can't use it; the old values come back afterwards.
+     */
+    private static final String NO_LIFE = String.valueOf(Integer.MAX_VALUE / 2);
+    private static Map<SpellAbility, String> withoutLifeMana(List<SpellAbility> lifeMana) {
+        Map<SpellAbility, String> before = new java.util.HashMap<>();
+        for (SpellAbility ma : lifeMana) { before.put(ma, ma.hasParam("AILifeThreshold") ? ma.getParam("AILifeThreshold") : null); ma.putParam("AILifeThreshold", NO_LIFE); }
+        return before;
+    }
+    private static void restoreLifeMana(Map<SpellAbility, String> before) {
+        for (Map.Entry<SpellAbility, String> e : before.entrySet()) {
+            if (e.getValue() == null) e.getKey().removeParam("AILifeThreshold"); else e.getKey().putParam("AILifeThreshold", e.getValue());
+        }
+    }
+
+    /** Can the open payment be made now, leaving out {@code avoided} mana abilities? Never stops to ask you while checking. */
+    private boolean canPayNow(Input input, SpellAbility paidFor, Player payer, List<SpellAbility> avoided) {
+        Map<SpellAbility, String> before = withoutLifeMana(avoided);
+        PRICING.set(true);
+        try {
+            return field(input, "manaCost") instanceof forge.game.mana.ManaCostBeingPaid mc
+                    ? forge.ai.ComputerUtilMana.canPayManaCost(new forge.game.mana.ManaCostBeingPaid(mc), paidFor, payer, Boolean.TRUE.equals(field(input, "effect")))
+                    : forge.ai.ComputerUtilMana.canPayManaCost(paidFor, payer, 0, false);
+        } catch (AskedWhilePricing asked) {
+            return true; // Forge will ask while paying
+        } catch (RuntimeException e) {
+            return avoided.isEmpty(); // could not check: never assume the life-free payment works
+        } finally {
+            PRICING.set(false);
+            restoreLifeMana(before);
+        }
+    }
+
+    /**
+     * Forge's automatic payment, with your life-costing mana held back. Forge's own "Auto" button pays on a game thread
+     * (InputPayMana.onOk); pressing it from one runs the payment right here, so the held-back abilities come back only
+     * after it has finished.
+     */
+    private void payWithoutLife(PlayerControllerHuman you, List<SpellAbility> lifeMana) {
+        Game game = you.getPlayer().getGame();
+        game.getAction().invoke(() -> {
+            Map<SpellAbility, String> before = withoutLifeMana(lifeMana);
+            try { ok(you); } finally { restoreLifeMana(before); }
+        });
+    }
+
+    /** Paying needs mana that costs life: ask first. No: the spell is cancelled, and you can tap mana yourself. */
+    private void askToPayWithLife(Input input, SpellAbility paidFor, PlayerControllerHuman you, List<SpellAbility> lifeMana) throws Exception {
+        final Input payInput = input;
+        lifeAsked = input;
+        String what = paidFor.getHostCard() == null ? "this" : paidFor.getHostCard().getName();
+        String cost = String.valueOf(field(input, "manaCost")).trim();
+        JSONObject d = decisionBase("YesNoDecision", "Paying " + cost + " for " + what + " needs mana from " + lifeManaText(lifeMana)
+                + ". You have " + you.getPlayer().getLife() + " life. Pay with life?")
+                .put("yesText", "Pay with life").put("noText", "Cancel, I'll tap mana myself");
+        openForInput(d, new java.util.HashMap<>(), r -> {
+            if (r.optBoolean("choice")) { lastAutoPaid = payInput; ok(you); }
+            else { lastAutoPaid = payInput; cancel(you); note(what + " was cancelled. Tap the mana you want to use first, then cast it again."); }
+        });
+    }
+
+    // ---- Life ledger (owner, Nov 17: "I need to figure out how I lost so much life"): every life change, with its cause ----
+
+    private final Object lifeLock = new Object();
+    private final List<JSONObject> lifeEvents = new ArrayList<>();
+    private volatile Game lifeWatched;
+    private volatile Player lifeYou; // this view's own player, for "You" in the log
+
+    private void watchLife(Game game) {
+        if (lifeWatched == game) return;
+        synchronized (lifeLock) { lifeEvents.clear(); }
+        lifeWatched = game;
+        game.subscribeToEvents(new LifeLedger(game));
+    }
+
+    /** The life changes not yet sent to the app (oldest first); put back with {@link #unsendLife} if not sent. */
+    private JSONArray takeLife() {
+        synchronized (lifeLock) {
+            JSONArray out = new JSONArray();
+            for (JSONObject e : lifeEvents) { e.remove("pending"); e.remove("fid"); out.put(e); }
+            lifeEvents.clear();
+            return out;
+        }
+    }
+    private void unsendLife(JSONArray sent) {
+        synchronized (lifeLock) { for (int i = sent.length() - 1; i >= 0; i--) lifeEvents.add(0, sent.optJSONObject(i)); }
+    }
+
+    /** Listens to Forge's game events (on its game thread) and writes down who lost or gained life, and why. */
+    public final class LifeLedger {
+        private final Game game;
+        /** Damage dealt but not yet taken off a life total (Forge subtracts it afterwards, all at once). */
+        private final Map<Integer, List<Object[]>> dealt = new java.util.HashMap<>();
+        LifeLedger(Game game) { this.game = game; }
+
+        private Player player(forge.game.player.PlayerView pv) {
+            for (Player p : game.getRegisteredPlayers()) if (p.getId() == pv.getId()) return p;
+            return null;
+        }
+
+        private JSONObject entry(forge.game.player.PlayerView pv, int from, int to, String cause) throws Exception {
+            Player p = player(pv);
+            // not humanController(): while Forge pays automatically, your seat is briefly run by its AI controller
+            boolean isYou = p != null && p == lifeYou;
+            PhaseHandler ph = game.getPhaseHandler();
+            String name = p != null && p.getName() != null && !p.getName().trim().isEmpty() ? p.getName() : pv.getName();
+            return new JSONObject().put("playerId", p == null ? JSONObject.NULL : playerId(p)).put("name", name).put("isYou", isYou).put("fid", pv.getId())
+                    .put("from", from).put("to", to).put("change", to - from).put("cause", cause)
+                    .put("turn", ph.getTurn()).put("step", ph.getPhase() == null ? "" : ph.getPhase().name().replace('_', ' '));
+        }
+
+        private void add(JSONObject e) { synchronized (lifeLock) { if (lifeWatched == game && lifeEvents.size() < 2000) lifeEvents.add(e); } }
+
+        @com.google.common.eventbus.Subscribe
+        public void damaged(forge.game.event.GameEventPlayerDamaged ev) {
+            try {
+                if (ev.infect()) { // poison, not life
+                    int before = player(ev.target()) == null ? 0 : Math.max(0, player(ev.target()).getPoisonCounters() - ev.amount());
+                    JSONObject e = entry(ev.target(), 0, 0, ev.amount() + " infect damage from " + ev.source().getName() + " (poison counters, not life)");
+                    add(e.put("kind", "poison").put("change", 0).put("from", before).put("to", before + ev.amount()));
+                    return;
+                }
+                synchronized (dealt) {
+                    dealt.computeIfAbsent(ev.target().getId(), k -> new ArrayList<>())
+                            .add(new Object[] { ev.source() == null ? "an unknown source" : ev.source().getName(), ev.amount(), ev.combat() });
+                }
+            } catch (Exception ignored) { }
+        }
+
+        @com.google.common.eventbus.Subscribe
+        public void lifeChanged(forge.game.event.GameEventPlayerLivesChanged ev) {
+            try {
+                int change = ev.newLives() - ev.oldLives();
+                if (change == 0) return;
+                List<Object[]> hits;
+                synchronized (dealt) { hits = dealt.remove(ev.player().getId()); }
+                String cause;
+                boolean pending = false;
+                if (change < 0 && hits != null && !hits.isEmpty()) {
+                    cause = damageText(hits);
+                } else if (change < 0 && inCall("payLife")) {
+                    cause = "paid " + (-change) + " life"; pending = true; // which card: the mana or spell it paid for, next
+                } else if (inCall("setLife")) {
+                    cause = "life total set to " + ev.newLives() + by(" by ");
+                } else {
+                    cause = (change < 0 ? "lost " + (-change) + " life" : "gained " + change + " life") + by(change < 0 ? " to " : " from ");
+                    if (cause.endsWith(" life")) cause += " (Forge didn't say from what)";
+                }
+                JSONObject e = entry(ev.player(), ev.oldLives(), ev.newLives(), cause);
+                if (pending) e.put("pending", true);
+                add(e);
+            } catch (Exception ignored) { }
+        }
+
+        /** Mana added after life was paid: the life paid for that mana. */
+        @com.google.common.eventbus.Subscribe
+        public void mana(forge.game.event.GameEventManaPool ev) {
+            if (ev.mode() != forge.game.event.EventValueChangeType.Added || !hasPending(ev.player())) return;
+            Player p = player(ev.player());
+            if (p == null) return;
+            forge.game.mana.Mana last = null;
+            try { for (forge.game.mana.Mana m : p.getManaPool()) last = m; } catch (RuntimeException ignored) { }
+            if (last == null || last.getSourceCard() == null) return;
+            finishPaid(ev.player(), " for mana from " + last.getSourceCard().getName());
+        }
+
+        /** A spell or ability cast after life was paid (Phyrexian mana, "As an additional cost, pay 2 life"...). */
+        @com.google.common.eventbus.Subscribe
+        public void cast(forge.game.event.GameEventSpellAbilityCast ev) {
+            try {
+                forge.game.card.CardView host = ev.sa().getHostCard();
+                if (host != null && host.getController() != null && hasPending(host.getController()))
+                    finishPaid(host.getController(), (ev.sa().isSpell() ? " to cast " : " to activate ") + host.getName());
+            } catch (RuntimeException ignored) { }
+        }
+
+        private boolean hasPending(forge.game.player.PlayerView pv) {
+            synchronized (lifeLock) {
+                for (JSONObject e : lifeEvents) if (e.optBoolean("pending") && e.optInt("fid", -1) == pv.getId()) return true;
+                return false;
+            }
+        }
+
+        private void finishPaid(forge.game.player.PlayerView pv, String what) {
+            synchronized (lifeLock) {
+                for (int i = lifeEvents.size() - 1; i >= 0; i--) {
+                    JSONObject e = lifeEvents.get(i);
+                    if (!e.optBoolean("pending") || e.optInt("fid", -1) != pv.getId()) continue;
+                    try { e.remove("pending"); e.put("cause", e.optString("cause") + what); } catch (Exception ignored) { }
+                    return;
+                }
+            }
+        }
+
+        private String damageText(List<Object[]> hits) {
+            Map<String, Integer> bySource = new LinkedHashMap<>();
+            int total = 0; boolean combat = false;
+            for (Object[] h : hits) { bySource.merge((String) h[0], (Integer) h[1], Integer::sum); total += (Integer) h[1]; combat |= (Boolean) h[2]; }
+            StringBuilder b = new StringBuilder(total + (combat ? " combat" : "") + " damage");
+            if (bySource.size() == 1) return b.append(" from ").append(bySource.keySet().iterator().next()).toString();
+            b.append(":");
+            boolean first = true;
+            for (Map.Entry<String, Integer> e : bySource.entrySet()) { b.append(first ? " " : ", ").append(e.getValue()).append(" from ").append(e.getKey()); first = false; }
+            return b.toString();
+        }
+
+        /** The spell or ability resolving now, if any ("lost 2 life to Vampire Nighthawk's trigger"). */
+        private String by(String joiner) {
+            try {
+                if (!game.getStack().isResolving() || game.getStack().getResolvingAbility() == null) return "";
+                SpellAbility sa = game.getStack().getResolvingAbility();
+                return sa.getHostCard() == null ? "" : joiner + sa.getHostCard().getName() + (sa.isTrigger() ? " (trigger)" : sa.isSpell() ? "" : " (ability)");
+            } catch (RuntimeException e) { return ""; }
+        }
+    }
+
+    /** Whether Forge's game thread is inside {@code Player.method} right now (how a life payment is told from a loss). */
+    private static boolean inCall(String method) {
+        for (StackTraceElement f : Thread.currentThread().getStackTrace())
+            if (f.getMethodName().equals(method) && f.getClassName().equals("forge.game.player.Player")) return true;
+        return false;
+    }
+
     private static final ThreadLocal<Boolean> PRICING = ThreadLocal.withInitial(() -> false);
     private static final class AskedWhilePricing extends RuntimeException { AskedWhilePricing() { super(null, null, false, false); } }
 
@@ -666,6 +979,23 @@ public final class ArcanaForgeHost {
     public volatile boolean respondToOwnStack;
     /** Arcana's "don't stop for AI spells": on AI turns, pass AI items that don't target you or yours. */
     public volatile boolean quietOpponentTurns;
+    /**
+     * Owner, Nov 13 (slowdown): while the app's "Pass to my turn" is running, Forge passes the empty priority windows of
+     * opponents' turns itself. Before, each one cost a full table build, a send, the app's 300 ms settle and a pass back
+     * (83 round trips in one logged game). Nothing is decided here that the app would decide differently: the stack is
+     * empty and it is not this player's turn, where the app always passes. Anything else (a spell or ability on the
+     * stack, a question, blockers, this player's own turn) switches this off and is shown as before; the app switches it
+     * on again with its next automatic pass. The app only asks for it when no opponent-turn phase stop is set.
+     */
+    public volatile boolean fastPass;
+    private volatile long fastPassedAt;
+    /**
+     * Phone, Nov 13 11:30 (stuck game): the app only lets you declare blockers again once it has seen a table from
+     * outside the declare-blockers step. Passing silently from one block straight into the next attack left it
+     * believing the old blocks were still being sent, so the blockers screen never opened. After any table shown
+     * in the declare-blockers step, the next window outside that step is always shown before passing silently again.
+     */
+    private volatile boolean showAfterBlocks;
 
     private boolean autoPassStack(Game game, Player me) {
         if (game.getStack().isEmpty()) return false;
@@ -708,7 +1038,10 @@ public final class ArcanaForgeHost {
     private void emit() throws Exception {
         Game game = match == null ? null : match.getGame();
         if (game == null) return;
+        if (!lossWatchStarted) { lossWatchStarted = true; emitter.schedule(this::watchForLoss, 1, TimeUnit.SECONDS); }
         tuneAi(game);
+        watchLife(game);
+        { PlayerControllerHuman h = humanController(); if (h != null) lifeYou = h.getPlayer(); }
         long buildStart = System.nanoTime();
         PlayerControllerHuman you = humanController();
         Input input = you == null ? null : you.getInputQueue().getActualInput(you);
@@ -716,6 +1049,10 @@ public final class ArcanaForgeHost {
             if (pending != null) { emitDecision(); return; }
             SpellAbility paidFor = field(input, "saPaidFor") instanceof SpellAbility sa ? sa : null;
             boolean optionalTrigger = paidFor != null && (paidFor.isTrigger() || paidFor.getRootAbility().isTrigger());
+            // Owner, Nov 17 (lost 38 life on turn 5): Forge's automatic payment spent Treasonous Ogre's "Pay 3 life: Add {R}"
+            // over and over without asking, down to 1 life. Mana that costs life is never spent automatically now: if the
+            // cost can be paid without it, it is; if not, you're asked first.
+            List<SpellAbility> lifeMana = paidFor == null ? new ArrayList<SpellAbility>() : lifeManaAbilities(you.getPlayer());
             if (optionalTrigger && input != lastAutoPaid && input != lastPrompted) {
                 // "You may pay {1}" on a trigger (phone, Nov 8: Ultron's Robot): Forge's payment prompt is the choice
                 // itself, so ask instead of paying automatically; if it can't be paid, say so and skip it.
@@ -725,30 +1062,34 @@ public final class ArcanaForgeHost {
                 String source = paidFor.getHostCard() == null ? "an ability" : paidFor.getHostCard().getName();
                 // check the cost being asked for ("unless you pay {1}"), not the trigger's own cost, which is nothing
                 // (soak seeds 118/130, Nov 8: Rhystic Study / Overencumbered looked payable with no mana open)
-                boolean payable;
-                PRICING.set(true);
-                try {
-                    payable = field(input, "manaCost") instanceof forge.game.mana.ManaCostBeingPaid mc
-                            ? forge.ai.ComputerUtilMana.canPayManaCost(mc, paidFor, you.getPlayer(), Boolean.TRUE.equals(field(input, "effect")))
-                            : forge.ai.ComputerUtilMana.canPayManaCost(paidFor, you.getPlayer(), 0, false);
-                } catch (AskedWhilePricing asked) { payable = true; } // Forge will ask while paying
-                finally { PRICING.set(false); }
+                boolean payable = canPayNow(input, paidFor, you.getPlayer(), new ArrayList<SpellAbility>());
                 if (!asksWhilePricing(paidFor) && !payable) {
                     note("You can't pay " + cost + " for " + source + " right now, so it was skipped."); // a note, not an error (owner list, Nov 10)
                     cancel(you);
                     return;
                 }
-                JSONObject d = decisionBase("YesNoDecision", "Pay " + cost + " for " + source + "? " + paidFor.getStackDescription())
-                        .put("yesText", "Pay " + cost).put("noText", "Don't pay");
-                openForInput(d, Map.of(), r -> {
-                    if (r.optBoolean("choice")) { lastAutoPaid = payInput; ok(you); } else cancel(you);
+                boolean needsLife = !lifeMana.isEmpty() && !canPayNow(input, paidFor, you.getPlayer(), lifeMana);
+                JSONObject d = decisionBase("YesNoDecision", "Pay " + cost + " for " + source + "? " + paidFor.getStackDescription()
+                        + (needsLife ? " This needs mana from " + lifeManaText(lifeMana) + ". You have " + you.getPlayer().getLife() + " life." : ""))
+                        .put("yesText", needsLife ? "Pay " + cost + " with life" : "Pay " + cost).put("noText", "Don't pay");
+                openForInput(d, new java.util.HashMap<>(), r -> {
+                    if (!r.optBoolean("choice")) { cancel(you); return; }
+                    lastAutoPaid = payInput;
+                    if (needsLife || lifeMana.isEmpty()) ok(you); else payWithoutLife(you, lifeMana);
                 });
                 return;
             }
             // waiting for the answer; once you said "pay" and it still isn't paid, cancel below instead of waiting forever
             if (optionalTrigger && input == lastPrompted && input != lastAutoPaid) return;
+            if (input == lifeAsked && input != lastAutoPaid) return; // waiting for "pay with life?"
             // Spells and abilities you chose: auto-pay (Argentum's default); if that can't pay, cancel instead of looping
-            if (input != lastAutoPaid) { lastAutoPaid = input; ok(you); } else {
+            if (input != lastAutoPaid) {
+                if (!lifeMana.isEmpty()) {
+                    if (canPayNow(input, paidFor, you.getPlayer(), lifeMana)) { lastAutoPaid = input; payWithoutLife(you, lifeMana); return; }
+                    if (canPayNow(input, paidFor, you.getPlayer(), new ArrayList<SpellAbility>())) { askToPayWithLife(input, paidFor, you, lifeMana); return; }
+                }
+                lastAutoPaid = input; ok(you);
+            } else {
                 if (paidFor != null) failedPayments.put(payKey(paidFor), manaNow(you.getPlayer())); // don't offer it again until your mana changes
                 cancel(you); error("Not enough mana for that, so it was cancelled.");
             }
@@ -756,6 +1097,11 @@ public final class ArcanaForgeHost {
         }
         if (input != null && input != lastPrompted) {
             String kind = inputClassName(input);
+            // YES · ALWAYS THIS GAME for this card's optional trigger (owner, Nov 11: Burgeoning): answer without asking.
+            if (kind.equals("InputConfirm") && field(input, "sa") instanceof forge.game.trigger.WrappedAbility w
+                    && w.getTrigger() != null && alwaysAccept.contains(w.yieldKey())) {
+                lastPrompted = input; ok(you); return;
+            }
             if (kind.equals("InputConfirm") && game.getPhaseHandler().getTurn() == 0) { // play or draw: Arcana's offline host doesn't ask; take the play
                 lastPrompted = input; youChosePlay = true; defaultedPrompts.add("play or draw: play"); ok(you); return;
             }
@@ -781,12 +1127,14 @@ public final class ArcanaForgeHost {
                 lastPrompted = input; mulligans = mulligans < 0 ? 0 : mulligans; inMulligan = true;
                 sink.accept(handMessage("mulliganDecision", you.getPlayer()).put("mulliganCount", mulligans)
                         .put("cardsToPutOnBottom", 0).put("isOnThePlay", youChosePlay));
+                recheckMulligan(); // the last person to keep is followed only by AI turns, which wake no one
                 return;
             }
             if (kind.equals("InputLondonMulligan")) { // the new hand first, as Arcana expects; bottom cards after "keep"
                 lastPrompted = input; inMulligan = true; tuckOffered = true; tuckCount = intField(input, "toReturn");
                 sink.accept(handMessage("mulliganDecision", you.getPlayer()).put("mulliganCount", Math.max(mulligans, 1))
                         .put("cardsToPutOnBottom", tuckCount).put("isOnThePlay", youChosePlay));
+                recheckMulligan();
                 return;
             }
         }
@@ -797,7 +1145,8 @@ public final class ArcanaForgeHost {
             gameOverSent = true;
             sink.accept(fill(new JSONObject().put("type", "stateUpdate").put("state", state(game, you.getPlayer()))
                     .put("legalActions", new JSONArray()).put("pendingDecision", JSONObject.NULL).put("stateVersion", ++version)
-                    .put("interactive", false).put("interactionEpoch", "forge-" + version).put("priorityMode", "auto"), "top"));
+                    .put("interactive", false).put("interactionEpoch", "forge-" + version).put("priorityMode", "auto")
+                    .put("chimeraLifeEvents", takeLife()), "top"));
             sink.accept(new JSONObject().put("type", "gameOver").put("winnerId", winnerId(game))
                     .put("reason", you.getPlayer().hasLost() && !game.isGameOver() ? "ELIMINATED" : "GAME_OVER")
                     .put("chimeraReveal", reveal(game, you.getPlayer())));
@@ -807,16 +1156,31 @@ public final class ArcanaForgeHost {
         // Forge shuffles and deals between mulligan prompts (and the AI mulligans too): that's still the mulligan.
         // Arcana shows the opening-hand screen only until the first game state, so send nothing until turn 1
         // (phone, Nov 8 11:31: after "Mulligan" the new hand never appeared).
-        if (inMulligan && game.getPhaseHandler().getTurn() == 0) return;
+        // Phone, Nov 11 (host + friend + 2 AIs): after keeping, nothing asked this person anything again until their
+        // own turn or a spell, because AI turns pass in silence. The host sat on the loading screen through whole AI
+        // turns. Keep looking (cheap: nothing is built) until turn 1 starts, so everyone sees the table from its start.
+        if (inMulligan && game.getPhaseHandler().getTurn() == 0) { recheckMulligan(); return; }
         if (inMulligan) { // Argentum's order: mulliganComplete, then the first game state
             inMulligan = false;
+            fastPass = false; // a new game never starts with the last game's "Pass to my turn"
             sink.accept(new JSONObject().put("type", "mulliganComplete").put("finalHandSize", you.getPlayer().getCardsIn(ZoneType.Hand).size()));
         }
-        if (pending != null) { emitDecision(); return; } // an open question stays on screen until answered
+        if (pending != null) { fastPass = false; emitDecision(); return; } // an open question stays on screen until answered
         boolean priority = input instanceof InputPassPriority;
         if (priority && input != lastAutoPassed && autoPassStack(game, you.getPlayer())) { lastAutoPassed = input; ok(you); return; }
+        boolean blockStep = game.getPhaseHandler().getPhase() == PhaseType.COMBAT_DECLARE_BLOCKERS;
+        if (priority && fastPass) {
+            if (!showAfterBlocks && !blockStep && game.getStack().isEmpty() && game.getPhaseHandler().getPlayerTurn() != you.getPlayer()) {
+                if (input != lastAutoPassed) { lastAutoPassed = input; fastPassedAt = System.nanoTime(); ok(you); return; }
+                // The same window again: Forge is still taking the pass. If it hasn't after 1.5 s, show the table instead.
+                if (System.nanoTime() - fastPassedAt < 1_500_000_000L) return;
+            }
+            fastPass = false; // something to show: the app decides, and asks again with its next automatic pass
+        }
         String inputKind = inputClassName(input);
         boolean combatInput = inputKind.equals("InputAttack") || inputKind.equals("InputBlock");
+        if (combatInput) fastPass = false;
+        if (blockStep || inputKind.equals("InputBlock")) showAfterBlocks = true; // this table is from the block step
         // InputLockUI is Forge's "waiting for actions" lock while its game thread works: not a decision. Show state only.
         if (inputKind.equals("InputLockUI")) input = null;
         if (input != null && !priority && !combatInput && input != lastPrompted && decisionForInput(input, you, game)) { lastPrompted = input; return; }
@@ -870,6 +1234,7 @@ public final class ArcanaForgeHost {
                 .put("undoAvailable", false)
                 .put("priorityMode", "auto")
                 .put("stateVersion", ++version)
+                .put("chimeraAttackWarning", attackWarning(game, you.getPlayer()))
                 .put("interactive", priority || combatInput)
                 .put("interactionEpoch", "forge-" + version)
                 .put("forgeInput", input == null ? "none" : inputClassName(input));
@@ -885,7 +1250,16 @@ public final class ArcanaForgeHost {
                     .put("ai", aiStrength.name()));
             lastPlayerActionAt = 0;
         }
-        sink.accept(update);
+        // Forge's game thread can ask a question while this table was being built (it was checked for one many
+        // milliseconds ago, above). A table without the question, sent after it, cleared the prompt on the phone and
+        // left the game waiting forever (owner's report, Nov 12: trigger order, turn 12). The question stays the last word.
+        JSONArray life = takeLife(); // Arcana's diagnostic log writes each one down (owner, Nov 17)
+        if (life.length() > 0) update.put("chimeraLifeEvents", life);
+        boolean sent;
+        synchronized (sendLock) { sent = pending == null; if (sent) sink.accept(update); }
+        if (!sent) unsendLife(life);
+        if (sent && !blockStep && !inputKind.equals("InputBlock")) showAfterBlocks = false; // the app has now seen another step
+        if (!sent) emitDecision();
     }
 
     /** A state with nothing to do yet (Argentum sends one before each mulligan prompt). */
@@ -1058,7 +1432,7 @@ public final class ArcanaForgeHost {
         java.util.List<Integer> at = new ArrayList<>(); // each shown entry's place in the full log
         for (int k = 0; k < all.size(); k++) {
             forge.game.GameLogEntry e = all.get(k);
-            if (e != null && LOGGED.contains(e.type()) && e.message() != null && !e.message().isBlank()) { shown.add(e); at.add(k); }
+            if (e != null && LOGGED.contains(e.type()) && e.message() != null && !e.message().trim().isEmpty()) { shown.add(e); at.add(k); }
         }
         int from = Math.max(0, shown.size() - 200);
         for (int i = from; i < shown.size(); i++) {
@@ -1074,7 +1448,7 @@ public final class ArcanaForgeHost {
             JSONArray details = new JSONArray();
             for (int k = at.get(i) + 1; k < end && details.length() < 30; k++) {
                 forge.game.GameLogEntry d = all.get(k);
-                if (d != null && d.message() != null && !d.message().isBlank()) details.put(plain(d.message()));
+                if (d != null && d.message() != null && !d.message().trim().isEmpty()) details.put(plain(d.message()));
             }
             if (details.length() > 0) line.put("details", details);
             out.put(line);
@@ -1083,6 +1457,51 @@ public final class ArcanaForgeHost {
     }
 
     private static JSONObject fillPlayer(JSONObject p) throws Exception { return fill(p, "player"); }
+
+    /**
+     * Phone, Nov 14 (Borg Queen game): "Pass to my turn" passed through the declare-blockers step and the player died
+     * to 57 damage without a word, because there was nothing to block with and so no block question. When blocks are
+     * in and the unblocked attackers would kill this player (life, or 21 from one commander), the table says so and
+     * the app stops passing once. JSONObject.NULL when there is nothing to warn about.
+     */
+    private static Object attackWarning(Game game, Player me) {
+        try {
+            if (game.getPhaseHandler().getPlayerTurn() == me || game.getPhaseHandler().getPhase() != PhaseType.COMBAT_DECLARE_BLOCKERS) return JSONObject.NULL;
+            forge.game.combat.Combat combat = game.getCombat();
+            if (combat == null) return JSONObject.NULL;
+            int damage = 0, attackers = 0;
+            String commander = null;
+            for (Card a : combat.getAttackersOf(me)) {
+                if (combat.isBlocked(a)) continue;
+                int d = Math.max(0, a.getNetCombatDamage());
+                attackers++; damage += d;
+                if (a.isCommander()) {
+                    int before = 0;
+                    for (Map.Entry<Card, Integer> e : me.getCommanderDamage()) if (e.getKey().equals(a)) before = e.getValue();
+                    if (before + d >= 21) commander = a.getName();
+                }
+            }
+            if (attackers == 0) return JSONObject.NULL;
+            if (damage >= me.getLife()) return damage + " unblocked damage is coming and you have " + me.getLife() + " life. You can respond.";
+            if (commander != null) return commander + " is about to reach 21 commander damage on you. You can respond.";
+            return JSONObject.NULL;
+        } catch (RuntimeException e) { return JSONObject.NULL; } // combat changed while being read: no warning
+    }
+
+    /**
+     * Phone, Nov 14: "Choose a card" twice after attacking, with no hint of what was asking. When Forge's question is
+     * that bare and an ability is resolving, name its card: "Choose a card for Locutus of Borg".
+     */
+    private String withSource(String prompt) {
+        try {
+            if (prompt == null || !prompt.trim().matches("(?i)choose (a |an |one |\\d+ )?(card|creature|permanent|land|artifact)s?\\.?")) return prompt;
+            Game game = match == null ? null : match.getGame();
+            if (game == null || game.getStack().isEmpty() || !game.getStack().isResolving()) return prompt;
+            SpellAbility sa = game.getStack().peekAbility();
+            Card host = sa == null ? null : sa.getHostCard();
+            return host == null ? prompt : prompt.trim().replaceAll("\\.$", "") + " for " + host.getName();
+        } catch (RuntimeException e) { return prompt; }
+    }
 
     private JSONArray commanderDamage(Player p) throws Exception {
         JSONArray out = new JSONArray();
@@ -1161,8 +1580,8 @@ public final class ArcanaForgeHost {
 
     private static String picture(String name, String ownerSeat) {
         java.util.function.BiFunction<String, String, String> f = pictures;
-        if (f == null || name == null || name.isBlank()) return null;
-        try { String url = f.apply(name, ownerSeat); return url == null || url.isBlank() ? null : url; } catch (RuntimeException e) { return null; }
+        if (f == null || name == null || name.trim().isEmpty()) return null;
+        try { String url = f.apply(name, ownerSeat); return url == null || url.trim().isEmpty() ? null : url; } catch (RuntimeException e) { return null; }
     }
 
     private Player youPlayer() { PlayerControllerHuman y = humanController(); return y == null ? null : y.getPlayer(); }
@@ -1170,7 +1589,7 @@ public final class ArcanaForgeHost {
     /** The card's rules text; Forge's printed text when the live card has none (e.g. a card not yet fully loaded). */
     private static String text(Card c) {
         String t = c.getOracleText();
-        if ((t == null || t.isBlank()) && c.getRules() != null) t = c.getRules().getOracleText();
+        if ((t == null || t.trim().isEmpty()) && c.getRules() != null) t = c.getRules().getOracleText();
         return t == null ? "" : t.replace("\\n", "\n");
     }
 
@@ -1384,7 +1803,9 @@ public final class ArcanaForgeHost {
      */
     static String humanTypes(String t) {
         java.util.regex.Matcher m = java.util.regex.Pattern.compile("(?:(\\d+) )?\\b([A-Z][a-zA-Z]*)((?:[.+][A-Za-z]+)+)(\\(s\\))?").matcher(t);
-        StringBuilder out = new StringBuilder();
+        // StringBuffer on purpose: Matcher.appendReplacement/appendTail(StringBuilder) only exist from Android 14, and
+        // this runs on every prompt and log line (Android 13 phone, Nov 12: NoSuchMethodError, the game never started).
+        StringBuffer out = new StringBuffer();
         while (m.find()) {
             String n = m.group(1), type = m.group(2), props = m.group(3), plural = m.group(4);
             if (!props.contains(".") && !props.startsWith("+")) { m.appendReplacement(out, java.util.regex.Matcher.quoteReplacement(m.group())); continue; }
@@ -1423,6 +1844,8 @@ public final class ArcanaForgeHost {
     private record Decision(String id, JSONObject json, Map<String, Object> objects, java.util.function.Consumer<JSONObject> onAnswer) { }
 
     private volatile Decision pending;
+    /** Guards "open a question" against "send a table that has none": see the end of emit(). */
+    private final Object sendLock = new Object();
     // Buffered: a SynchronousQueue dropped an answer that arrived before Forge's thread reached take().
     private final java.util.concurrent.LinkedBlockingQueue<JSONObject> answers = new java.util.concurrent.LinkedBlockingQueue<>();
     private final java.util.concurrent.atomic.AtomicInteger decisionSeq = new java.util.concurrent.atomic.AtomicInteger();
@@ -1437,7 +1860,7 @@ public final class ArcanaForgeHost {
     /** Shows the decision and, for GUI calls, blocks Forge's game thread until the player answers (as desktop Forge does). */
     private JSONObject ask(JSONObject json, Map<String, Object> objects) throws Exception {
         answers.clear();
-        pending = new Decision(json.getString("id"), json, objects, null);
+        synchronized (sendLock) { pending = new Decision(json.getString("id"), json, objects, null); } // see emit(): never overtaken by an older table
         emitDecision();
         try {
             JSONObject r = answers.take();
@@ -1469,7 +1892,7 @@ public final class ArcanaForgeHost {
     }
 
     private void openForInput(JSONObject json, Map<String, Object> objects, java.util.function.Consumer<JSONObject> onAnswer) throws Exception {
-        pending = new Decision(json.getString("id"), json, objects, onAnswer);
+        synchronized (sendLock) { pending = new Decision(json.getString("id"), json, objects, onAnswer); }
         emitDecision();
     }
 
@@ -1551,6 +1974,11 @@ public final class ArcanaForgeHost {
     /** Pick min..max of the choices: cards via SelectCardsDecision, anything else (single pick) via ChooseOptionDecision. */
     private <T> List<T> choose(String prompt, int min, int max, List<T> choices) throws Exception {
         if (choices == null || choices.isEmpty()) return new ArrayList<>();
+        prompt = withSource(prompt);
+        // Forge passes -1 for "any number" (opening-hand actions such as Leyline Axe; phone, Nov 16: the picker read
+        // "Choose -1–-1 card(s)" and Confirm could never light up). No minimum, no cap.
+        if (max < 0) max = choices.size();
+        if (min < 0) min = 0;
         max = Math.min(max, choices.size());
         min = Math.min(min, max);
         boolean cards = choices.stream().allMatch(c -> c instanceof Card || c instanceof forge.game.card.CardView);
@@ -1574,7 +2002,7 @@ public final class ArcanaForgeHost {
             for (T c : choices) options.put(label(c));
             d.put("options", options).put("canCancel", min == 0);
             int index = ask(d, objects).optInt("optionIndex", -1);
-            return index >= 0 && index < choices.size() ? new ArrayList<>(List.of(choices.get(index))) : new ArrayList<>();
+            return index >= 0 && index < choices.size() ? new ArrayList<>(new ArrayList<>(java.util.Arrays.asList(choices.get(index)))) : new ArrayList<>();
         }
         // Several non-card choices (colours, creature types, modes, players): a card picker with one named tile each.
         JSONObject d = decisionBase("SelectCardsDecision", prompt);
@@ -1598,6 +2026,9 @@ public final class ArcanaForgeHost {
 
     /** Forge's dual-list prompt: pure ordering (OrderObjectsDecision) or "move some of these" (SelectCardsDecision). */
     private List<?> order(String prompt, List<?> source, List<?> dest, int remMin, int remMax) throws Exception {
+        // Forge's -1 means unbounded here too: any number may stay behind, down to none.
+        if (remMin < 0) remMin = 0;
+        if (remMax < 0) remMax = source == null ? 0 : source.size();
         boolean cardItems = source != null && source.stream().allMatch(o -> o instanceof Card || o instanceof forge.game.card.CardView);
         // Everything ends up in the result (remMin == remMax == 0), or non-card items (replacement effects, abilities)
         // where moving all of them is always allowed (remMin == 0): only the order is the player's.
@@ -1621,7 +2052,7 @@ public final class ArcanaForgeHost {
             for (Object o : items) if (!out.contains(o)) out.add(o); // never drop anything
             return out;
         }
-        if (source == null) return List.of();
+        if (source == null) return new ArrayList<>();
         // Choose which cards move: between (size - remMax) and (size - remMin) of them.
         int min = Math.max(0, source.size() - remMax), max = Math.max(min, source.size() - remMin);
         return choose(prompt, min, max, source);
@@ -1648,7 +2079,7 @@ public final class ArcanaForgeHost {
         while (true) {
             JSONObject d = decisionBase("DistributeDecision", "Divide " + amount + " " + (label == null ? "" : label) + " from " + name)
                     .put("targets", ids).put("totalAmount", amount).put("minPerTarget", atLeastOne ? 1 : 0).put("maxPerTarget", caps);
-            JSONObject chosen = ask(d, Map.of()).optJSONObject("distribution");
+            JSONObject chosen = ask(d, new java.util.HashMap<>()).optJSONObject("distribution");
             Map<Object, Integer> out = new LinkedHashMap<>();
             int total = 0; boolean ok = chosen != null;
             if (chosen != null) for (String id : keys(chosen)) {
@@ -1699,7 +2130,7 @@ public final class ArcanaForgeHost {
                     .put("defenderId", defenderId == null ? JSONObject.NULL : defenderId).put("minimumAssignments", minimum)
                     .put("defaultAssignments", defaults).put("hasTrample", trample).put("hasDeathtouch", deathtouch);
             d.getJSONObject("context").put("phase", "COMBAT").put("sourceId", "f" + attackerView.getId()).put("sourceName", name);
-            JSONObject chosen = ask(d, Map.of()).optJSONObject("assignments");
+            JSONObject chosen = ask(d, new java.util.HashMap<>()).optJSONObject("assignments");
             Map<forge.game.card.CardView, Integer> out = new java.util.HashMap<>(); // HashMap: Forge keys the defender as null
             int total = 0; boolean ok = chosen != null;
             if (chosen != null) for (String id : keys(chosen)) {
@@ -1760,7 +2191,7 @@ public final class ArcanaForgeHost {
     private boolean askYesNo(String prompt, String yes, String no) throws Exception {
         String[] said = twoWay(prompt == null ? "" : prompt, yes == null ? "Yes" : yes, no == null ? "No" : no);
         JSONObject d = decisionBase("YesNoDecision", said[0]).put("yesText", said[1]).put("noText", said[2]);
-        return ask(d, Map.of()).optBoolean("choice");
+        return ask(d, new java.util.HashMap<>()).optBoolean("choice");
     }
 
     /** The spell or ability you last chose to cast or activate (for its X). */
@@ -1817,7 +2248,7 @@ public final class ArcanaForgeHost {
     private int askNumber(String prompt, int min, int max) throws Exception {
         if (min >= max) return min;
         JSONObject d = decisionBase("ChooseNumberDecision", prompt).put("minValue", min).put("maxValue", max);
-        return Math.max(min, Math.min(max, ask(d, Map.of()).optInt("number", min)));
+        return Math.max(min, Math.min(max, ask(d, new java.util.HashMap<>()).optInt("number", min)));
     }
 
     /** Forge's synchronous questions (called on Forge's game thread). Returns NOT_HANDLED when the name isn't a question. */
@@ -1846,21 +2277,21 @@ public final class ArcanaForgeHost {
             case "chooseEntitiesForEffect": return choose((String) a[0], (Integer) a[2], (Integer) a[3], (List<?>) a[1]);
             case "getInteger": return askNumber((String) a[0], (Integer) a[1], capX((String) a[0], (Integer) a[1], (Integer) a[2]));
             case "showOptionDialog": { // (message, title, icon, options, default) → chosen index (from Goose's PR #19)
-                List<?> opts = a.length > 3 && a[3] instanceof List<?> l ? l : List.of();
+                List<?> opts = a.length > 3 && a[3] instanceof List<?> l ? l : new ArrayList<>();
                 if (opts.size() < 2) return a.length > 4 ? a[4] : 0;
                 JSONObject d = decisionBase("ChooseOptionDecision", String.valueOf(a[0]));
                 JSONArray options = new JSONArray(); for (Object o : opts) options.put(String.valueOf(o));
                 d.put("options", options).put("canCancel", false);
-                int i = ask(d, Map.of()).optInt("optionIndex", -1);
+                int i = ask(d, new java.util.HashMap<>()).optInt("optionIndex", -1);
                 return i >= 0 && i < opts.size() ? i : (a.length > 4 ? a[4] : 0);
             }
             case "showInputDialog": { // (message, title, icon, initial, options...) → with options, a real choice
-                List<?> opts = a.length > 4 && a[4] instanceof List<?> l ? l : List.of();
+                List<?> opts = a.length > 4 && a[4] instanceof List<?> l ? l : new ArrayList<>();
                 if (opts.isEmpty()) { notice("gui-free-text", "Forge asked for typed text (" + a[0] + "); Arcana can't show that yet, so its suggested text was used."); return a.length > 3 ? a[3] : null; }
                 JSONObject d = decisionBase("ChooseOptionDecision", String.valueOf(a[0]));
                 JSONArray options = new JSONArray(); for (Object o : opts) options.put(String.valueOf(o));
                 d.put("options", options).put("canCancel", false);
-                int i = ask(d, Map.of()).optInt("optionIndex", -1);
+                int i = ask(d, new java.util.HashMap<>()).optInt("optionIndex", -1);
                 return String.valueOf(opts.get(i >= 0 && i < opts.size() ? i : 0));
             }
             case "assignGenericAmount": return assignGenericAmount((forge.game.card.CardView) a[0], (Map<?, ?>) a[1], (Integer) a[2], (Boolean) a[3], (String) a[4]);
@@ -1938,7 +2369,7 @@ public final class ArcanaForgeHost {
             Map<String, Object> objects = new LinkedHashMap<>();
             JSONArray options = new JSONArray(); JSONObject info = new JSONObject();
             if (choices instanceof Iterable<?> it) for (Object o : it) if (o instanceof Card c) { String id = cardId(c); objects.put(id, c); options.put(id); info.put(id, cardInfo(c)); }
-            String what = field(input, "description") instanceof String w && !w.isBlank() ? w : "Convoke";
+            String what = field(input, "description") instanceof String w && !w.trim().isEmpty() ? w : "Convoke";
             JSONObject d = decisionBase("SelectCardsDecision", what + ": choose what to tap to help pay (none: pay with mana)").put("options", options)
                     .put("minSelections", 0).put("maxSelections", cap == null ? options.length() : Math.min(cap, options.length())).put("cardInfo", info);
             openForInput(d, objects, r -> {
@@ -1952,14 +2383,29 @@ public final class ArcanaForgeHost {
             String prompt = field(input, "message") instanceof String m ? m : "Confirm";
             // Forge's own answer names ("Library" / "Graveyard", "Top" / "Bottom"); they were read from a field that
             // doesn't exist, so every such question showed Yes / No (owner, Nov 10).
-            String yes = field(input, "yesButtonText") instanceof String y && !y.isBlank() ? y : "Yes";
-            String no = field(input, "noButtonText") instanceof String n && !n.isBlank() ? n : "No";
+            String yes = field(input, "yesButtonText") instanceof String y && !y.trim().isEmpty() ? y : "Yes";
+            String no = field(input, "noButtonText") instanceof String n && !n.trim().isEmpty() ? n : "No";
             String[] said = twoWay(prompt, yes, no); prompt = said[0]; yes = said[1]; no = said[2];
             // CR 903.9a: Forge's prompt is the rule's full text; say it the way a player would (owner, Nov 8)
             java.util.regex.Matcher cz = java.util.regex.Pattern.compile("^(.+?): If a commander is in a graveyard or in exile").matcher(prompt);
             if (cz.find()) { prompt = "Return " + cz.group(1) + " to the command zone?"; yes = "Command zone"; no = "Leave it"; }
             JSONObject d = decisionBase("YesNoDecision", prompt).put("yesText", yes).put("noText", no);
-            openForInput(d, Map.of(), r -> { if (r.optBoolean("choice")) ok(you); else cancel(you); });
+            // "Use triggered ability of Burgeoning?": Forge's own "always yes" for this card's trigger. Arcana's button
+            // only remembered the exact prompt for the current turn, and the prompt names the land that triggered it,
+            // so it never matched again (owner, Nov 11: Burgeoning asked on every opponent's land, on several cards).
+            String always = field(input, "sa") instanceof forge.game.trigger.WrappedAbility w && w.getTrigger() != null
+                    ? w.yieldKey() : null;
+            if (always != null) {
+                d.put("alwaysAvailable", true);
+                Card host = ((forge.game.trigger.WrappedAbility) field(input, "sa")).getHostCard();
+                if (host != null) d.getJSONObject("context").put("sourceId", cardId(host)).put("sourceName", host.getName());
+            }
+            openForInput(d, new java.util.HashMap<>(), r -> {
+                // Remembered here, not in Forge's yield store: that store keys by its tier settings (and can persist
+                // across games), so a plain "accept" there was never read back (scenario N, Nov 11).
+                if (always != null && r.optBoolean("choice") && r.optBoolean("always")) alwaysAccept.add(always);
+                if (r.optBoolean("choice")) ok(you); else cancel(you);
+            });
             return true;
         }
         return false;
@@ -2131,7 +2577,7 @@ public final class ArcanaForgeHost {
         if (name.equals("getChoices") || name.equals("many")) {
             List<?> choices = firstList(args);
             int min = firstInt(args);
-            return choices == null ? List.of() : new ArrayList<>(choices.subList(0, Math.min(Math.max(min, 0), choices.size())));
+            return choices == null ? new ArrayList<>() : new ArrayList<>(choices.subList(0, Math.min(Math.max(min, 0), choices.size())));
         }
         if (name.equals("one") || name.equals("chooseSingleEntityForEffect")) {
             List<?> choices = firstList(args);

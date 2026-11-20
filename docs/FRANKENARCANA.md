@@ -29,7 +29,7 @@ Make one deliberately rough, disposable prototype, ultimately on the owner's And
 
 Read-only Arcana reference (pinned source `05cdd6dae84e7df4c88e630054cdc6a76dfa2964`): `TableMainLayout.kt`, `TableBoardViews.kt`, `TableModel.kt`, `BattlefieldLayout.kt` implement the actual Compose game table. `android/app/src/main/java/com/arcanatable/engine/LocalArgentumHost.kt` translates offline rules operations into `/game`-style messages (connected, stateUpdate, gameStarted/gameOver) and masks per-player information. Forge's `AiController` is coupled to Forge `Game`, `Player`, `SpellAbility`, so the prototype must use both **Forge rules and Forge AI**, behind a **new Chimera-owned adapter**. This is an experimental protocol/visual contract, *not* an import or replacement inside Arcana.
 
-Read-only Forge: `Card-Forge/forge` at commit `7c34365c749ca46ab71336c5f267340d6088e600`. Forge already has Android/mobile modules, although whether they fit a small native prototype remains to be demonstrated.
+Read-only Forge: `Card-Forge/forge` at commit `583714b8bfbd9cb04f8bc39ad95861190caf7691`. Forge already has Android/mobile modules, although whether they fit a small native prototype remains to be demonstrated.
 
 ## Existing proof, not extra gate
 

@@ -24,6 +24,15 @@ public final class ProtocolGuard {
     private boolean mulliganOpen;
     private String rejectionState = "";
     private int rejections;
+    // Opt-in (a driver that reports its own actions): the question on screen, until the player answers or acts.
+    private boolean tracksQuestions;
+    private String openQuestion = "", openQuestionLabel = "";
+
+    /** The driver will call {@link #playerActed()} for everything it sends: enables the wiped-question check. */
+    public synchronized void trackQuestions() { tracksQuestions = true; }
+
+    /** The test's player answered or acted: whatever was asked may now close. */
+    public synchronized void playerActed() { openQuestion = ""; }
 
     public synchronized void observe(JSONObject message) {
         String type = message.optString("type");
@@ -76,6 +85,13 @@ public final class ProtocolGuard {
                 fail("pendingDecision without identity/type at v" + v);
             if (!message.optBoolean("interactive"))
                 fail("noninteractive pendingDecision at v" + v);
+        }
+        // Arcana replaces its open prompt with whatever the newest state carries: a table without the question, sent
+        // while it is still unanswered, clears the prompt and the game waits forever (owner's phone, Nov 12, turn 12).
+        if (decision != null) { openQuestion = decision.optString("id"); openQuestionLabel = decision.optString("type") + ": " + decision.optString("prompt"); }
+        else if (tracksQuestions && !openQuestion.isEmpty() && !state.optBoolean("isGameOver")) {
+            fail("a table without the question was sent while it was still unanswered (v" + v + ", " + openQuestionLabel + ")");
+            openQuestion = "";
         }
         if (message.optBoolean("interactive") && decision == null && legal.length() == 0)
             fail("interactive but no legal action or decision at v" + v);
