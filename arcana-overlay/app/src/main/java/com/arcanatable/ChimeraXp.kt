@@ -868,7 +868,8 @@ private fun BoardGroup(key: String, title: String, cards: List<GameCard>, g: Ski
     }
     if (!open) return
     if (cards.isEmpty()) XText("   (empty)", 12.sp, Xp.muted, mono = true)
-    val row: @Composable (GameCard, androidx.compose.ui.unit.Dp) -> Unit = { c, indent ->
+    val row: @Composable (ChimeraCardGroups.Line, androidx.compose.ui.unit.Dp) -> Unit = { l, indent ->
+        val c = l.card
         val sel = hand && ui.selected?.id == c.id
         val hot = if (hand) g.castable(c) else mine && c.id in g.playable && !g.busy
         Row(Modifier.fillMaxWidth().heightIn(min = 26.dp).background(if (sel) Xp.select else if (hot) Color(0xFFE6F6DF) else Color.Transparent)
@@ -876,14 +877,14 @@ private fun BoardGroup(key: String, title: String, cards: List<GameCard>, g: Ski
             .padding(start = 6.dp + indent, end = 6.dp), verticalAlignment = Alignment.CenterVertically) {
             Text(typeIcon(c), fontSize = 12.sp, modifier = Modifier.width(24.dp))
             val counters = c.counters.filterValues { it > 0 }.entries.joinToString("") { " +${it.value}" }.take(12)
-            XText((if (c.isFaceDown) "Face-down card" else c.name) + counters, 12.sp, if (sel) Color.White else Xp.ink, mono = true, modifier = Modifier.weight(1f))
-            if (c.power != null && c.toughness != null) XText("${c.power}/${c.toughness}", 12.sp, if (sel) Color.White else Xp.ink, mono = true, modifier = Modifier.padding(horizontal = 6.dp))
-            XText(when { c.tapped -> "TAP"; c.summoningSick && c.type.contains("Creature", true) -> "NEW"; else -> "" }, 11.sp,
+            XText((if (c.isFaceDown) "Face-down card" else c.name) + (if (l.count > 1) " ×${l.count}" + (if (l.tapped > 0) " · ${l.tapped} tapped" else "") else counters), 12.sp, if (sel) Color.White else Xp.ink, mono = true, modifier = Modifier.weight(1f))
+            if (l.count == 1 && c.power != null && c.toughness != null) XText("${c.power}/${c.toughness}", 12.sp, if (sel) Color.White else Xp.ink, mono = true, modifier = Modifier.padding(horizontal = 6.dp))
+            XText(when { l.count > 1 -> ""; c.tapped -> "TAP"; c.summoningSick && c.type.contains("Creature", true) -> "NEW"; else -> "" }, 11.sp,
                 if (c.tapped) Xp.ink else Color(0xFF1F4FD1), mono = true, modifier = Modifier.width(30.dp))
         }
     }
     // Owner, Nov 19: optionally nested by card type, each heading opens and closes (View › Group by card type).
-    if (!ChimeraCardGroups.nested) { cards.forEach { row(it, 0.dp) }; return }
+    if (!ChimeraCardGroups.nested) { ChimeraCardGroups.lines(cards).forEach { row(it, 0.dp) }; return }
     ChimeraCardGroups.groups(cards).forEach { (cat, list) ->
         val sub = "$key/$cat"
         val subOpen = ChimeraCardGroups.isOpen(sub)
@@ -892,7 +893,7 @@ private fun BoardGroup(key: String, title: String, cards: List<GameCard>, g: Ski
             Box(Modifier.size(11.dp).background(Color.White).border(1.dp, Color(0xFF7F9DB9)), contentAlignment = Alignment.Center) { XText(if (subOpen) "−" else "+", 9.sp, bold = true) }
             XText("$cat (${list.size})", 12.sp, bold = true, mono = true, modifier = Modifier.padding(start = 6.dp))
         }
-        if (subOpen) list.forEach { row(it, 18.dp) }
+        if (subOpen) ChimeraCardGroups.lines(list).forEach { row(it, 18.dp) }
     }
 }
 

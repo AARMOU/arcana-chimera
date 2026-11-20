@@ -657,6 +657,23 @@ internal object ChimeraCardGroups {
         }
     }
     /** The non-empty headings in [ORDER], each with its cards in their existing order. */
+    /**
+     * Owner, Nov 19: more than five of one card is one line with a ×N label. Each entry is the card a tap acts on
+     * (the first untapped copy), how many there are, and how many of them are tapped.
+     */
+    data class Line(val card: GameCard, val count: Int, val tapped: Int)
+    fun lines(cards: List<GameCard>): List<Line> {
+        val byName = cards.groupBy { if (it.isFaceDown) "\u0000${it.id}" else it.name }
+        val seen = mutableSetOf<String>()
+        return cards.mapNotNull { c ->
+            val key = if (c.isFaceDown) "\u0000${c.id}" else c.name
+            val same = byName.getValue(key)
+            if (same.size <= 5) Line(c, 1, if (c.tapped) 1 else 0)
+            else if (seen.add(key)) Line(same.firstOrNull { !it.tapped } ?: same.first(), same.size, same.count { it.tapped })
+            else null
+        }
+    }
+
     fun groups(cards: List<GameCard>): List<Pair<String, List<GameCard>>> =
         cards.groupBy(::category).let { m -> ORDER.mapNotNull { k -> m[k]?.let { k to it } } }
 }

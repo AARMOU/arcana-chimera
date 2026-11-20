@@ -261,20 +261,21 @@ private fun ColumnScope.Board(c: TermCtx, cols: Int, title: String, cards: List<
     if (cards.isEmpty()) { TLine(fit("  (nothing)", cols), c.pal.dim); return }
     val nameW = cols - 6 - 4 - 4
     val sorted = cards.sortedWith(compareBy({ it.type.contains("Land", true) }, { it.name }))
-    val line: @Composable (GameCard, String) -> Unit = { card, pad ->
+    val line: @Composable (ChimeraCardGroups.Line, String) -> Unit = { l, pad ->
+        val card = l.card
         val counters = card.counters.filterValues { it > 0 }.entries.joinToString(" ") { "+${it.value}" }
-        val name = card.name + if (counters.isNotEmpty()) " $counters" else ""
-        val text = pad + fit(if (upper) name.uppercase() else name, nameW - (pad.length - 2)) + " " + fit(pt(card), 6, right = true) + " " + fit(state(card), 3)
+        val name = card.name + if (l.count > 1) " x${l.count}" + (if (l.tapped > 0) " (${l.tapped} tap)" else "") else if (counters.isNotEmpty()) " $counters" else ""
+        val text = pad + fit(if (upper) name.uppercase() else name, nameW - (pad.length - 2)) + " " + fit(if (l.count > 1) "" else pt(card), 6, right = true) + " " + fit(if (l.count > 1) "" else state(card), 3)
         TTap(text, c.colorOf(card, mine), { g.tapPermanent(card, mine) }, { g.preview(card) })
     }
     // Owner, Nov 19: optionally nested by card type; tap a heading to open or close it ([menu] › group by card type).
-    if (!ChimeraCardGroups.nested) { sorted.forEach { line(it, "  ") }; return }
+    if (!ChimeraCardGroups.nested) { ChimeraCardGroups.lines(sorted).forEach { line(it, "  ") }; return }
     ChimeraCardGroups.groups(cards.sortedBy { it.name }).forEach { (cat, list) ->
         val key = "term/$title/$cat"
         val open = ChimeraCardGroups.isOpen(key)
         val head = "  ${if (open) "▾" else "▸"} ${cat.lowercase()} · ${list.size}"
         TTap(fit(if (upper) head.uppercase() else head, cols), c.pal.dim, { ChimeraCardGroups.toggle(key) }, { ChimeraCardGroups.toggle(key) })
-        if (open) list.forEach { line(it, "    ") }
+        if (open) ChimeraCardGroups.lines(list).forEach { line(it, "    ") }
     }
 }
 
