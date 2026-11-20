@@ -1,6 +1,29 @@
 package com.arcanatable
 
 import android.content.SharedPreferences
+import android.content.Context
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.testTag
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.Text
+import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.remember
+import androidx.compose.ui.composed
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.findRootCoordinates
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.sp
+import androidx.compose.ui.unit.toSize
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
@@ -124,16 +147,154 @@ internal object ChimeraStudioUi {
     }
 }
 
-/** A drag handle above Studio's inspector: drag it anywhere; double-tap puts it back. */
+/**
+ * A drag handle above Studio's panels: drag it to move the panel, double-tap to put it back (owner, Nov 19: a panel
+ * dragged down to "minimise" it vanished for good). The panel's top row always stays on screen, and every Studio
+ * session starts with panels where they dock.
+ */
 @Composable
 internal fun ChimeraInspectorHandle() {
-    Box(Modifier.fillMaxWidth().height(22.dp).pointerInput(Unit) {
-        detectDragGestures(onDrag = { change, amount -> change.consume(); ChimeraStudioUi.offset += amount })
-    }, contentAlignment = Alignment.Center) {
+    Box(Modifier.fillMaxWidth().height(28.dp)
+        .pointerInput(Unit) { detectTapGestures(onDoubleTap = { ChimeraStudioUi.offset = Offset.Zero }) }
+        .pointerInput(Unit) {
+            detectDragGestures(onDrag = { change, amount -> change.consume(); ChimeraStudioUi.offset = ChimeraPanelBounds.clamp(ChimeraStudioUi.offset + amount) })
+        }.semantics { contentDescription = "Drag to move this panel. Double-tap to put it back." }, contentAlignment = Alignment.Center) {
         Box(Modifier.size(48.dp, 5.dp).background(androidx.compose.ui.graphics.Color(0xAAFFFFFF), RoundedCornerShape(3.dp)))
     }
 }
 
-internal fun Modifier.chimeraInspectorPlacement(): Modifier =
-    this.offset { IntOffset(ChimeraStudioUi.offset.x.roundToInt(), ChimeraStudioUi.offset.y.roundToInt()) }
+/** Where a Studio panel docks and how far it may be dragged: its top row never leaves the screen. */
+internal object ChimeraPanelBounds {
+    /** The panel where it docks, before any drag, in root pixels. */
+    var base by mutableStateOf(Rect.Zero)
+    var root by mutableStateOf(Size.Zero)
+    /** Pixels of the panel that stay on screen at the right, left and bottom edges. */
+    var keep = 160f
+
+    fun clamp(o: Offset): Offset {
+        if (root.width <= 0f || base.width <= 0f) return o
+        val minX = -base.left - (base.width - keep).coerceAtLeast(0f)
+        val maxX = root.width - base.left - keep
+        val minY = -base.top
+        val maxY = root.height - base.top - keep
+        return Offset(o.x.coerceIn(min(minX, maxX), max(minX, maxX)), o.y.coerceIn(min(minY, maxY), max(minY, maxY)))
+    }
+}
+
+internal fun Modifier.chimeraInspectorPlacement(): Modifier = composed {
+    val keep = with(LocalDensity.current) { 72.dp.toPx() }
+    SideEffect { ChimeraPanelBounds.keep = keep }
+    // Measured before the offset, so this is where the panel docks; the drag is clamped against it every frame,
+    // which also pulls a panel back after the screen turns or folds.
+    this.onGloballyPositioned { c -> ChimeraPanelBounds.base = c.boundsInRoot(); ChimeraPanelBounds.root = c.findRootCoordinates().size.toSize() }
+        .offset { ChimeraPanelBounds.clamp(ChimeraStudioUi.offset).let { IntOffset(it.x.roundToInt(), it.y.roundToInt()) } }
         .graphicsLayer { alpha = if (ChimeraStudioUi.dragging) 0.2f else 1f }
+}
+
+// ------------------------------------------------------------------ one save rule (owner, Nov 19)
+
+/**
+ * Studio's settings that save the moment you tap them (presets' card and button sizes, screen layouts, drawer
+ * opacity, typeface, the home picture and the wide-screen button column) are now kept only when you tap APPLY,
+ * like every other Studio change. Leaving or discarding puts them back.
+ */
+internal object ChimeraStudioSession {
+    private data class Snapshot(val before: ChimeraPresets.Before, val look: StudioLook?, val homeArt: String, val sideColumn: Boolean)
+    private var snapshot: Snapshot? = null
+    private var host: StudioLookHost? = null
+    private var prefs: SharedPreferences? = null
+
+    private fun current(): Snapshot? {
+        val p = prefs ?: return null
+        return Snapshot(ChimeraPresets.Before(null, ChimeraDrawer.opacity), host?.read(), ChimeraHomeArt.mode(p), ChimeraAdapt.sideColumn)
+    }
+
+    fun begin(context: Context, look: StudioLookHost?) {
+        prefs = context.getSharedPreferences("arcana_options", Context.MODE_PRIVATE)
+        host = look
+        snapshot = current()
+        ChimeraStudioUi.offset = Offset.Zero
+        StudioLog.add("Studio session started")
+    }
+
+    /** True when an instant setting differs from how it was when Studio opened. */
+    fun dirty(): Boolean = snapshot?.let { it != current() } == true
+
+    fun commit() { if (dirty()) StudioLog.add("Applied: looks, typeface, home picture and drawer settings kept"); snapshot = null }
+
+    fun revert() {
+        val s = snapshot ?: return
+        if (s != current()) StudioLog.add("Left without applying: looks, typeface, home picture and drawer settings put back")
+        ChimeraPresets.restore(s.before)
+        s.look?.let { host?.write(it) }
+        prefs?.let { ChimeraHomeArt.set(it, s.homeArt) }
+        if (ChimeraAdapt.sideColumn != s.sideColumn) ChimeraAdapt.changeSideColumn(s.sideColumn)
+        snapshot = null
+    }
+}
+
+// ------------------------------------------------------------------ app-wide looks, out of the Table panel (owner, Nov 19)
+
+/** Home deck picture, typeface and Terminal settings: they change the whole app, so they live at the top of Studio options. */
+@Composable
+internal fun ChimeraAppLookSection() {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val homePrefs = remember { context.getSharedPreferences("arcana_options", Context.MODE_PRIVATE) }
+    Text("Whole app", color = StudioEditorRequests.chromeGold, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 10.dp, bottom = 2.dp))
+    Text("Previewed now; kept when you tap APPLY.", color = darkTableColors.muted, fontSize = 11.sp)
+    Text("Home deck picture", color = darkTableColors.text, fontSize = 13.sp, modifier = Modifier.padding(top = 6.dp))
+    Row(Modifier.hintedHorizontalScroll(), verticalAlignment = Alignment.CenterVertically) {
+        ChimeraHomeArt.ALL.forEach { (id, label) ->
+            StudioChip(label, true, "chimera-home-art-$id", selected = ChimeraHomeArt.mode(homePrefs) == id) { ChimeraHomeArt.set(homePrefs, id) }
+        }
+    }
+    Text("Typeface", color = darkTableColors.text, fontSize = 13.sp, modifier = Modifier.padding(top = 6.dp))
+    Row(Modifier.hintedHorizontalScroll(), verticalAlignment = Alignment.CenterVertically) {
+        listOf("" to "Arcana", "serif" to "Serif", "mono" to "Mono", "condensed" to "Condensed").forEach { (id, label) ->
+            StudioChip(label, true, "chimera-font-${id.ifEmpty { "arcana" }}", selected = ChimeraSkins.classicFontName == id) { ChimeraSkins.setClassicFont(id) }
+        }
+    }
+    Text("Terminal layout", color = darkTableColors.text, fontSize = 13.sp, modifier = Modifier.padding(top = 6.dp))
+    Text("Its colours, text size, scanlines and glow. These save as you change them.", color = darkTableColors.muted, fontSize = 11.sp)
+    Row(verticalAlignment = Alignment.CenterVertically) { ChimeraTerminalStudioChip() }
+}
+
+// ------------------------------------------------------------------ Looks gallery (owner, Nov 19: presets first)
+
+/** Presets and screen layouts as cards with their descriptions, so each look says what it does before you try it. */
+@Composable
+internal fun ChimeraLookCards(presets: List<StudioPreset>, trying: String?, onTry: (StudioPreset) -> Unit) {
+    presets.forEach { preset ->
+        val on = preset.name == trying
+        androidx.compose.foundation.layout.Column(Modifier.fillMaxWidth().padding(vertical = 3.dp)
+            .clip(RoundedCornerShape(12.dp))
+            .background(if (on) StudioEditorRequests.chromeGold.copy(alpha = 0.18f) else darkTableColors.raised)
+            .clickable { onTry(preset) }.heightIn(min = 48.dp).padding(horizontal = 12.dp, vertical = 8.dp)
+            .testTag("studio-preset-${preset.name}")) {
+            Text(preset.name, color = if (on) StudioEditorRequests.chromeGold else darkTableColors.text, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+            Text(preset.description, color = darkTableColors.muted, fontSize = 11.sp)
+        }
+    }
+}
+
+// ------------------------------------------------------------------ Game options inside Studio (owner, Nov 19: retire Adjust UI)
+
+/** The game's own options (card sizes, quick actions, notices), drawn as a page of Studio options instead of a separate window. */
+internal object ChimeraGameOptions {
+    var content by mutableStateOf<(@Composable () -> Unit)?>(null)
+}
+
+// ------------------------------------------------------------------ developer tools switch (owner, Nov 19)
+
+/** Off for players: Studio's Classic panel and the owner's hand designs. On from Options › Troubleshooting. */
+internal object ChimeraDev {
+    private val prefs: SharedPreferences? by lazy {
+        runCatching {
+            val app = Class.forName("android.app.ActivityThread").getMethod("currentApplication").invoke(null) as Context
+            app.getSharedPreferences("chimera_skin", Context.MODE_PRIVATE)
+        }.getOrNull()
+    }
+    var on by mutableStateOf(prefs?.getBoolean("developer_tools", false) ?: false)
+        private set
+    fun change(v: Boolean) { on = v; prefs?.edit()?.putBoolean("developer_tools", v)?.apply() }
+}

@@ -12,6 +12,9 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -128,7 +131,8 @@ internal fun ChimeraChoiceCards(entries: List<ChimeraChoice.Entry>) {
 @Composable
 internal fun ChimeraCardPop(name: String, image: String?, text: String?, onDismiss: () -> Unit) {
     val screen = LocalConfiguration.current
-    val w = minOf(screen.screenWidthDp * 0.78f, screen.screenHeightDp * (if (text != null) 0.48f else 0.6f), 360f).dp
+    // Owner, Nov 19: a large view of the card. As big as the screen allows, not capped at phone size.
+    val w = minOf(screen.screenWidthDp * 0.92f, screen.screenHeightDp * (if (text != null) 0.5f else 0.64f), 560f).dp
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         Box(Modifier.fillMaxSize().clickable(onClick = onDismiss), contentAlignment = Alignment.Center) {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -187,6 +191,24 @@ internal object ChimeraHomeArt {
     /** The whole card's picture for an art-only link (art_crop -> normal). */
     fun fullCard(url: String): String =
         CardImages.atSize(url, "normal").replace("version=art_crop", "version=normal")
+}
+
+/**
+ * Home: a small button on the commander picture that switches its size, Cropped → Full art → Full card
+ * (owner, Nov 19: change it where you see it, not only in Studio).
+ */
+@androidx.compose.runtime.Composable
+internal fun ChimeraHomeArtButton(prefs: android.content.SharedPreferences, modifier: androidx.compose.ui.Modifier = androidx.compose.ui.Modifier) {
+    val mode = ChimeraHomeArt.mode(prefs)
+    val next = when (mode) { ChimeraHomeArt.CROPPED -> ChimeraHomeArt.FULL_ART; ChimeraHomeArt.FULL_ART -> ChimeraHomeArt.FULL_CARD; else -> ChimeraHomeArt.CROPPED }
+    val nextLabel = ChimeraHomeArt.ALL.first { it.first == next }.second
+    androidx.compose.foundation.layout.Box(modifier.padding(8.dp).size(40.dp).clip(androidx.compose.foundation.shape.CircleShape)
+        .background(androidx.compose.ui.graphics.Color(0xB3101615)).clickable { ChimeraHomeArt.set(prefs, next) }
+        .semantics { contentDescription = "Picture size: switch to $nextLabel" }.testTag("home-art-size"),
+        contentAlignment = androidx.compose.ui.Alignment.Center) {
+        androidx.compose.material3.Icon(androidx.compose.material.icons.Icons.Filled.AspectRatio, null,
+            tint = androidx.compose.ui.graphics.Color.White, modifier = androidx.compose.ui.Modifier.size(20.dp))
+    }
 }
 
 /** Small bits of in-game memory for Chimera's automatic steps. */

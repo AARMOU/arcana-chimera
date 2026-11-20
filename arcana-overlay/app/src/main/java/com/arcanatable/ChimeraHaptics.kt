@@ -43,7 +43,7 @@ internal object ChimeraHaptics {
     }
     private val prefs: SharedPreferences? by lazy { app?.getSharedPreferences("chimera_skin", Context.MODE_PRIVATE) }
 
-    var level by mutableStateOf(prefs?.getString("vibration", "all") ?: "all")
+    var level by mutableStateOf(prefs?.getString("vibration", "off") ?: "off") // owner, Nov 19: off by default
         private set
     fun changeLevel(v: String) { level = v; prefs?.edit()?.putString("vibration", v)?.apply() }
 
@@ -90,7 +90,7 @@ internal fun ChimeraHapticWatch(decisionKey: String?, blocking: Boolean, mulliga
 internal fun ChimeraVibrationSetting() {
     Column(Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
         Text("Vibration", color = SoftWhite, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-        Text("Your turn, questions and attacks; All adds short ticks for auto-pass, previews and phase stops.", color = Muted, fontSize = 10.sp)
+        Text("Important only: your turn, questions and attacks. All: also short ticks for auto-pass, previews and phase stops.", color = Muted, fontSize = 10.sp)
         Row(Modifier.fillMaxWidth().padding(top = 6.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             ChimeraHaptics.LEVELS.forEach { (id, label) ->
                 val on = ChimeraHaptics.level == id

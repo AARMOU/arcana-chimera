@@ -145,6 +145,7 @@ python3 "$ROOT/scripts/patch_chimera_legal_navigation.py" "$APP" # notices and s
 python3 "$ROOT/scripts/patch_engine_running_default.py" "$APP" # engine processing banner OFF unless owner opts in
 python3 "$ROOT/scripts/patch_life_log.py" "$APP" # owner, Nov 17: every life change, with its cause, in the diagnostic log
 python3 "$ROOT/scripts/patch_room_server_endpoint.py" "$APP" # owner, Nov 17: online rooms on Arcana's own domain (config/room-server.env)
+python3 "$ROOT/scripts/patch_studio_usability.py" "$APP" # owner, Nov 19: Studio + Options audit fixes, Stack lesson, home picture
 # Foreground service: keeps the Forge game alive while the player is in another app.
 python3 - "$APP/src/main/AndroidManifest.xml" <<'PY'
 import sys; p = sys.argv[1]; s = open(p).read()

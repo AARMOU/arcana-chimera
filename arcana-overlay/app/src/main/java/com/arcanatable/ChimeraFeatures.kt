@@ -73,7 +73,7 @@ internal object ChimeraFeatureSettings {
     val context: Context? get() = app
     private val prefs: SharedPreferences? by lazy { app?.getSharedPreferences("chimera_skin", Context.MODE_PRIVATE) }
 
-    var coach by mutableStateOf(prefs?.getBoolean("coach", true) ?: true)
+    var coach by mutableStateOf(prefs?.getBoolean("coach", false) ?: false) // owner, Nov 19: off by default
         private set
     var reveal by mutableStateOf(prefs?.getBoolean("reveal_decks", true) ?: true)
         private set
@@ -658,9 +658,9 @@ internal fun ChimeraCombatExtras(attackers: List<Pair<GameCard, Boolean>>) {
 /** Settings › Gameplay: the feature switches. */
 @Composable
 internal fun ChimeraFeatureSettingsRows() {
-    SettingsToggle("Coach", "Adds COACH: Forge's AI says what it would do from your seat right now.", ChimeraFeatureSettings.coach, { ChimeraFeatureSettings.changeCoach(it) })
-    SettingsToggle("Show their decks after a game", "The game-over window shows the cards that hurt you most and each AI's whole deck.", ChimeraFeatureSettings.reveal, { ChimeraFeatureSettings.changeReveal(it) })
-    SettingsToggle("Table shortcuts", "BOARD and COACH buttons at the left edge of the table. Both are also in ⋮ › Game tools.", ChimeraFeatureSettings.shortcuts, { ChimeraFeatureSettings.changeShortcuts(it) })
+    SettingsToggle("Coach", "Adds a Coach button: the AI suggests what it would do in your seat right now.", ChimeraFeatureSettings.coach, { ChimeraFeatureSettings.changeCoach(it) })
+    SettingsToggle("Show AI decks after a game", "When a game ends, see the cards that hurt you most and each AI opponent's whole deck.", ChimeraFeatureSettings.reveal, { ChimeraFeatureSettings.changeReveal(it) })
+    SettingsToggle("Table shortcuts", "Board and Coach buttons at the left edge of the table. Both are always in ⋮ › Game tools.", ChimeraFeatureSettings.shortcuts, { ChimeraFeatureSettings.changeShortcuts(it) })
     Text("Licenses & source code", color = SoftWhite, fontSize = 13.sp,
         modifier = Modifier.fillMaxWidth().clickable { ChimeraLegal.open = true }
             .padding(vertical = 12.dp).testTag("chimera-license-settings"))
