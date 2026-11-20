@@ -1,0 +1,35 @@
+name: Chimera Play signing preflight (no secrets, no AAB upload)
+on:
+  pull_request:
+    paths:
+      - "scripts/play_release_tools.py"
+      - "scripts/build_chimera_play_aab.sh"
+      - "tests/test_play_release_tools.py"
+      - "tests/test_gpl_build_pair.py"
+      - "scripts/gpl_build_pair.py"
+      - "docs/PLAY_STORE_RELEASE.md"
+      - ".github/workflows/chimera-play-preflight.yml"
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  offline-tests:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Syntax and safe signing checks
+        run: |
+          bash -n scripts/build_chimera_play_aab.sh
+          python3 -m py_compile scripts/play_release_tools.py scripts/gpl_build_pair.py
+          python3 -m unittest discover -s tests -p 'test_play_release_tools.py' -v
+          python3 -m unittest discover -s tests -p 'test_gpl_build_pair.py' -v
+      - name: Confirm no release artifacts or private-key upload
+        run: |
+          test ! -e reports/play-store/app-release.aab
+          echo "Offline checks only; no key, AAB, upload, merge, or release"

@@ -1,5 +1,7 @@
 # Project Chimera 🧪
 
+> **Workers: start with [docs/TESTING.md](docs/TESTING.md).** It lists every test of the Arcana ↔ Forge bridge (including the random-play soak test), how to run and replay them, and the rules for changes. The current work is the Forge brain transplant, draft PR #16.
+
 **Independent Forge-versus-Argentum research experiment.** This is an evaluation harness, **not** an Android app or a working Forge port.
 
 ## Objective
@@ -36,7 +38,7 @@ Once the owner manually starts [FrankenArcana encrypted APK handoff](.github/wor
 6. Review ignored `reports/` output and record findings in [the acceptance matrix](scenarios/acceptance-matrix.csv). A Maven build by itself is **not** gameplay evidence.
 
 ## Forge baseline
-Pinned upstream Forge commit: `7c34365c749ca46ab71336c5f267340d6088e600` (source inspected November 2, 2026, Mountain time).
+Pinned upstream Forge commit: `583714b8bfbd9cb04f8bc39ad95861190caf7691` (source inspected November 2, 2026, Mountain time).
 
 - [Forge repository](https://github.com/Card-Forge/forge)
 - [Argentum repository](https://github.com/wingedsheep/argentum-engine)
@@ -46,3 +48,17 @@ Pinned upstream Forge commit: `7c34365c749ca46ab71336c5f267340d6088e600` (source
 **Phase 1 — headless gameplay baseline.** [Experiment 002 / GitHub run #41662709183](https://github.com/AARMOU/arcana-chimera/actions/runs/41662709183) on November 3, 2026 **passed**: pinned Forge compiled, and `Buckle Up` defeated `Counterpunch` in a two-AI Commander game (7,922 ms game time; seed 8073). **Four-AI game observed:** [Experiment 003 / GitHub run #41665373638](https://github.com/AARMOU/arcana-chimera/actions/runs/41665373638) played 27 turns and finished in 39,123 ms (seed 8074); Reap the Tide won against three opponents, including a commander-damage elimination. GitHub reports this run as failed **solely because our log checker omitted the `has lost due to` wording**. The corrected checker was verified in [the green four-AI game run #41677025921](https://github.com/AARMOU/arcana-chimera/actions/runs/41677025921) (27 turns, 28,447 ms, Reap the Tide winner). No four-player remote-network validation, Android integration, device performance, or evidence that Forge outperforms Argentum yet.
 
 Unofficial experiment, not affiliated with or endorsed by Wizards of the Coast.
+
+
+## Licensing and Google Play readiness
+
+The owner chose GPL-3.0 for the Forge-powered Chimera work. See [the root
+license](LICENSE), [its scope and third-party notices](LICENSE_SCOPE.md),
+[GPLv3 source-distribution gates](docs/GPLV3_RELEASE_READINESS.md), and
+[the existing Arcana Table Play Store release procedure](docs/PLAY_STORE_RELEASE.md).
+
+**No signed Play AAB or GPL-compliant release has yet been certified.** The
+original Play upload keystore must be recovered and matched to the Play Console
+upload certificate; no signing secrets belong in this public repository. No
+Play upload, deployment or owner-unapproved merge is authorized by this
+documentation.

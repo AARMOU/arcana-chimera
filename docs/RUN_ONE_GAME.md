@@ -2,7 +2,7 @@
 
 ## What is prepared
 - [scripts/run_one_commander.sh](../scripts/run_one_commander.sh) is a **manual-only** runner.
-- It pins Forge to commit `7c34365c749ca46ab71336c5f267340d6088e600` and builds the real `forge-gui-desktop` jar.
+- It pins Forge to commit `583714b8bfbd9cb04f8bc39ad95861190caf7691` and builds the real `forge-gui-desktop` jar.
 - It runs Forge's documented headless `sim` command: 2 AI players, 1 Commander game, 2 complete precon decks already present in Forge's resource tree (`Buckle Up.dck` and `Counterpunch.dck`), seed 8073, game timeout 300 seconds.
 - It saves the Maven build log and AI-game log under ignored `reports/`, and only prints PASS when Forge's own simulator reports a winner with no process error or detected timeout.
 

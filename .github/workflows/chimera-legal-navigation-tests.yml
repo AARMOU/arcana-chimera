@@ -1,0 +1,26 @@
+name: Chimera legal navigation — lightweight tests
+on:
+  pull_request:
+    paths:
+      - "scripts/patch_chimera_legal_navigation.py"
+      - "tests/test_chimera_legal_navigation.py"
+      - ".github/workflows/chimera-legal-navigation-tests.yml"
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  legal-navigation:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Verify legal notices stay in Options
+        run: |
+          python3 -m py_compile scripts/patch_chimera_legal_navigation.py
+          python3 -m unittest discover -s tests -p "test_chimera_legal_navigation.py" -v
+          echo "Only UI navigation changed; GPL/source assets are not removed."

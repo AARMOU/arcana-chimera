@@ -1,0 +1,19 @@
+name: Chimera official Commander precon compiler (fixtures)
+on:
+  pull_request:
+    paths:
+      - 'scripts/build_wotc_commander_precons.py'
+      - 'scripts/patch_commander_precons.py'
+      - 'tests/test_commander_precons.py'
+      - '.github/workflows/chimera-commander-precons.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  offline-fixtures:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate decklist compiler without network or paid services
+        run: python3 -m unittest discover -s tests -p 'test_commander_precons.py' -v

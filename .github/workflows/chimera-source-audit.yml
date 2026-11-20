@@ -1,0 +1,24 @@
+name: Chimera exact source archive audit offline tests
+on:
+  pull_request:
+    paths:
+      - 'scripts/gpl_source_archive_audit.py'
+      - 'tests/test_gpl_source_archive_audit.py'
+      - 'docs/SOURCE_DISTRIBUTION_PLAN.md'
+      - '.github/workflows/chimera-source-audit.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  source-tests:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python3 -m unittest discover -s tests -p 'test_gpl_source_archive_audit.py' -v
+      - run: echo 'Archive integrity tests only; GPL release and distribution HOLD.'

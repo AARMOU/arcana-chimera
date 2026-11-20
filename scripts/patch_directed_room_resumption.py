@@ -103,6 +103,27 @@ def patch_worker(path):
     await this.ctx.storage.setAlarm(Date.now() + ROOM_TTL_MS);''',
         '''    await this.ctx.storage.put(ROOM_KEY, this.room);
     await this.ctx.storage.setAlarm(this.room.offlineDeadline ?? (Date.now() + ROOM_TTL_MS));''')
+    # A phone that comes back before the server has noticed its old socket die
+    # (half-open after a lock or network change) still holds the seat's private
+    # token. Refusing it killed live games; let the token holder take over.
+    source = replace_once(source,
+        '''            !previous || previous.online || previous.isComputer ||
+            !previous.claimed || packet.seatToken !== previous.token) {''',
+        '''            !previous || previous.isComputer ||
+            !previous.claimed || packet.seatToken !== previous.token) {''')
+    source = replace_once(source,
+        '''        seat = preferred;
+      } else {''',
+        '''        for (const stale of this.ctx.getWebSockets()) {
+          if (stale === socket) continue;
+          const held = stale.deserializeAttachment() as { seat?: number; authenticated?: boolean } | null;
+          if (!held?.authenticated || held.seat !== preferred) continue;
+          // Retire the replaced socket so its late close cannot mark the seat offline.
+          stale.serializeAttachment({ seat: -1, code: "", authenticated: false });
+          try { stale.close(4001, "Seat resumed on a newer connection."); } catch { /* already gone */ }
+        }
+        seat = preferred;
+      } else {''')
     Path(path).write_text(source, encoding="utf-8")
     return source
 

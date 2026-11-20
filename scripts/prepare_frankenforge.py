@@ -12,7 +12,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-FORGE_SHA = "7c34365c749ca46ab71336c5f267340d6088e600"
+FORGE_SHA = "583714b8bfbd9cb04f8bc39ad95861190caf7691"
 APP_ID = "org.arcanachimera.frankenarcana"
 
 

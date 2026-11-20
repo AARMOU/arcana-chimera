@@ -1,0 +1,44 @@
+name: Room server — tests (no deploy)
+on:
+  pull_request:
+    paths:
+      - "room-server/**"
+      - "scripts/sync_room_server_worker.sh"
+      - "scripts/patch_directed_room_resumption.py"
+      - "scripts/patch_room_server_endpoint.py"
+      - "tests/verify-directed-room-*.mjs"
+      - "tests/test_room_server_endpoint.py"
+      - "config/room-server.env"
+      - ".github/workflows/room-server-*.yml"
+  push:
+    branches: [room-server-live]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Vendored Worker matches pinned Arcana source + Chimera patch
+        run: bash scripts/sync_room_server_worker.sh --check
+      - name: Worker relay tests, Chimera recovery tests and restart test on the Node server
+        working-directory: room-server
+        run: |
+          npm ci --no-audit --no-fund
+          npm test
+      - name: App address patch
+        run: python3 -m unittest tests.test_room_server_endpoint
+      - name: Server scripts parse
+        run: |
+          bash -n room-server/deploy/install.sh
+          bash -n room-server/deploy/update.sh

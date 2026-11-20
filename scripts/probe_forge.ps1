@@ -3,7 +3,7 @@
 param()
 $ErrorActionPreference = 'Stop'
 $Root = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
-$ForgeSha = '7c34365c749ca46ab71336c5f267340d6088e600'
+$ForgeSha = '583714b8bfbd9cb04f8bc39ad95861190caf7691'
 $Worktree = Join-Path $Root 'third_party\forge'
 $Reports = Join-Path $Root 'reports'
 foreach ($command in @('git', 'java', 'mvn', 'python')) {
