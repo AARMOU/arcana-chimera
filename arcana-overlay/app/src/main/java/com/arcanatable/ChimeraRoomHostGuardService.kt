@@ -14,7 +14,8 @@ import android.os.IBinder
 import android.os.PowerManager
 
 /**
- * User-started multiplayer HOST ONLY. Holds the CPU and Wi-Fi connection while
+ * User-started multiplayer: the HOST, and (owner, Nov 21) a GUEST in an internet game, whose app Android otherwise
+ * closed while the phone slept. Holds the CPU and Wi-Fi connection while
  * the Fold is closed, without depending on a Compose screen or Activity.
  *
  * This is not a persistence engine: Android Doze, user force-stop and process
@@ -37,10 +38,12 @@ internal class ChimeraRoomHostGuardService : Service() {
                 this.flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
             }, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
+        val guest = intent?.getBooleanExtra(EXTRA_GUEST, false) == true
         val notification = Notification.Builder(this, CHANNEL)
             .setSmallIcon(android.R.drawable.stat_sys_upload)
-            .setContentTitle("Arcana Table: hosting Commander")
-            .setContentText("Room hosting is active while your screen is locked. Uses battery.")
+            .setContentTitle(if (guest) "Arcana Table: in an online game" else "Arcana Table: hosting Commander")
+            .setContentText(if (guest) "Keeps your seat connected while your screen is locked. Uses battery."
+                else "Room hosting is active while your screen is locked. Uses battery.")
             .setCategory(Notification.CATEGORY_SERVICE)
             .setContentIntent(openApp)
             .setOngoing(true)
@@ -78,10 +81,11 @@ internal class ChimeraRoomHostGuardService : Service() {
     companion object {
         private const val CHANNEL = "chimera_commander_host"
         private const val ID = 7302
+        private const val EXTRA_GUEST = "guest"
 
         /** Must be called from foreground when the owner explicitly opens a host room. */
-        fun start(context: Context): Boolean = runCatching {
-            val intent = Intent(context, ChimeraRoomHostGuardService::class.java)
+        fun start(context: Context, guest: Boolean = false): Boolean = runCatching {
+            val intent = Intent(context, ChimeraRoomHostGuardService::class.java).putExtra(EXTRA_GUEST, guest)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) context.startForegroundService(intent)
             else context.startService(intent)
         }.isSuccess

@@ -292,9 +292,11 @@ public final class ArcanaForgeHost {
                     String id = started.getJSONObject(i).getString("playerId");
                     mine.put(new JSONObject().put("playerId", id).put("isYou", id.equals(v.me)));
                 }
-                v.sink.accept(new JSONObject().put("type", "quickGameLobbyState").put("lobbyId", "offline").put("youPlayerId", v.me)
-                        .put("vsAi", views.size() == 1).put("players", lobby));
-                v.sink.accept(new JSONObject().put("type", "gameStarted").put("players", mine));
+                v.resumeLobby = new JSONObject().put("type", "quickGameLobbyState").put("lobbyId", "offline").put("youPlayerId", v.me)
+                        .put("vsAi", views.size() == 1).put("players", lobby);
+                v.resumeStarted = new JSONObject().put("type", "gameStarted").put("players", mine);
+                v.sink.accept(new JSONObject(v.resumeLobby.toString()));
+                v.sink.accept(new JSONObject(v.resumeStarted.toString()));
             }
             applyStartBoard(match);
             progress(0.9f, "Shuffling and dealing opening hands…");
@@ -442,6 +444,9 @@ public final class ArcanaForgeHost {
         return d;
     }
 
+    /** This seat's lobby and game-start messages, sent again when its player rejoins after the app was closed. */
+    private volatile JSONObject resumeLobby, resumeStarted;
+
     // ---------------------------------------------------------------- messages from the UI
 
     public void handle(JSONObject message) {
@@ -491,6 +496,13 @@ public final class ArcanaForgeHost {
                 coachThread.setDaemon(true); coachThread.start();
             }
             case "requestResync" -> { // after a reconnect: send the open question or mulligan offer again
+                // Owner, Nov 21: a guest whose app Android closed comes back with nothing on screen. "resume" asks
+                // for its seat and the game start again first, then the table and any open question as usual.
+                if (message.optBoolean("resume") && resumeLobby != null && resumeStarted != null) {
+                    sink.accept(new JSONObject(resumeLobby.toString()));
+                    sink.accept(new JSONObject(resumeStarted.toString()));
+                    lastPrompted = null;
+                }
                 Input now = you.getInputQueue().getActualInput(you);
                 String kind = inputClassName(now);
                 if (kind.equals("InputConfirmMulligan") || kind.equals("InputLondonMulligan")) lastPrompted = null;
