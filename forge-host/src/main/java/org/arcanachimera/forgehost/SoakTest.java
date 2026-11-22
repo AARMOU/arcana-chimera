@@ -147,7 +147,8 @@ public final class SoakTest {
             totalDecisions += game.decisions; totalActions += game.actions;
             String decksLine = String.join(" vs ", pick.stream().map(Deck::name).toList());
             System.out.println("SOAK game seed=" + seed + " " + players + "p" + (humans > 1 ? " (" + humans + " people)" : "") + " [" + decksLine + "] -> " + outcome
-                    + " (turn " + game.turn + ", " + game.actions + " actions, " + game.decisions + " answers, decisions " + game.decisionTypes + ")");
+                    + " (turn " + game.turn + ", " + game.actions + " actions, " + game.decisions + " answers, decisions " + game.decisionTypes
+                    + ", live memory at the end " + game.liveMbAtEnd + " MB)");
             if (outcome.startsWith("FAIL")) failures.add("seed=" + seed + " " + outcome);
             else if (outcome.startsWith("GAME OVER")) finished++;
             else limited++;
@@ -169,6 +170,14 @@ public final class SoakTest {
         final Set<String> answered = new HashSet<>();
         final Map<String, Integer> decisionTypes = new LinkedHashMap<>();
         int turn, actions, decisions, actionsThisStep, unboundedNumbers;
+        long liveMbAtEnd = -1;
+
+        /** Memory still in use after a full garbage collection, in MB (the game is still running). */
+        static long liveMb() {
+            for (int i = 0; i < 3; i++) { System.gc(); try { Thread.sleep(100); } catch (InterruptedException ignored) { } }
+            Runtime rt = Runtime.getRuntime();
+            return (rt.totalMemory() - rt.freeMemory()) / (1024 * 1024);
+        }
         String stepKey = "";
         boolean youLost;
         /** Multiplayer: how many seats are people (seat 0 is the host; the rest are Wi-Fi/internet guests). */
@@ -234,7 +243,7 @@ public final class SoakTest {
                     }
                 }
                 return "FAIL STALL game took over 15 minutes";
-            } finally { host.shutdown(); }
+            } finally { liveMbAtEnd = liveMb(); host.shutdown(); } // owner, Nov 21: memory a whole game keeps
         }
 
         /** One message to this bot's seat. A non-null result ends the game. */
