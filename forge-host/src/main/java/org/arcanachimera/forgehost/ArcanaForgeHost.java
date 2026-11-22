@@ -11,6 +11,7 @@ import forge.game.player.Player;
 import forge.game.player.RegisteredPlayer;
 import forge.game.spellability.SpellAbility;
 import forge.game.zone.ZoneType;
+import forge.gamemodes.match.DrawOfferCoordinator;
 import forge.gamemodes.match.HostedMatch;
 import forge.gamemodes.match.input.Input;
 import forge.gamemodes.match.input.InputPassPriority;
@@ -1038,6 +1039,10 @@ public final class ArcanaForgeHost {
         if (aiTuned == game) return;
         aiTuned = game;
         game.AI_TIMEOUT = Math.max(1, Math.min(game.AI_TIMEOUT, aiTimeoutSeconds)); // copies for rollouts inherit it
+        // Owner, Nov 21: Arcana never offers Forge's undo (undoAvailable is always false), but Forge recorded a copy of the
+        // game before every prompt and kept up to a seventh of the memory limit as undo history. Off: less memory and
+        // less work per prompt. (Forge's AI then has no snapshot to take back a cast that fails; it returns the card.)
+        game.getUndoManager().setMode(forge.game.undo.UndoManager.Mode.OFF);
         game.AI_FLAT_MONTE_CARLO = aiStrength != AiStrength.OFF;
         // Owner, Nov 10: the app now gets more memory (less time cleaning it up), but Brutal keeps the phone-sized search it
         // has always had here; Forge would switch to its slower desktop search once the app has over 768 MB.
@@ -1871,6 +1876,7 @@ public final class ArcanaForgeHost {
 
     /** Shows the decision and, for GUI calls, blocks Forge's game thread until the player answers (as desktop Forge does). */
     private JSONObject ask(JSONObject json, Map<String, Object> objects) throws Exception {
+        if (stopping) return leftAnswer(json); // the game is being shut down
         answers.clear();
         synchronized (sendLock) { pending = new Decision(json.getString("id"), json, objects, null); } // see emit(): never overtaken by an older table
         emitDecision();
@@ -2522,6 +2528,7 @@ public final class ArcanaForgeHost {
                 }
                 case "awaitInput":
                     if (PRICING.get()) throw new AskedWhilePricing(); // a question during a cost check: see affordable()
+                    if (current != null && current.stopping) return null; // shut down: nothing to wait for (owner, Nov 21)
                     ((CountDownLatch) args[0]).await(); return null; // Forge's "wait for the player
                 case "isNetGame": case "isGamePaused": case "isSelecting": case "isLibgdxPort": return false;
                 case "equals": return proxy == args[0];
@@ -2662,7 +2669,35 @@ public final class ArcanaForgeHost {
     }
 
     public void shutdown() {
+        // Owner, Nov 21: a finished or abandoned game used to stay in memory for good. Its game thread sat waiting for
+        // a move nobody would make, keeping the whole game alive (25-35 MB each in the soak test; the phone reached
+        // its 512 MB limit after an evening of games). End it the way Forge's own "leave the game" does, and answer
+        // anything still asked with the "left" answer, so the game thread finishes and the game can be freed.
+        for (ArcanaForgeHost v : views) v.stopping = true;
+        stopping = true;
+        HostedMatch m = match;
+        Game game = m == null ? null : m.getGame();
+        if (game != null && !game.isGameOver()) {
+            try {
+                game.getAction().invoke(() -> {
+                    game.setGameOver(forge.game.GameEndReason.AllHumansLost);
+                    DrawOfferCoordinator.releaseInputQueues(game);
+                });
+            } catch (RuntimeException ignored) { } // already ending
+        }
+        for (ArcanaForgeHost v : new ArrayList<>(views)) v.releaseGameThread();
+        releaseGameThread();
         for (ArcanaForgeHost v : views) v.emitter.shutdownNow(); // the shared Forge UI thread stays for the next game
         emitter.shutdownNow();
     }
+
+    /** Unblocks Forge's game thread if it waits on this player: a question gets the "left" answer, input is cleared. */
+    private void releaseGameThread() {
+        try { answers.offer(new JSONObject().put("left", true)); } catch (Exception ignored) { } // Android's org.json declares JSONException
+        PlayerControllerHuman pch = humanController();
+        if (pch != null) try { pch.getInputQueue().clearInputs(); } catch (RuntimeException ignored) { }
+    }
+
+    /** Set by shutdown(): nothing more is asked of the player and nothing waits for them. */
+    private volatile boolean stopping;
 }
