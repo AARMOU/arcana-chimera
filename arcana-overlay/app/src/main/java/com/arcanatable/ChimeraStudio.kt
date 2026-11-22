@@ -242,7 +242,7 @@ internal fun ChimeraAppLookSection() {
     val homePrefs = remember { context.getSharedPreferences("arcana_options", Context.MODE_PRIVATE) }
     Text("Whole app", color = StudioEditorRequests.chromeGold, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 10.dp, bottom = 2.dp))
     Text("Previewed now; kept when you tap APPLY.", color = darkTableColors.muted, fontSize = 11.sp)
-    Text("Home deck picture", color = darkTableColors.text, fontSize = 13.sp, modifier = Modifier.padding(top = 6.dp))
+    Text("Home deck picture crop", color = darkTableColors.text, fontSize = 13.sp, modifier = Modifier.padding(top = 6.dp))
     Row(Modifier.hintedHorizontalScroll(), verticalAlignment = Alignment.CenterVertically) {
         ChimeraHomeArt.ALL.forEach { (id, label) ->
             StudioChip(label, true, "chimera-home-art-$id", selected = ChimeraHomeArt.mode(homePrefs) == id) { ChimeraHomeArt.set(homePrefs, id) }

@@ -147,6 +147,7 @@ python3 "$ROOT/scripts/patch_life_log.py" "$APP" # owner, Nov 17: every life cha
 python3 "$ROOT/scripts/patch_room_server_endpoint.py" "$APP" # owner, Nov 17: online rooms on Arcana's own domain (config/room-server.env)
 python3 "$ROOT/scripts/patch_studio_usability.py" "$APP" # owner, Nov 19: Studio + Options audit fixes, Stack lesson, home picture
 python3 "$ROOT/scripts/patch_stale_pictures.py" "$APP" # owner, Nov 21: no previous game's pictures on this game's cards
+python3 "$ROOT/scripts/patch_status_strip.py" "$APP" # owner, Nov 21: status strip is a Studio item and can be switched off; problems always show
 # Foreground service: keeps the Forge game alive while the player is in another app.
 python3 - "$APP/src/main/AndroidManifest.xml" <<'PY'
 import sys; p = sys.argv[1]; s = open(p).read()

@@ -13,9 +13,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.material.icons.filled.AspectRatio
-import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.semantics
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -192,24 +189,6 @@ internal object ChimeraHomeArt {
     /** The whole card's picture for an art-only link (art_crop -> normal). */
     fun fullCard(url: String): String =
         CardImages.atSize(url, "normal").replace("version=art_crop", "version=normal")
-}
-
-/**
- * Home: a small button on the commander picture that switches its size, Cropped → Full art → Full card
- * (owner, Nov 19: change it where you see it, not only in Studio).
- */
-@androidx.compose.runtime.Composable
-internal fun ChimeraHomeArtButton(prefs: android.content.SharedPreferences, modifier: androidx.compose.ui.Modifier = androidx.compose.ui.Modifier) {
-    val mode = ChimeraHomeArt.mode(prefs)
-    val next = when (mode) { ChimeraHomeArt.CROPPED -> ChimeraHomeArt.FULL_ART; ChimeraHomeArt.FULL_ART -> ChimeraHomeArt.FULL_CARD; else -> ChimeraHomeArt.CROPPED }
-    val nextLabel = ChimeraHomeArt.ALL.first { it.first == next }.second
-    androidx.compose.foundation.layout.Box(modifier.padding(8.dp).size(40.dp).clip(androidx.compose.foundation.shape.CircleShape)
-        .background(androidx.compose.ui.graphics.Color(0xB3101615)).clickable { ChimeraHomeArt.set(prefs, next) }
-        .semantics { contentDescription = "Picture size: switch to $nextLabel" }.testTag("home-art-size"),
-        contentAlignment = androidx.compose.ui.Alignment.Center) {
-        androidx.compose.material3.Icon(androidx.compose.material.icons.Icons.Filled.AspectRatio, null,
-            tint = androidx.compose.ui.graphics.Color.White, modifier = androidx.compose.ui.Modifier.size(20.dp))
-    }
 }
 
 /** Small bits of in-game memory for Chimera's automatic steps. */

@@ -70,16 +70,8 @@ def between(name, start, end):
 edit("TableOverlays.kt",
      "val art = commanderName?.let { name -> ChimeraArt.get(name) ?: homeArtUrl(tableArt, bundledArt, name) }",
      "val art = commanderName?.let { name -> commanderArtOnly(ChimeraArt.get(name)) ?: homeArtUrl(tableArt, bundledArt, name) } // owner, Nov 19: art only")
-# A size button on the picture (Cropped, Full art, Full card); tapping the picture still shows the whole card large.
-edit("HomeScreen.kt",
-     "if (commanderArt != null && chimeraMode == ChimeraHomeArt.CROPPED) CardArt(commanderArt, Modifier.fillMaxSize(), contentScale = ContentScale.Crop, fallbackName = deck?.commander)",
-     "if (commanderArt != null && chimeraMode == ChimeraHomeArt.CROPPED) CardArt(commanderArt, Modifier.fillMaxSize(), contentScale = ContentScale.Crop, fallbackName = deck?.commander)\n"
-     "                            if (commanderArt != null && chimeraMode == ChimeraHomeArt.CROPPED) ChimeraHomeArtButton(chimeraPrefs, Modifier.align(Alignment.TopEnd))")
-edit("HomeScreen.kt",
-     "contentScale = ContentScale.Fit, fallbackName = deck?.commander)\n                        }\n                        Box(Modifier.fillMaxWidth().then(if (chimeraMode == ChimeraHomeArt.CROPPED)",
-     "contentScale = ContentScale.Fit, fallbackName = deck?.commander)\n"
-     "                            ChimeraHomeArtButton(chimeraPrefs, Modifier.align(Alignment.TopEnd))\n"
-     "                        }\n                        Box(Modifier.fillMaxWidth().then(if (chimeraMode == ChimeraHomeArt.CROPPED)")
+# Owner, Nov 21: no size button on the home picture; the crop is chosen in Studio only
+# (⋮ › Studio options › Looks › Home deck picture crop). Tapping the picture still shows the whole card large.
 # Deck stats and History only when there is a deck to show them for.
 edit("HomeScreen.kt", "ChimeraHomeButtons(enabled = true)", "if (deck != null) ChimeraHomeButtons(enabled = true) // owner, Nov 19: only with a deck")
 
