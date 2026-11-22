@@ -103,10 +103,13 @@ cp "$ROOT/arcana-overlay/app/src/main/java/com/arcanatable/ChimeraDeckImport.kt"
 cp "$ROOT/arcana-overlay/app/src/main/java/com/arcanatable/engine/ForgeGameService.kt" "$APP/src/main/java/com/arcanatable/engine/"
 cp "$ROOT/arcana-overlay/app/src/main/java/com/arcanatable/engine/ChimeraPictures.kt" "$APP/src/main/java/com/arcanatable/engine/"
 cp "$ROOT/arcana-overlay/app/src/main/java/com/arcanatable/engine/ChimeraLoading.kt" "$APP/src/main/java/com/arcanatable/engine/"
+for f in ForgeEngineCore ForgeIpc ForgeProcessService ForgeRemote; do # owner, Nov 21: Forge in its own process
+  cp "$ROOT/arcana-overlay/app/src/main/java/com/arcanatable/engine/$f.kt" "$APP/src/main/java/com/arcanatable/engine/"
+done
 cp "$ROOT/arcana-overlay/app/src/main/java/com/arcanatable/ChimeraArt.kt" "$APP/src/main/java/com/arcanatable/"
 cp "$ROOT/arcana-overlay/app/src/main/java/com/arcanatable/ChimeraHandFit.kt" "$APP/src/main/java/com/arcanatable/"
 cp "$ROOT/arcana-overlay/app/src/main/java/com/arcanatable/ChimeraDrawer.kt" "$APP/src/main/java/com/arcanatable/"
-for f in ChimeraView ChimeraHand ChimeraHandCards ChimeraBackdrops ChimeraPresets ChimeraPlay ChimeraStudio ChimeraSkins ChimeraChoice ChimeraTerminal ChimeraTutorialBoards ChimeraHaptics ChimeraFeatures ChimeraXp ChimeraLegal GooseClippyLines GooseClippyFeature ChimeraRoomHostGuardService ChimeraGuestSeat; do
+for f in ChimeraView ChimeraHand ChimeraHandCards ChimeraBackdrops ChimeraPresets ChimeraPlay ChimeraStudio ChimeraSkins ChimeraChoice ChimeraTerminal ChimeraTutorialBoards ChimeraHaptics ChimeraFeatures ChimeraXp ChimeraLegal GooseClippyLines GooseClippyFeature ChimeraRoomHostGuardService ChimeraGuestSeat ChimeraCrashLog; do
   cp "$ROOT/arcana-overlay/app/src/main/java/com/arcanatable/$f.kt" "$APP/src/main/java/com/arcanatable/"
 done
 mkdir -p "$APP/src/main/assets/chimera_xp" && cp "$ROOT"/arcana-overlay/app/src/main/assets/chimera_xp/*.jpg "$APP/src/main/assets/chimera_xp/" # XP Desktop wallpapers
@@ -149,6 +152,8 @@ python3 "$ROOT/scripts/patch_studio_usability.py" "$APP" # owner, Nov 19: Studio
 python3 "$ROOT/scripts/patch_stale_pictures.py" "$APP" # owner, Nov 21: no previous game's pictures on this game's cards
 python3 "$ROOT/scripts/patch_status_strip.py" "$APP" # owner, Nov 21: status strip is a Studio item and can be switched off; problems always show
 python3 "$ROOT/scripts/patch_guest_rejoin.py" "$APP" # owner, Nov 21: guests kept running online; Rejoin your game after Android closes the app
+python3 "$ROOT/scripts/patch_memory_safety.py" "$APP" # owner, Nov 21: crash history, memory in the log, deck editor memory check
+python3 "$ROOT/scripts/patch_forge_process.py" "$APP" # owner, Nov 21: Forge in its own process with its own memory
 # Foreground service: keeps the Forge game alive while the player is in another app.
 python3 - "$APP/src/main/AndroidManifest.xml" <<'PY'
 import sys; p = sys.argv[1]; s = open(p).read()

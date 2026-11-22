@@ -31,41 +31,70 @@ class LocalArgentumHost(
     tutorialPassiveOpponent: Boolean = false,
     private val emit: (JSONObject) -> Unit,
 ) {
+    // Owner, Nov 21: Forge runs in its own process (ForgeProcessService) with its own memory; this class keeps the
+    // same name, constructor and calls as before and passes messages across. If that process can't be started, Forge
+    // runs in this process exactly as it used to (ForgeEngineCore either way).
+    private val guests = java.util.concurrent.ConcurrentHashMap<String, (JSONObject) -> Unit>()
+    @Volatile private var quiet = false
+    @Volatile private var ownStack = false
+    private val stopped = java.util.concurrent.atomic.AtomicBoolean()
+    private val remote: ForgeRemote?
+    private val local: ForgeEngineCore?
+
     var quietOpponentTurns: Boolean
-        get() = forge.quietOpponentTurns
-        set(value) { forge.quietOpponentTurns = value }
+        get() = quiet
+        set(value) { quiet = value; local?.quietOpponentTurns = value; remote?.flags(quiet, ownStack) }
     /** Arcana option "respond to my own spells": off (default) lets your own spells and abilities resolve without a stop. */
     var respondToOwnStack: Boolean
-        get() = forge.respondToOwnStack
-        set(value) { forge.respondToOwnStack = value }
+        get() = ownStack
+        set(value) { ownStack = value; local?.respondToOwnStack = value; remote?.flags(quiet, ownStack) }
     /** True once a Wi-Fi or internet friend has a seat. */
-    val isWifi: Boolean get() = forge.hasGuests()
-    private val forge = ArcanaForgeHost { emit(it) }
+    val isWifi: Boolean get() = guests.isNotEmpty()
 
     init {
         val seats = (listOf(human, opponent) + extraOpponents.take(2)).map { ArcanaForgeHost.Seat(it.name, it.deck, it.commander) }
-        ArcanaForgeHost.lazyCards = true
         // Arcana's AI difficulty → how hard Forge's AI searches. Easy: Forge's plain heuristics; Normal: Forge's
         // phone setting; Hard/Brutal: Forge's desktop search (Forge still falls back if the phone's heap is small).
-        forge.aiStrength = when ((listOf(opponent) + extraOpponents).maxOf { it.difficulty }) {
+        val strength = when ((listOf(opponent) + extraOpponents).maxOf { it.difficulty }) {
             AiDifficulty.EASY -> ArcanaForgeHost.AiStrength.OFF
             AiDifficulty.NORMAL -> ArcanaForgeHost.AiStrength.LITE
             else -> ArcanaForgeHost.AiStrength.MAX
         }
-        // Card pictures for the table and the mulligan screen (ChimeraPictures: a small build-time file, loaded in the
-        // background; Scryfall's lookup by name until then).
-        ChimeraPictures.warm(app())
-        // Owner, Nov 9: phase-bar stops make Forge give this phone priority in those phases.
-        org.arcanachimera.forgehost.ArcanaForgeHost.phaseStops = java.util.function.Supplier { com.arcanatable.ChimeraPhaseStops.stops }
+        // Tutorial lessons (owner, Nov 10): the lesson's board, as a Forge game-state script (ChimeraTutorialBoards).
+        val board = resumeCheckpoint?.let { runCatching { JSONObject(it).optString("forgeBoard") }.getOrNull() }?.takeIf { it.isNotBlank() }
         ChimeraLoading.reset()
         ChimeraLoading.hosting = true
-        ArcanaForgeHost.progress = java.util.function.BiConsumer { f, what -> ChimeraLoading.report(f, what) }
-        ArcanaForgeHost.pictures = java.util.function.BiFunction { name, seat -> ChimeraPictures.picture(name, seat) }
-        // Tutorial lessons (owner, Nov 10): the lesson's board, as a Forge game-state script (ChimeraTutorialBoards).
-        resumeCheckpoint?.let { runCatching { org.json.JSONObject(it).optString("forgeBoard") }.getOrNull() }
-            ?.takeIf { it.isNotBlank() }?.let { forge.setPracticeBoard(it) }
-        forge.prepare(seats) { forgeAssetsDir() } // unpacked on Forge's start thread, not the UI thread
+        ChimeraPictures.warm(app())
+        remote = if (ForgeIpc.SEPARATE_PROCESS) ForgeRemote(app(), ::deliver, ::processLost).takeIf { r ->
+            r.start(JSONObject()
+                .put("seats", org.json.JSONArray(seats.map { ForgeEngineCore.seatJson(it) }))
+                .put("ai", strength.name)
+                .put("board", board ?: "")
+                .put("stops", org.json.JSONArray(com.arcanatable.ChimeraPhaseStops.stops.toList()))
+                .put("art", JSONObject(com.arcanatable.ChimeraArt.snapshot()))
+                .put("quiet", quiet).put("ownStack", ownStack)
+                .toString())
+        } else null
+        local = if (remote != null) null else ForgeEngineCore(
+            seats, strength, board,
+            emit = ::deliver,
+            progress = { f, what -> ChimeraLoading.report(f, what) },
+            phaseStops = { com.arcanatable.ChimeraPhaseStops.stops },
+            context = app(),
+        )
         ForgeGameService.start(app())
+    }
+
+    private fun deliver(to: String?, message: JSONObject) {
+        if (to == null) emit(message) else guests[to]?.invoke(message)
+    }
+
+    /** The Forge game process stopped during the game (most likely out of memory): the app stays open and says so. */
+    private fun processLost(reason: String) {
+        if (stopped.get()) return
+        com.arcanatable.ChimeraCrashLog.record(app(), "Forge game process", null, "Stopped during a game: $reason")
+        emit(JSONObject().put("type", "error").put("code", "FORGE_HOST").put("message",
+            "The game engine stopped (it may have run out of memory). This game can't continue; start a new one from Home."))
     }
 
     /**
@@ -73,12 +102,16 @@ class LocalArgentumHost(
      * the host's seat; a guest may only leave their own seat.
      */
     fun receive(message: JSONObject, from: EntityId = HUMAN_ID) {
-        if (from != HUMAN_ID && message.optString("type") == "guestLeft") { forge.guestLeft(from.value); return }
-        forge.handleFrom(from.value, message)
+        local?.receive(from.value, message)
+        remote?.receive(from.value, message, com.arcanatable.ChimeraPhaseStops.stops)
     }
 
-    private val stopped = java.util.concurrent.atomic.AtomicBoolean()
-    fun shutdown() { if (stopped.compareAndSet(false, true)) ForgeGameService.stop(app()); ChimeraLoading.reset(); forge.shutdown() }
+    fun shutdown() {
+        if (stopped.compareAndSet(false, true)) ForgeGameService.stop(app())
+        ChimeraLoading.reset()
+        local?.shutdown()
+        remote?.close()
+    }
 
     /** Compatibility entry point: a legacy Wi-Fi guest occupies seat two. */
     fun setGuest(seat: LocalSeat, guest: (JSONObject) -> Unit) = setGuest(AI_ID, seat, guest)
@@ -88,7 +121,10 @@ class LocalArgentumHost(
      * gives them their own player and questions; the bridge sends them their own view of the table through [guest].
      */
     fun setGuest(seatId: EntityId, seat: LocalSeat, guest: (JSONObject) -> Unit) {
-        forge.addGuest(seatId.value, ArcanaForgeHost.Seat(seat.name, seat.deck, seat.commander)) { guest(it) }
+        guests[seatId.value] = guest
+        val forgeSeat = ArcanaForgeHost.Seat(seat.name, seat.deck, seat.commander)
+        local?.addGuest(seatId.value, forgeSeat)
+        remote?.addGuest(seatId.value, forgeSeat)
     }
 
     companion object {
@@ -98,7 +134,7 @@ class LocalArgentumHost(
         val GUEST_ID: EntityId get() = AI_ID
 
         /** Unpacks the bundled Forge data (assets/forge-res.zip) once per APK build; returns the folder holding res/. */
-        private fun app() = Class.forName("android.app.ActivityThread").getMethod("currentApplication").invoke(null) as android.app.Application
+        internal fun app() = Class.forName("android.app.ActivityThread").getMethod("currentApplication").invoke(null) as android.app.Application
 
         @Synchronized
         fun forgeAssetsDir(): String {

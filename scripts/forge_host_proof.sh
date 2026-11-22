@@ -16,6 +16,9 @@ CP="$FAT:$OUT/json-20240303.jar"
 javac --release 17 -encoding UTF-8 -d "$OUT/classes" -cp "$CP" $(find "$ROOT/forge-host/src/main/java" -name '*.java')
 cd "$FORGE/forge-gui"
 timeout 60s java -Djava.awt.headless=true -cp "$OUT/classes:$CP" org.arcanachimera.forgehost.ProtocolGuardSelfTest
+# Owner, Nov 21: what Forge keeps in memory, under the phone's 512 MB limit (report only; never fails the proof)
+timeout 600s java -Xmx512m -Djava.awt.headless=true -cp "$OUT/classes:$CP" \
+  org.arcanachimera.forgehost.ForgeMemoryProbe "$FORGE/forge-gui/" || echo "MEMORY PROBE · did not finish (exit $?)"
 timeout 600s java -Xmx4g -Djava.awt.headless=true -cp "$OUT/classes:$CP" \
   org.arcanachimera.forgehost.OneTurnProof "$FORGE/forge-gui/"
 timeout 900s java -Xmx4g -Djava.awt.headless=true -cp "$OUT/classes:$CP" \

@@ -60,8 +60,23 @@ object ChimeraArt {
 
     private fun key(name: String) = name.substringBefore(" // ").trim().lowercase(Locale.ROOT)
 
+    /**
+     * Owner, Nov 21: the Forge game process can't see later changes to the app's saved choices (each process keeps its
+     * own copy), so the app sends all of them with every new game and that copy is used there.
+     */
+    @Volatile private var snapshotInUse: Map<String, String>? = null
+
+    fun snapshot(): Map<String, String> = runCatching {
+        prefs?.all?.mapNotNull { (k, v) -> (v as? String)?.let { k to it } }?.toMap()
+    }.getOrNull().orEmpty()
+
+    fun useSnapshot(choices: Map<String, String>) { snapshotInUse = choices }
+
     /** The picture you chose for this card, or null for the default printing. */
-    fun get(name: String?): String? = name?.takeIf { it.isNotBlank() }?.let { prefs?.getString(key(it), null) }
+    fun get(name: String?): String? = name?.takeIf { it.isNotBlank() }?.let { n ->
+        snapshotInUse?.let { return it[key(n)] }
+        prefs?.getString(key(n), null)
+    }
 
     fun set(name: String, url: String?) {
         prefs?.edit()?.apply { if (url == null) remove(key(name)) else putString(key(name), url) }?.apply()

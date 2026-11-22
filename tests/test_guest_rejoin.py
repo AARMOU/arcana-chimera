@@ -47,7 +47,7 @@ class GuestRejoinTests(unittest.TestCase):
     def test_build_runs_it_after_the_earlier_patches(self):
         build = (ROOT / "scripts/build_arcana_forge_apk.sh").read_text(encoding="utf-8")
         self.assertIn("patch_guest_rejoin.py", build)
-        self.assertIn("ChimeraGuestSeat; do", build)
+        self.assertIn(" ChimeraGuestSeat", build)
         self.assertLess(build.index("patch_arcana_nov9c.py"), build.index("patch_guest_rejoin.py"))
 
 

@@ -36,7 +36,11 @@ object ChimeraLoading {
     /** True on the phone running the game (the host or a solo game); a guest only waits. */
     var hosting by mutableStateOf(false)
 
+    /** In the Forge game process (owner, Nov 21): progress goes to the app's loading screen instead. */
+    @Volatile var forward: ((Float, String) -> Unit)? = null
+
     fun report(f: Float, text: String) {
+        forward?.let { it(f, text); return }
         fraction = if (f <= 0f) 0f else maxOf(fraction, f.coerceIn(0f, 1f)) // never moves backwards within a start
         label = text
     }
