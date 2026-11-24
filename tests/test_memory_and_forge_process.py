@@ -89,7 +89,7 @@ class ForgeProcessTests(unittest.TestCase):
     def test_build_copies_and_runs_everything(self):
         build = (ROOT / "scripts/build_arcana_forge_apk.sh").read_text(encoding="utf-8")
         self.assertIn("ForgeEngineCore ForgeIpc ForgeProcessService ForgeRemote", build)
-        self.assertIn("ChimeraCrashLog; do", build)
+        self.assertIn("ChimeraCrashLog ChimeraTableAssist; do", build)
         self.assertLess(build.index("patch_memory_safety.py"), build.index("patch_forge_process.py"))
         proof = (ROOT / "scripts/forge_host_proof.sh").read_text(encoding="utf-8")
         self.assertIn("-Xmx512m", proof)

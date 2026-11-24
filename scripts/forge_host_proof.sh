@@ -21,6 +21,9 @@ timeout 600s java -Xmx512m -Djava.awt.headless=true -cp "$OUT/classes:$CP" \
   org.arcanachimera.forgehost.ForgeMemoryProbe "$FORGE/forge-gui/" || echo "MEMORY PROBE · did not finish (exit $?)"
 timeout 600s java -Xmx4g -Djava.awt.headless=true -cp "$OUT/classes:$CP" \
   org.arcanachimera.forgehost.OneTurnProof "$FORGE/forge-gui/"
+# Owner, Nov 23: undo a play (a land) through Arcana's requestUndo; the land must be back in hand
+timeout 300s java -Xmx1g -Djava.awt.headless=true -cp "$OUT/classes:$CP" \
+  org.arcanachimera.forgehost.UndoProof "$FORGE/forge-gui/"
 timeout 900s java -Xmx4g -Djava.awt.headless=true -cp "$OUT/classes:$CP" \
   org.arcanachimera.forgehost.PromptScenarios "$FORGE/forge-gui/"
 # 4-player Commander start, AI rotation and return to you, through the real host (Goose, PR #17)

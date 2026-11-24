@@ -250,7 +250,7 @@ private fun RowScope.UndoActionsCast(ui: SkinUi, look: SkinLook, shape: Shape = 
     val g = ui.g
     SkinButton("UNDO", look, { g.undo() }, Modifier.weight(1f), enabled = g.canUndo, shape = shape, size = size)
     SkinButton("ACTIONS · ${g.actions.size}", look, { g.openActions() }, Modifier.weight(1.3f), enabled = g.actions.isNotEmpty(), shape = shape, size = size)
-    SkinButton("CAST", look, { g.cast(ui.selected) }, Modifier.weight(1f), enabled = !g.busy, shape = shape, size = size)
+    SkinButton("LOG", look, { g.log() }, Modifier.weight(1f), shape = shape, size = size) // owner, Nov 23: Game log in Cast's place
 }
 
 @Composable
@@ -359,7 +359,7 @@ private fun SkinOrbit(ui: SkinUi) {
                 }
                 val items = listOf<Triple<String, Boolean, () -> Unit>>(
                     Triple("UNDO", g.canUndo, { g.undo() }), Triple("ACTIONS · ${g.actions.size}", g.actions.isNotEmpty(), { g.openActions() }),
-                    Triple("CAST", !g.busy, { g.cast(ui.selected) }), Triple("COMMANDER", true, ui.openCommander),
+                    Triple("LOG", true, { g.log() }), Triple("COMMANDER", true, ui.openCommander),
                     Triple("GRAVEYARD ${g.me?.graveyard?.size ?: 0}", true, { g.graveyard() }), Triple("EXILE ${g.me?.exile?.size ?: 0}", true, { g.exile() }))
                 items.forEachIndexed { i, (label, enabled, act) ->
                     val a = Math.toRadians((180.0 + 18.0 + i * (144.0 / (items.size - 1))))
@@ -446,7 +446,6 @@ private fun SkinAcross(ui: SkinUi) {
                 SkinButton("GAME LOG", look, { g.log() }, Modifier.fillMaxWidth(), size = 11.sp)
                 Spacer(Modifier.weight(1f))
                 SkinButton("COMMANDER", look, ui.openCommander, Modifier.fillMaxWidth(), glow = g.commanderGlow, size = 10.sp)
-                SkinButton("CAST", look, { g.cast(ui.selected) }, Modifier.fillMaxWidth(), enabled = !g.busy, size = 11.sp)
                 SkinButton("ACTIONS · ${g.actions.size}", look, { g.openActions() }, Modifier.fillMaxWidth(), enabled = g.actions.isNotEmpty(), size = 10.sp)
                 SkinButton("UNDO", look, { g.undo() }, Modifier.fillMaxWidth(), enabled = g.canUndo, size = 11.sp)
                 PassButton(g, look, Modifier.fillMaxWidth().height(110.dp), size = 13.sp)

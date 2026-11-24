@@ -658,6 +658,7 @@ internal fun ChimeraCombatExtras(attackers: List<Pair<GameCard, Boolean>>) {
 /** Settings › Gameplay: the feature switches. */
 @Composable
 internal fun ChimeraFeatureSettingsRows() {
+    ChimeraAssistSettingsRows() // owner, Nov 23: follow the active player, pop-ups for your permanents
     SettingsToggle("Coach", "Adds a Coach button: the AI suggests what it would do in your seat right now.", ChimeraFeatureSettings.coach, { ChimeraFeatureSettings.changeCoach(it) })
     SettingsToggle("Show AI decks after a game", "When a game ends, see the cards that hurt you most and each AI opponent's whole deck.", ChimeraFeatureSettings.reveal, { ChimeraFeatureSettings.changeReveal(it) })
     SettingsToggle("Table shortcuts", "Board and Coach buttons at the left edge of the table. Both are always in ⋮ › Game tools.", ChimeraFeatureSettings.shortcuts, { ChimeraFeatureSettings.changeShortcuts(it) })

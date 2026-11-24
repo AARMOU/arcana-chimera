@@ -134,7 +134,7 @@ public final class OneTurnProof {
         System.exit(result.startsWith("PASS") ? 0 : 1);
     }
 
-    private static JSONObject find(JSONArray legal, String actionType) {
+    static JSONObject find(JSONArray legal, String actionType) {
         for (int i = 0; i < legal.length(); i++) if (legal.getJSONObject(i).optString("actionType").equals(actionType)) return legal.getJSONObject(i);
         return null;
     }
@@ -152,7 +152,7 @@ public final class OneTurnProof {
     }
 
     /** A legal default answer to any Argentum decision (picks the first options). */
-    private static JSONObject answer(JSONObject d) {
+    static JSONObject answer(JSONObject d) {
         String id = d.optString("id");
         JSONObject r = new JSONObject().put("decisionId", id);
         switch (d.optString("type")) {
@@ -183,13 +183,13 @@ public final class OneTurnProof {
         return null;
     }
 
-    private static JSONObject player(JSONObject s, String id) {
+    static JSONObject player(JSONObject s, String id) {
         JSONArray ps = s.getJSONArray("players");
         for (int i = 0; i < ps.length(); i++) if (ps.getJSONObject(i).optString("playerId").equals(id)) return ps.getJSONObject(i);
         return new JSONObject();
     }
 
-    private static String battlefield(JSONObject s, String owner) {
+    static String battlefield(JSONObject s, String owner) {
         StringBuilder b = new StringBuilder("[");
         JSONObject cards = s.getJSONObject("cards");
         for (String k : cards.keySet()) {

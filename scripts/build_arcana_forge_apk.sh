@@ -109,7 +109,7 @@ done
 cp "$ROOT/arcana-overlay/app/src/main/java/com/arcanatable/ChimeraArt.kt" "$APP/src/main/java/com/arcanatable/"
 cp "$ROOT/arcana-overlay/app/src/main/java/com/arcanatable/ChimeraHandFit.kt" "$APP/src/main/java/com/arcanatable/"
 cp "$ROOT/arcana-overlay/app/src/main/java/com/arcanatable/ChimeraDrawer.kt" "$APP/src/main/java/com/arcanatable/"
-for f in ChimeraView ChimeraHand ChimeraHandCards ChimeraBackdrops ChimeraPresets ChimeraPlay ChimeraStudio ChimeraSkins ChimeraChoice ChimeraTerminal ChimeraTutorialBoards ChimeraHaptics ChimeraFeatures ChimeraXp ChimeraLegal GooseClippyLines GooseClippyFeature ChimeraRoomHostGuardService ChimeraGuestSeat ChimeraCrashLog; do
+for f in ChimeraView ChimeraHand ChimeraHandCards ChimeraBackdrops ChimeraPresets ChimeraPlay ChimeraStudio ChimeraSkins ChimeraChoice ChimeraTerminal ChimeraTutorialBoards ChimeraHaptics ChimeraFeatures ChimeraXp ChimeraLegal GooseClippyLines GooseClippyFeature ChimeraRoomHostGuardService ChimeraGuestSeat ChimeraCrashLog ChimeraTableAssist; do
   cp "$ROOT/arcana-overlay/app/src/main/java/com/arcanatable/$f.kt" "$APP/src/main/java/com/arcanatable/"
 done
 mkdir -p "$APP/src/main/assets/chimera_xp" && cp "$ROOT"/arcana-overlay/app/src/main/assets/chimera_xp/*.jpg "$APP/src/main/assets/chimera_xp/" # XP Desktop wallpapers
@@ -155,6 +155,8 @@ python3 "$ROOT/scripts/patch_guest_rejoin.py" "$APP" # owner, Nov 21: guests kep
 python3 "$ROOT/scripts/patch_memory_safety.py" "$APP" # owner, Nov 21: crash history, memory in the log, deck editor memory check
 python3 "$ROOT/scripts/patch_forge_process.py" "$APP" # owner, Nov 21: Forge in its own process with its own memory
 python3 "$ROOT/scripts/patch_table_chat.py" "$APP" # owner, Nov 23: chat in Forge multiplayer games, relayed by the host
+python3 "$ROOT/scripts/patch_hand_log.py" "$APP" # owner, Nov 23: Game log in Cast's place (Cast stays in Studio)
+python3 "$ROOT/scripts/patch_table_assist.py" "$APP" # owner, Nov 23: auto-pass, pop-ups, Catalogue opening hand, follow, undo
 # Foreground service: keeps the Forge game alive while the player is in another app.
 python3 - "$APP/src/main/AndroidManifest.xml" <<'PY'
 import sys; p = sys.argv[1]; s = open(p).read()

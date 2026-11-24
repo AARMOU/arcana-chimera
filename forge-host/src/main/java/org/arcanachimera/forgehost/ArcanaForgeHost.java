@@ -220,6 +220,38 @@ public final class ArcanaForgeHost {
     /** One seat: a name, its deck as card names, and an optional commander. */
     public record Seat(String name, List<String> deck, String commander) { }
 
+    /** The part of a commander's name before the comma: "Ghalta, Primal Hunger" → "Ghalta". */
+    public static String shortCommander(String commander) {
+        if (commander == null) return "";
+        String c = commander.trim();
+        int slash = c.indexOf(" // ");
+        if (slash > 0) c = c.substring(0, slash);
+        int comma = c.indexOf(',');
+        return (comma > 0 ? c.substring(0, comma) : c).trim();
+    }
+
+    private static final java.util.regex.Pattern GENERIC_NAME = java.util.regex.Pattern.compile(
+            "(?i)\\s*(|you|player|player \\d+|human|host|guest|guest \\d+|opponent|opponent \\d+|computer|computer \\d+|ai|ai \\d+|ai player|ai player \\d+|offline ai|ai · .*)\\s*");
+
+    /** Owner, Nov 23: AI players are "AI · <commander>"; people show their commander unless they named themselves. */
+    public static String seatDisplayName(String name, String commander, boolean person) {
+        String n = name == null ? "" : name.trim();
+        String c = shortCommander(commander);
+        if (c.isEmpty()) return n.isEmpty() ? (person ? "Player" : "AI") : n;
+        if (!GENERIC_NAME.matcher(n).matches()) return n;
+        return person ? c : "AI · " + c;
+    }
+
+    /** Two players with the same name get "2", "3"... so attacks and targets still say who is who. */
+    public static void dedupeNames(List<String> names) {
+        Map<String, Integer> seen = new LinkedHashMap<>();
+        for (int i = 0; i < names.size(); i++) {
+            String key = names.get(i).toLowerCase(java.util.Locale.ROOT);
+            int n = seen.merge(key, 1, Integer::sum);
+            if (n > 1) names.set(i, names.get(i) + " " + n);
+        }
+    }
+
     private final java.util.IdentityHashMap<RegisteredPlayer, String> seatIds;
     private List<Seat> pendingSeats;
     private java.util.function.Supplier<String> assetsDir;
@@ -259,6 +291,16 @@ public final class ArcanaForgeHost {
                 Seat x = guestSeats.getOrDefault(seatId(i), pendingSeats.get(i));
                 if (x.commander() == null || x.commander().isEmpty()) commander = false;
             }
+            // Owner, Nov 23: "it just says AI Player and it's hard to tell who is who when attacking": every player is
+            // shown by their commander, e.g. "AI · Ghalta"; a person keeps a name they set themselves.
+            List<String> shown = new ArrayList<>();
+            for (int i = 0; i < pendingSeats.size(); i++) {
+                Seat x = guestSeats.getOrDefault(seatId(i), pendingSeats.get(i));
+                boolean person = i == 0;
+                for (ArcanaForgeHost v : views) if (v.me.equals(seatId(i))) person = true;
+                shown.add(seatDisplayName(x.name(), x.commander(), person));
+            }
+            dedupeNames(shown);
             List<RegisteredPlayer> players = new ArrayList<>();
             JSONArray lobby = new JSONArray(), started = new JSONArray();
             java.util.Map<RegisteredPlayer, IGuiGame> guis = new java.util.HashMap<>();
@@ -274,13 +316,13 @@ public final class ArcanaForgeHost {
                 RegisteredPlayer rp = commander ? RegisteredPlayer.forCommander(d) : new RegisteredPlayer(d);
                 // Owner, Nov 13: the host's own player was Forge's default "Human" (or blank) in prompts and the winner line.
                 // It is named after its commander now, e.g. "Pay {2}{G}{G} for Summoner's Pact? Pantlaza, Sun-Favored loses the game."
-                if (i == 0) GamePlayerUtil.getGuiPlayer().setName(commander && seat.commander() != null && !seat.commander().trim().isEmpty() ? seat.commander() : seat.name());
+                if (i == 0) GamePlayerUtil.getGuiPlayer().setName(shown.get(i));
                 rp.setPlayer(i == 0 ? GamePlayerUtil.getGuiPlayer()
-                        : person != null ? new forge.player.LobbyPlayerHuman(seat.name()) : GamePlayerUtil.createAiPlayer(seat.name(), i));
+                        : person != null ? new forge.player.LobbyPlayerHuman(shown.get(i)) : GamePlayerUtil.createAiPlayer(shown.get(i), i));
                 if (person != null) guis.put(rp, person.guiGame());
                 seatIds.put(rp, seatId(i));
                 players.add(rp);
-                lobby.put(new JSONObject().put("playerId", seatId(i)).put("name", seat.name()));
+                lobby.put(new JSONObject().put("playerId", seatId(i)).put("name", shown.get(i)));
                 started.put(new JSONObject().put("playerId", seatId(i)).put("isYou", i == 0));
             }
             if (!unknownCards.isEmpty()) error("Forge doesn't have " + unknownCards.size() + " card(s), left out: " + String.join(", ", unknownCards));
@@ -510,12 +552,29 @@ public final class ArcanaForgeHost {
                 if (pending != null) emitDecision(); else scheduleSelf();
             }
             case "arcanaSaveOffline" -> { } // sent when the app goes to the background; Forge games aren't saved yet, so nothing to say
-            case "requestUndo" -> error("Undo isn't available in this version.");
+            case "requestUndo" -> { // owner, Nov 23: take back your last play (Forge restores the copy from your previous prompt)
+                if (!you.tryUndoLastAction()) {
+                    String why = undoWhy(you.getPlayer().getGame(), you);
+                    error("Can't undo: " + (why == null ? "nothing to take back" : why) + ".");
+                    scheduleSelf();
+                }
+            }
             case "setRespondToOwnStack" -> respondToOwnStack = message.optBoolean("enabled");
             case "setQuietOpponentTurns" -> quietOpponentTurns = message.optBoolean("enabled");
             case "setPassToMyTurn" -> fastPass = message.optBoolean("enabled");
             default -> { }
         }
+    }
+
+    /** Owner, Nov 23: why undo isn't possible right now, in Forge's words ("Card drawn", "Opponent acted"...). */
+    private static String undoWhy(Game game, PlayerControllerHuman you) {
+        if (game == null) return "the game hasn't started";
+        if (game.getPhaseHandler().getPriorityPlayer() != you.getPlayer()) return "wait until it's your priority";
+        String why = game.getUndoManager().whyNot();
+        if (why == null || why.trim().isEmpty()) return "nothing to take back yet";
+        why = why.trim();
+        if (why.endsWith(".")) why = why.substring(0, why.length() - 1);
+        return why.equals("Phase Begin") ? "a new step began" : why.toLowerCase(java.util.Locale.ROOT).equals("undo is off") ? "undo is off" : why;
     }
 
     /** Presses Forge's OK/Cancel on the live input (the controller's own relay lags behind headless). */
@@ -1039,9 +1098,9 @@ public final class ArcanaForgeHost {
         if (aiTuned == game) return;
         aiTuned = game;
         game.AI_TIMEOUT = Math.max(1, Math.min(game.AI_TIMEOUT, aiTimeoutSeconds)); // copies for rollouts inherit it
-        // Owner, Nov 21: Arcana never offers Forge's undo (undoAvailable is always false), but Forge recorded a copy of the
-        // game before every prompt and kept up to a seventh of the memory limit as undo history. Off: less memory and
-        // less work per prompt. (Forge's AI then has no snapshot to take back a cast that fails; it returns the card.)
+        // Owner, Nov 23: undo is back ("take back a play if I pay for mana"). Forge records a copy of the game before each
+        // of a person's priority prompts (its "Free" undo mode, set from Forge's preferences at every prompt) and keeps at
+        // most a seventh of the memory limit as history. Games with only AI players record nothing until a person acts.
         game.getUndoManager().setMode(forge.game.undo.UndoManager.Mode.OFF);
         game.AI_FLAT_MONTE_CARLO = aiStrength != AiStrength.OFF;
         // Owner, Nov 10: the app now gets more memory (less time cleaning it up), but Brutal keeps the phone-sized search it
@@ -1248,7 +1307,9 @@ public final class ArcanaForgeHost {
                 .put("legalActions", legal)
                 .put("pendingDecision", JSONObject.NULL)
                 .put("nextStopPoint", JSONObject.NULL)
-                .put("undoAvailable", false)
+                .put("undoAvailable", priority && you != null && you.canUndoLastAction())
+                .put("chimeraUndoSteps", priority && you != null && you.canUndoLastAction() ? game.getUndoManager().depth() : 0)
+                .put("chimeraUndoWhy", priority && you != null && !you.canUndoLastAction() ? String.valueOf(undoWhy(game, you)) : "")
                 .put("priorityMode", "auto")
                 .put("stateVersion", ++version)
                 .put("chimeraAttackWarning", attackWarning(game, you.getPlayer()))
@@ -1432,7 +1493,24 @@ public final class ArcanaForgeHost {
                 .put("activePlayerId", ph.getPlayerTurn() == null ? JSONObject.NULL : playerId(ph.getPlayerTurn()))
                 .put("priorityPlayerId", ph.getPriorityPlayer() == null ? JSONObject.NULL : playerId(ph.getPriorityPlayer()))
                 .put("turnNumber", ph.getTurn()).put("isGameOver", game.isGameOver()).put("winnerId", game.isGameOver() ? winnerId(game) : JSONObject.NULL)
-                .put("combat", JSONObject.NULL).put("gameLog", gameLog(game, viewer)), "state");
+                .put("combat", JSONObject.NULL).put("gameLog", gameLog(game, viewer))
+                .put("chimeraDefenders", defenders(stateCombat)), "state");
+    }
+
+    /** Owner, Nov 23: the players being attacked (an attacked planeswalker or battle counts for its controller). */
+    private JSONArray defenders(forge.game.combat.Combat combat) {
+        JSONArray out = new JSONArray();
+        if (combat == null) return out;
+        java.util.Set<String> seen = new java.util.LinkedHashSet<>();
+        try {
+            for (Card a : combat.getAttackers()) {
+                forge.game.GameEntity d = combat.getDefenderByAttacker(a);
+                Player p = d instanceof Player pl ? pl : d instanceof Card c ? c.getController() : null;
+                if (p != null) seen.add(playerId(p));
+            }
+        } catch (RuntimeException ignored) { } // combat changing under us: no defenders this time
+        for (String id : seen) out.put(id);
+        return out;
     }
 
     private static final java.util.Set<forge.game.GameLogEntryType> LOGGED = forge.game.GameLogVerbosity.MEDIUM.getIncludedTypes();

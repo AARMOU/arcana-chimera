@@ -39,7 +39,7 @@ class TableChatTests(unittest.TestCase):
         host = (ROOT / "arcana-overlay/app/src/main/java/com/arcanatable/engine/LocalArgentumHost.kt").read_text(encoding="utf-8")
         receive = host.index("fun receive(message: JSONObject, from: EntityId = HUMAN_ID) {")
         self.assertLess(receive, host.index('"arcanaChat") { relayChat(message, from.value); return }'))
-        self.assertIn("guestNames[seatId.value] = seat.name", host)  # the name comes from the seat
+        self.assertIn("guestNames[seatId.value] = ArcanaForgeHost.seatDisplayName(seat.name, seat.commander, true)", host)  # the seat's shown name
         self.assertIn("if (seat != from)", host)  # not echoed to the sender
 
     def test_build_runs_it(self):

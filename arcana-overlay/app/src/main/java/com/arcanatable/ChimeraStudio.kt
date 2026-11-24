@@ -248,6 +248,7 @@ internal fun ChimeraAppLookSection() {
             StudioChip(label, true, "chimera-home-art-$id", selected = ChimeraHomeArt.mode(homePrefs) == id) { ChimeraHomeArt.set(homePrefs, id) }
         }
     }
+    ChimeraOpeningHandLook() // owner, Nov 23: Catalogue (default) or Grid
     Text("Typeface", color = darkTableColors.text, fontSize = 13.sp, modifier = Modifier.padding(top = 6.dp))
     Row(Modifier.hintedHorizontalScroll(), verticalAlignment = Alignment.CenterVertically) {
         listOf("" to "Arcana", "serif" to "Serif", "mono" to "Mono", "condensed" to "Condensed").forEach { (id, label) ->

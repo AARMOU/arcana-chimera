@@ -98,8 +98,7 @@ internal fun ChimeraHandMenu(stackCount: Int, onStack: () -> Unit, commanderCanC
     DropdownMenuItem(text = { Text("Stack · $stackCount") }, onClick = { close(); onStack() })
     if (commanderCanCast) DropdownMenuItem(text = { Text("Cast commander") }, onClick = { close(); onCastCommander() })
     DropdownMenuItem(text = { Text("Game log") }, onClick = { close(); onLog() })
-    DropdownMenuItem(text = { Text(if (autoPassing) "Stop auto-pass" else "Pass to my turn") }, enabled = autoPassing || autoPassEnabled,
-        onClick = { close(); onAutoPass() })
+    ChimeraAutoPassMenu(autoPassing, autoPassEnabled, onAutoPass, close) // owner, Nov 23: auto-pass choices and stops
 }
 
 /** The status line text: the selected card first, then hand, phase, playable and stack. */

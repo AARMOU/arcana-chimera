@@ -36,7 +36,7 @@ class LocalArgentumHost(
     // runs in this process exactly as it used to (ForgeEngineCore either way).
     private val guests = java.util.concurrent.ConcurrentHashMap<String, (JSONObject) -> Unit>()
     // Owner, Nov 23: table chat in multiplayer games. Forge never sees it; this host passes it between the players.
-    private val humanName = human.name
+    private val humanName = ArcanaForgeHost.seatDisplayName(human.name, human.commander, true)
     private val guestNames = java.util.concurrent.ConcurrentHashMap<String, String>()
     private val chatOut = java.util.concurrent.Executors.newSingleThreadExecutor()
     @Volatile private var quiet = false
@@ -143,7 +143,7 @@ class LocalArgentumHost(
      */
     fun setGuest(seatId: EntityId, seat: LocalSeat, guest: (JSONObject) -> Unit) {
         guests[seatId.value] = guest
-        guestNames[seatId.value] = seat.name
+        guestNames[seatId.value] = ArcanaForgeHost.seatDisplayName(seat.name, seat.commander, true)
         val forgeSeat = ArcanaForgeHost.Seat(seat.name, seat.deck, seat.commander)
         local?.addGuest(seatId.value, forgeSeat)
         remote?.addGuest(seatId.value, forgeSeat)

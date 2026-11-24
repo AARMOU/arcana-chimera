@@ -10,14 +10,15 @@ import android.content.Context
  */
 internal object ChimeraHandLayouts {
     /** The action buttons in a fixed order (Pass first), and the counters. */
-    private val BUTTONS = listOf("pass" to "PASS", "undo" to "UNDO", "actions" to "ACTIONS", "cast" to "CAST")
+    // Owner, Nov 23: Game log in Cast's place (Cast stays available in Studio).
+    private val BUTTONS = listOf("pass" to "PASS", "undo" to "UNDO", "actions" to "ACTIONS", "log" to "LOG")
     private val COUNTERS = listOf("commander" to "COMMANDER", "metric1" to "LIBRARY", "metric2" to "GRAVEYARD", "metric3" to "EXILE")
 
     private fun origin(w: Float, h: Float) = if (w > h) 64f else (h * .32f).coerceAtLeast(64f)
 
     private fun e(binding: String, label: String, x: Float, y: Float, w: Float, h: Float, fs: Float = 11f, r: Float = 10f,
         strong: Boolean = false, shape: String = "", color: String? = null, text: String? = null) =
-        StudioElement(binding, if (binding in setOf("pass", "undo", "actions", "cast")) "button" else "metric", label, x, y, w, h,
+        StudioElement(binding, if (binding in setOf("pass", "undo", "actions", "cast", "log")) "button" else "metric", label, x, y, w, h,
             fs = fs, r = r, strong = strong, binding = binding, color = color, textColor = text, shape = shape)
 
     private fun top(w: Float, o: Float, text: String? = null) = listOf(
@@ -120,7 +121,7 @@ internal object ChimeraHandLayouts {
                     .map { it.copy(color = "#000000", textColor = "#19E3FF") }
                 val cy = y0 + 42f
                 val by = cy + 132f + 12f
-                val controls = row(listOf("undo" to "UNDO", "actions" to "ACTIONS", "pass" to "PASS", "cast" to "CAST"), 12f, w - 12f, by, 58f,
+                val controls = row(listOf("undo" to "UNDO", "actions" to "ACTIONS", "pass" to "PASS", "log" to "LOG"), 12f, w - 12f, by, 58f,
                     fs = 12f, shape = "square", weights = mapOf("pass" to 1.8f))
                 layout(w, h, o, top(w, o) + score + slots(12f, w - 12f, cy) + controls, "row",
                     t(theme("#0B0614", "#120A1F", "#24113A", "#FF2BD6", "#E8F7FF", "#8A7CA8", "#19E3FF")))
@@ -130,7 +131,7 @@ internal object ChimeraHandLayouts {
                 val cy = y0 + 52f
                 val by = cy + 150f + 12f
                 // Owner, Nov 9 audit: at most four to a row on the folded phone, so every label fits.
-                val r1 = row(listOf("undo" to "UNDO", "actions" to "ACTIONS", "cast" to "CAST", "commander" to "COMMANDER"), 12f, w - 12f, by, 44f,
+                val r1 = row(listOf("undo" to "UNDO", "actions" to "ACTIONS", "log" to "LOG", "commander" to "COMMANDER"), 12f, w - 12f, by, 44f,
                     gap = 6f, fs = 11f, shape = "pill", weights = mapOf("commander" to 1.4f, "actions" to 1.3f), strongPass = false)
                 val r2 = row(listOf("metric1" to "LIBRARY", "metric2" to "GRAVEYARD", "metric3" to "EXILE"), 12f, w - 12f, by + 50f, 44f,
                     gap = 6f, fs = 10f, shape = "pill", strongPass = false)
