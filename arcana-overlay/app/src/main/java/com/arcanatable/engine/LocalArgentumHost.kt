@@ -35,6 +35,10 @@ class LocalArgentumHost(
     // same name, constructor and calls as before and passes messages across. If that process can't be started, Forge
     // runs in this process exactly as it used to (ForgeEngineCore either way).
     private val guests = java.util.concurrent.ConcurrentHashMap<String, (JSONObject) -> Unit>()
+    // Owner, Nov 23: table chat in multiplayer games. Forge never sees it; this host passes it between the players.
+    private val humanName = human.name
+    private val guestNames = java.util.concurrent.ConcurrentHashMap<String, String>()
+    private val chatOut = java.util.concurrent.Executors.newSingleThreadExecutor()
     @Volatile private var quiet = false
     @Volatile private var ownStack = false
     private val stopped = java.util.concurrent.atomic.AtomicBoolean()
@@ -102,11 +106,28 @@ class LocalArgentumHost(
      * the host's seat; a guest may only leave their own seat.
      */
     fun receive(message: JSONObject, from: EntityId = HUMAN_ID) {
+        if (message.optString("type") == "arcanaChat") { relayChat(message, from.value); return }
         local?.receive(from.value, message)
         remote?.receive(from.value, message, com.arcanatable.ChimeraPhaseStops.stops)
     }
 
+    /**
+     * A chat message from seat [from]: shown on the host's table (if a guest wrote it) and sent to every other person.
+     * The name comes from the seat, not the message, and a message is at most 500 characters.
+     */
+    private fun relayChat(message: JSONObject, from: String) {
+        val text = message.optString("text").trim().take(500)
+        if (text.isEmpty()) return
+        val author = if (from == HUMAN_ID.value) humanName else guestNames[from] ?: return
+        val out = JSONObject().put("type", "arcanaChat").put("author", author).put("text", text).toString()
+        if (from != HUMAN_ID.value) emit(JSONObject(out))
+        runCatching {
+            chatOut.execute { guests.forEach { (seat, send) -> if (seat != from) runCatching { send(JSONObject(out)) } } }
+        }
+    }
+
     fun shutdown() {
+        chatOut.shutdown()
         if (stopped.compareAndSet(false, true)) ForgeGameService.stop(app())
         ChimeraLoading.reset()
         local?.shutdown()
@@ -122,6 +143,7 @@ class LocalArgentumHost(
      */
     fun setGuest(seatId: EntityId, seat: LocalSeat, guest: (JSONObject) -> Unit) {
         guests[seatId.value] = guest
+        guestNames[seatId.value] = seat.name
         val forgeSeat = ArcanaForgeHost.Seat(seat.name, seat.deck, seat.commander)
         local?.addGuest(seatId.value, forgeSeat)
         remote?.addGuest(seatId.value, forgeSeat)

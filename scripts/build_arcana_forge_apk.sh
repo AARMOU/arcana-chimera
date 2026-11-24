@@ -154,6 +154,7 @@ python3 "$ROOT/scripts/patch_status_strip.py" "$APP" # owner, Nov 21: status str
 python3 "$ROOT/scripts/patch_guest_rejoin.py" "$APP" # owner, Nov 21: guests kept running online; Rejoin your game after Android closes the app
 python3 "$ROOT/scripts/patch_memory_safety.py" "$APP" # owner, Nov 21: crash history, memory in the log, deck editor memory check
 python3 "$ROOT/scripts/patch_forge_process.py" "$APP" # owner, Nov 21: Forge in its own process with its own memory
+python3 "$ROOT/scripts/patch_table_chat.py" "$APP" # owner, Nov 23: chat in Forge multiplayer games, relayed by the host
 # Foreground service: keeps the Forge game alive while the player is in another app.
 python3 - "$APP/src/main/AndroidManifest.xml" <<'PY'
 import sys; p = sys.argv[1]; s = open(p).read()
